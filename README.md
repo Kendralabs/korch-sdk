@@ -106,11 +106,12 @@ carries one. From `1.0.0` the full compatibility policy applies without exceptio
 
 | Start here | For |
 |---|---|
-| [docs/specs/README.md](docs/specs/README.md) | The authoritative specification set (00–11) |
+| [docs/specs/README.md](docs/specs/README.md) | The authoritative specification set (00–12) |
 | [docs/specs/00-overview.md](docs/specs/00-overview.md) | What Korchestrator is, and the glossary |
 | [docs/specs/03-architecture.md](docs/specs/03-architecture.md) | Layering, ARI ports, the dependency rule |
 | [docs/specs/04-public-api.md](docs/specs/04-public-api.md) | Public surface and compatibility contract |
-| [docs/specs/11-build-phase-plan.md](docs/specs/11-build-phase-plan.md) | The implementation plan |
+| [docs/specs/11-build-phase-plan.md](docs/specs/11-build-phase-plan.md) | Phase objectives and acceptance criteria |
+| [docs/specs/12-implementation-plan.md](docs/specs/12-implementation-plan.md) | **The step-by-step task list — start here to build** |
 | [docs/adr/](docs/adr/README.md) | Why things were decided the way they were |
 | [docs/background/](docs/background/README.md) | Superseded source inputs, kept for provenance |
 

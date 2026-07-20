@@ -1,14 +1,14 @@
 # CLAUDE.md — Korchestrator SDK
 
 This is the operating manual for any AI agent (and human) working in this repository. Claude Code
-loads it automatically. The detailed design lives in `docs/specs/` (sequenced 00–11); this file is
+loads it automatically. The detailed design lives in `docs/specs/` (sequenced 00–12); this file is
 the condensed, always-on ruleset. **On any conflict, the specs win.**
 
 ## Where to look
 
 | Need | Go to |
 |---|---|
-| The task you are implementing | `docs/specs/11-build-phase-plan.md`, then `/phase P<n>` |
+| The task you are implementing | `docs/specs/12-implementation-plan.md` for the task list, `11-build-phase-plan.md` for its acceptance criteria, then `/phase P<n>.<m>` |
 | Where code goes / what it may import | `docs/specs/03-architecture.md`, `.claude/rules/architecture-boundaries.md` |
 | The public surface and compatibility | `docs/specs/04-public-api.md`, `.claude/rules/api-and-compatibility.md` |
 | Why something was decided | `docs/adr/` |
@@ -144,7 +144,8 @@ executable once: `chmod +x .claude/hooks/pre-commit-check.sh`.
 
 ## 10. Standing workflow for any task
 
-1. Find the task in `docs/specs/11-build-phase-plan.md`; restate its Objective/Build/Validation/DoD.
+1. Find the task in `docs/specs/12-implementation-plan.md`; restate its Objective/Build/Validation/DoD
+   from `docs/specs/11-build-phase-plan.md`.
    Confirm it's in scope (§2).
 2. Design the public surface first (API-first); check names/compat against
    `docs/specs/04-public-api.md`.
