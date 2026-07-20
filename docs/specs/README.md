@@ -37,18 +37,24 @@ informed these specs; it does not override them, and it is excluded from the pub
 | 09 | [09-testing-and-quality.md](09-testing-and-quality.md) | Test types, determinism testing, coverage policy, test doubles, benchmarks, quality gates, review expectations | You are writing tests, adding a gate, or reviewing a change |
 | 10 | [10-release-versioning-and-cicd.md](10-release-versioning-and-cicd.md) | SemVer and deprecation policy, version single-sourcing, CHANGELOG, CI/CD workflows, the release runbook | You are cutting a release, touching CI, or making a breaking change |
 | 11 | [11-build-phase-plan.md](11-build-phase-plan.md) | Phases 0–12 with Objective / Build / Validation / Definition of Done per phase | You are starting a task and need its acceptance criteria |
+| 12 | [12-implementation-plan.md](12-implementation-plan.md) | Task-level decomposition of every phase: deliverables, dependencies, acceptance, commit messages, critical path | You are about to start work and need to know what to do next |
 
 ---
 
 ## Reading order
 
-**New human contributor (first day):** 00 → 01 → 03 → 04 → 02 → 09 → then the phase you are working
-on in 11. Read 05 and 06 when you first touch the kernel; read 10 before your first release PR.
+**New human contributor (first day):** 00 → 01 → 03 → 04 → 02 → 09 → then 12 for the task list and
+11 for its acceptance criteria. Read 05 and 06 when you first touch the kernel; read 10 before your
+first release PR.
 
-**AI agent starting a task:** 11 (find the task, restate its Objective / Build / Validation / DoD)
-→ 01 (confirm scope) → 04 (design the public surface first) → 03 and 02 (place the code correctly)
-→ 09 (write the tests that lock the behaviour) → 08 for cross-cutting concerns. Consult 05, 06, 07,
-and 10 as the task requires.
+**AI agent starting a task:** 12 (find the next task, its deliverables and dependencies) → 11
+(restate the phase Objective / Validation / DoD) → 01 (confirm scope) → 04 (design the public
+surface first) → 03 and 02 (place the code correctly) → 09 (write the tests that lock the
+behaviour) → 08 for cross-cutting concerns. Consult 05, 06, 07, and 10 as the task requires.
+
+**Relationship between 11 and 12:** 11 is strategic — what each phase is for and when it is done.
+12 is tactical — the ordered, individually-committable tasks that get there. 11 changes rarely;
+12 is updated as tasks land.
 
 ---
 

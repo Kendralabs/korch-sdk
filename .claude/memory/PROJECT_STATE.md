@@ -86,7 +86,7 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 
 | What | Where |
 |---|---|
-| Authoritative design | `docs/specs/` (00–11) — on conflict, the specs win over `.claude/CLAUDE.md` |
+| Authoritative design | `docs/specs/` (00–12) — on conflict, the specs win over `.claude/CLAUDE.md` |
 | Decisions | `docs/adr/` |
 | History | `.claude/memory/ENGINEERING_LOG.md` |
 | Current state | this file |
