@@ -1,35 +1,36 @@
 <!-- Copyright (c) 2026 Kendra Laboratories Limited. All rights reserved. -->
 
-# Korchestrator SDK — Framework & Library Build Specification
+# Korchestrator SDK — Developer Guide & Build Specification
 
-**Document type:** Implementation specification (companion to [`PRODUCTION_HARDENING_SPECIFICATION.md`](PRODUCTION_HARDENING_SPECIFICATION.md) and [`PRODUCTION_READINESS_AUDIT.md`](PRODUCTION_READINESS_AUDIT.md))
-**Working branch:** `feature/korch-sdk` (a dedicated branch; do not commit to `dev`/`main`)
-**Status:** Active build plan — Phases 0–12 in scope; Phase 13 (backend re-platform) is **future / out of scope / approval-gated**.
-**Audience:** Any engineer or AI agent building the Korchestrator SDK. This document plus the referenced docs are self-sufficient.
+**Document type:** Authoritative developer guide and build specification for the standalone SDK repository. This document is self-sufficient — it is the single ground truth for what the SDK is, how it is built, versioned, released, and deployed.
+**Repository:** `korch-sdk` (branches: `main` = released, `develop` = integration).
+**Package:** Python `korchestrator` (optional TypeScript twin `@kendralabs/korchestrator-sdk`).
+**Status:** Active build plan — Phases 0–12 are in scope. Phase 13 (external backend adapter) is **future / out of scope / approval-gated**.
+**Audience:** SDK maintainers, contributors, integrators, and AI agents building in this repository.
 
 ---
 
 ## 0. Golden Rules (read first — these override everything)
 
-1. **You build ONE thing: the SDK package under `packages/korchestrator/`.** Your entire purpose is to create this installable library. Nothing else.
-2. **Do NOT alter `backend/`, `frontend/`, `apps/`, `services/`, `website/`, or any other module.** They are read-only reference. You *read* their code to understand behavior and *re-implement/relocate* the needed logic **inside** the SDK package. You never edit them. (Wiring the backend to consume the SDK is a **separate future effort** — see Phase 13, out of scope here.)
-3. **The `packages/korchestrator/` package must be self-contained.** It must **not import from `backend.*`, `frontend`, `apps.*`, `services.*`, or any sibling in-repo package.** Its only dependencies are declared in its **own** `pyproject.toml` (a tiny core + optional extras). This is what lets it be built and published independently via a GitHub Actions release.
+1. **You build ONE thing: the installable Korchestrator SDK in this repository.** The repository *is* the SDK product — not a frontend, not a backend, not an application.
+2. **Do not add or require a frontend or backend here.** Any service, dashboard, or hosted API is external to this repository and is maintained elsewhere. Backend integration is a separate future effort (Phase 13) and must never become a build, test, or release dependency of the SDK.
+3. **The SDK must be self-contained.** It must not import from `backend.*`, `frontend`, `apps.*`, `services.*`, or any external application package. Its only runtime dependencies are declared in this repository's own `pyproject.toml` (a tiny core plus optional extras). This is what lets it build, version, and publish independently.
 4. **Be dynamic, not hardcoded.** Everything configurable is config-driven and runtime-swappable (providers, runtime, router, persistence) behind interfaces. No hardcoded URLs, keys, models, or paths.
-5. **Do not over-engineer.** Prefer the simplest correct design. Add only the abstraction the current requirement needs. Package the capabilities the engine already has — do not invent new product surface.
-6. **Preserve behavior.** The SDK repackages an existing, working engine. Prove parity with tests; do not change what the product does.
+5. **Do not over-engineer.** Prefer the simplest correct design. Add only the abstraction the current requirement needs. Build the capability surface defined in §2.5 — do not invent new product surface.
+6. **Determinism and stability are features.** The execution kernel must behave identically across runs and replays, and the public API must stay backward compatible within a major version (§10.7).
 
 ---
 
 ## 1. Purpose & How to Use This Document
 
-This spec defines **how to build the Korchestrator SDK** — a production-grade, installable Python (and TypeScript) library that packages the Korchestrator durable multi-agent orchestration kernel as a reusable framework, so developers integrate Korchestrator through **code** instead of editing the engine or hand-rolling HTTP.
+This guide defines **how to build and how to use the Korchestrator SDK** — a production-grade, installable Python (and TypeScript) library that packages the Korchestrator durable multi-agent orchestration kernel as a reusable framework. Developers integrate through **code**; they do not run a service or hand-roll HTTP to get value.
 
 It has two parts:
 
-- **§2–§11 — Standards & context.** What Korchestrator is (the full vision and every functionality), what makes it different, the engineering/git discipline, package-isolation rules, the target structure, the public API, and the cross-cutting + release standards. These govern every phase.
-- **§12 — Build phases (0–13).** The ordered implementation plan. Each phase: Objective · Build (what to create, from which existing module) · Public surface · Validation · Completion criteria.
+- **§2–§11 — Standards & context.** What Korchestrator is, what makes it different, the repository boundary, target structure, public API, cross-cutting standards, and release/versioning/deployment standards. These govern every phase.
+- **§12 — Build phases (0–13).** The ordered implementation plan. Each phase: Objective · Build · Public surface · Validation · Completion criteria.
 
-**How to read it:** read §2–§11 once; then execute §12 phases **strictly in order**. Use §14 as the master checklist. For deeper engine detail, consult the docs referenced inline (they are read-only sources, not files to change).
+**How to read it:** read §2–§11 once; then execute §12 phases **strictly in order**. Use §14 as the master checklist and §15 as the standard command set.
 
 > **Prime directive.** The SDK is a **product for developers**. Its success depends as much on architecture, stability, documentation, testing, versioning, and developer experience (DX) as on the engine underneath.
 
@@ -85,7 +86,7 @@ event → decision → branch → parallel agents → merge → feedback → rep
 
 | Layer | Name | Responsibilities | SDK home |
 |---|---|---|---|
-| **L1** | **Runtime Kernel** | Execution loop, scheduling, synchronization (Pregel supersteps), communication, computation. Backed by Temporal + Postgres. | `core/`, `runtime/` |
+| **L1** | **Runtime Kernel** | Execution loop, scheduling, synchronization (Pregel supersteps), communication, computation. Local in-process by default; Temporal for durability. | `core/`, `runtime/` |
 | **L2** | **Cognitive Reasoning** | Planner, LLM routing, reasoning, task decomposition, validation — the "AI thinking layer." | `agents/`, `routing/` |
 | **L3** | **Context Management** | Context Compiler, memory, state, event sourcing, Context Graph — enterprise memory. Includes **Minimum Viable Context (MVC)** extraction. | `persistence/`, `context/`, `models/state.py` |
 | **L4** | **Interface & Tool Integration** | APIs, MCP, applications, enterprise systems, search, databases — everything external connects here. | `tools/` (AUB), `mcp/` |
@@ -93,16 +94,16 @@ event → decision → branch → parallel agents → merge → feedback → rep
 
 **Runtime execution loop (L1):** `Receive event → Reason → Schedule → Execute → Synchronize → Communicate → Repeat.`
 
-### 2.5 Complete functionality catalogue (package ALL of these)
+### 2.5 Complete functionality catalogue (the coverage contract)
 
-Every functionality below already exists in the engine and must be reachable through the SDK's public surface. This table is the coverage contract — each maps to an SDK module and a build phase.
+Every capability below must be reachable through the SDK's public surface by the end of the build. This table is the coverage contract — each row maps to an SDK module and a build phase.
 
 | Category | Functionality | SDK module | Phase |
 |---|---|---|---|
 | **Execution** | Durable, distributed, parallel, recursive, event-driven execution; recovery; scheduling; synchronization barriers | `core/`, `runtime/` | P2, P3 |
 | **Agent management** | Multi-agent coordination; meta-agents; planner agents; **Architect** agents; autonomous execution; per-agent model isolation | `agents/` | P4 |
-| **Context** | Context Compiler; Context Graph (bitemporal); memory management; context layering; **Minimum Viable Context (MVC)**; event sourcing; context pruning/summarization | `context/`, `persistence/` | P3(kernel), P7 |
-| **Reasoning** | Task decomposition; planning; validation; **LLM routing** (v2.1); intent + difficulty classification (taxonomy); decision making; **compiled signatures** | `agents/`, `routing/`, `taxonomy/` | P4, P5 |
+| **Context** | Context Compiler; Context Graph (bitemporal); memory management; context layering; **Minimum Viable Context (MVC)**; event sourcing; context pruning/summarization | `context/`, `persistence/` | P6, P7 |
+| **Reasoning** | Task decomposition; planning; validation; **LLM routing**; intent + difficulty classification (taxonomy); decision making; **compiled signatures** | `agents/`, `routing/`, `taxonomy/` | P4, P5 |
 | **Integration** | Unified tool layer (AUB); **MCP** integration; API/cloud/database/enterprise-tool connectors; **A2A** typed message passing | `tools/`, `mcp/`, `a2a/` | P6 |
 | **Governance & security** | Trust scoring; policies; RBAC; audit logs; **human approval / HITL**; compliance; PII/Shield redaction; zero-trust boundaries | `governance/`, `security/` | P7 |
 | **Observability** | Execution tracing; agent-reasoning traces; context tracing; event logs; decision history; real-time **streaming** (SSE / AG-UI); OTel metrics/traces | `events/`, `telemetry/` | P6, P8 |
@@ -136,19 +137,23 @@ The SDK is **not** a generic prompt-chaining toolkit. It is a durable execution 
 
 ### 2.7 Why an SDK, and the SDK-first architecture
 
-Today the engine lives in `backend/` and is usable only by (a) running it as a service and driving REST/WebSocket, or (b) editing repo source (add a `dspy.Module`, a connector, a topology). There is **no installable library**. The existing `sdk/` is only a thin remote HTTP client (§2.9).
+Orchestration capability that only exists inside a running service is reachable only two ways: operate the service and drive its HTTP API, or fork and edit that service's source. Neither is a developer product. This repository makes the kernel an **installable library** — importable, embeddable, testable offline, and versioned on its own cadence.
 
-The docs already anticipate this: the **Standalone Execution Kernel** spec ([`docs/architecture/korchestrator-standalone-spec.md`](docs/architecture/korchestrator-standalone-spec.md)) defines Korchestrator as *"a standalone Python library … without being tied to any specific platform, model provider, or security engine,"* interacting with the outside world only through the **Agent Runtime Interface (ARI)**. This SDK realizes that.
+The SDK is a **standalone Python library** that works without being tied to any specific platform, model provider, or security engine, interacting with the outside world only through the **Agent Runtime Interface (ARI)** (§2.8).
 
 Target architecture (SDK-first):
 
 ```
-korchestrator  (SDK / framework — the product: kernel + ARI ports + agents + routing + tools + governance)
-      ▲ (future) built on top of
-backend/api    (FastAPI service — a THIN adapter that imports the SDK and adds HTTP/auth/tenancy)   ← Phase 13, NOT in scope now
-      ▲ called by
-korchestrator-client  (remote SDK — the existing thin HTTP client, folded in for remote consumers)
+korchestrator   (THIS repository: the SDK/framework — kernel + ARI ports + agents
+                 + routing + tools + governance. The product.)
+      ▲ optionally consumed by
+external service / backend   (HTTP, auth, tenancy adapter — a THIN consumer, maintained
+                              in a different repository; never a dependency of this one)   ← Phase 13, NOT in scope
+      ▲ optionally called by
+korchestrator remote client  (thin HTTP client surface for driving a hosted engine)
 ```
+
+The arrows point **one way**: the SDK never imports, requires, or is blocked by anything above it.
 
 ### 2.8 The ARI ports (the portability contract)
 
@@ -162,21 +167,29 @@ The SDK interacts with the outside world only through three abstract ports, each
 
 A developer can run the SDK with **just an OpenAI key and a local process**; as they scale they plug in KACP/OpenSandbox/gateway **without changing agent logic**.
 
-### 2.9 What exists today (fold in — do not duplicate)
+### 2.9 Repository starting point (greenfield)
 
-- **`sdk/python` — `korchestrator` v0.2.0.** A thin async+sync **HTTP client** (only dep: `httpx`). Methods: `run`, `run_swarm`, `get_run`, `wait`, `run_and_wait`, `run_sync`, `list_runs`, `get_run_summary`, `me`, `my_quota`, `my_runs`, `resume`, `cancel`. Models: `RunResult`, `AgentMessage`, `RunStatus`. Exceptions: `KOrchestratorError`/`AuthError`/`QuotaExceededError`/`RunTimeoutError`/`RunFailedError`.
-- **`sdk/typescript` — `@kendralabs/korchestrator-sdk`.** Fetch-based client (Node 18+, zero runtime deps) with the same surface plus admin key management.
-- **`sdk/SDK_REFERENCE.md`.** The 1093-line reference for the remote HTTP surface (see §13 for the concepts/auth/lifecycle detail the SDK's remote client must honor).
-- **`docs/specs/dashboard/epic-9-sdk.md`.** The approved TypeScript-SDK epic (E9): auth (API key **or** KIAM JWT), retries with backoff, streaming, `waitForCompletion`, dual CJS/ESM, `msw` tests, npm publish on version tag, types from the engine OpenAPI via `openapi-typescript`. These are requirements for Phase 9.
+This is a **new repository**. There is no existing package, client, or docs site to migrate, and no backend in this repository to read from or wire into. Everything in §12 is built here from this specification.
 
-> **Naming (record as ADR).** Flagship framework = Python package **`korchestrator`**. The thin HTTP client = **`korchestrator-client`** (TS twin stays `@kendralabs/korchestrator-sdk`). The framework MAY re-export a `korchestrator.remote` submodule wrapping the client; they are versioned/packaged separately.
+Consequences to keep front of mind:
 
-### 2.10 Known drift to fix while building (do not carry forward)
+- **No parity fallback.** Correctness is defined by this document and by the tests written alongside each phase — not by diffing against another implementation. Where an existing Korchestrator engine is available externally, it may be consulted as a *behavioral reference*, but it is never imported, vendored, or required by CI.
+- **Contracts are decided here, once.** Naming, version, license, extras matrix, auth scheme, and the remote contract are decided in Phase 0/Phase 1 and recorded as ADRs in `docs/adr/`. Later phases consume those decisions rather than re-litigating them.
+- **The remote client is a Phase 9 deliverable, not an inheritance.** It is built to the contract in §13, as an optional extra, and stays independent of the local kernel.
+- **The TypeScript client is optional.** When enabled, `clients/typescript/` publishes `@kendralabs/korchestrator-sdk` (Node 18+, minimal runtime dependencies) mirroring the remote surface only.
 
-- README typo `Kendra OrchestratorClient` (space) → `KOrchestratorClient`.
-- Python client documents `create_key`/`list_keys`/`revoke_key` and a `task_queue` param that **do not exist in code**; TS has the key methods but no `taskQueue`. Reconcile to explicit Python/TS parity.
-- Version drift: package `0.2.0`, `SDK_REFERENCE.md` `0.1.0-beta.1`, standalone spec `3.0.0`, master arch `v2.4.0`. Ship **one** authoritative version (§10.7); reconcile in Phase 0.
-- epic-9 uses `Authorization: Bearer` + `launch`/`launchSwarm` naming; the shipped client uses `X-API-Key` + `run`/`run_swarm`. Pick one contract per the live engine and document the parity matrix (Phase 9).
+> **Naming (record as ADR in Phase 0).** Flagship framework = Python package **`korchestrator`**. The thin HTTP client surface ships as the `korchestrator.remote` submodule behind the `[remote]` extra (TS twin: `@kendralabs/korchestrator-sdk`). If the client is ever split into its own distribution, it becomes **`korchestrator-client`**, versioned and packaged separately.
+
+### 2.10 Decisions to settle before coding (do not defer)
+
+Settle each of these in Phase 0/1 and record the outcome as an ADR. Leaving them open is what produces drift later.
+
+- **One authoritative version.** A single source of truth in `src/korchestrator/version.py`; package metadata, docs, TS manifest, changelog, and release tags all derive from it (§10.7). Start at `0.1.0`.
+- **One remote auth scheme.** Either `Authorization: Bearer <api-key|KIAM JWT>` or `X-API-Key: sk-...` — pick one, document it in §13.2, and implement it identically in the Python and TypeScript clients.
+- **One remote method vocabulary.** Either `launch`/`launchSwarm` or `run`/`run_swarm` across both clients. Do not ship one name in Python and another in TypeScript.
+- **Client naming and casing.** The client class is `KorchestratorClient` everywhere — in code, README, docstrings, and docs. No `KOrchestratorClient`, no `Kendra OrchestratorClient`.
+- **Python/TypeScript parity is explicit.** Every method exists in both clients or is documented as intentionally absent, in the parity matrix maintained from Phase 9.
+- **License.** Apache-2.0 / MIT / BSD / Proprietary — decided in Phase 0, applied to `LICENSE` and package metadata before the first release.
 
 ---
 
@@ -185,12 +198,12 @@ A developer can run the SDK with **just an OpenAI key and a local process**; as 
 An SDK lets developers integrate through code. Production-grade = **Easy to install · learn · document · extend · test · upgrade; Modular · Stable · Backward-compatible · Secure · Performant.** Every box below must be checked before release:
 
 - [ ] Clean, modular architecture with a stable, curated public API
-- [ ] Self-contained package (no internal-repo imports); own `pyproject.toml`; independently publishable
+- [ ] Self-contained package (no application-repo imports); own `pyproject.toml`; independently publishable
 - [ ] Semantic Versioning + documented compatibility/deprecation policy
 - [ ] Full type hints; typed responses; `py.typed`; `mypy --strict` clean; IDE autocomplete
 - [ ] Tests: unit, integration, e2e, regression, performance, smoke — with an enforced coverage floor
 - [ ] CI/CD: lint, format, type-check, security scan, build, version-validate, docs-build, publish (GitHub Actions release)
-- [ ] Docs: install, quickstart, tutorials, API reference, architecture, examples, migration, FAQ, troubleshooting
+- [ ] Docs: install, quickstart, tutorials, API reference, architecture, examples, migration, FAQ, troubleshooting, versioning, release, deployment
 - [ ] Secure config (no hardcoded secrets), input validation, output sanitization (PII/Shield)
 - [ ] Custom exception hierarchy; no raw internal exception leaks
 - [ ] Configurable logging + optional telemetry (OTel metrics/tracing)
@@ -212,42 +225,47 @@ An SDK lets developers integrate through code. Production-grade = **Easy to inst
 
 **Korchestrator-specific invariants:**
 
-- **`core` is framework-free.** The kernel must not import FastAPI/HTTP/Temporal/DSPy. (Already true for the engine's `core/runtime`, `core/state`, `agent_graph`, context-graph client — that is the extraction seam.)
+- **`core` is framework-free.** The kernel imports only `interfaces/`, `models/`, stdlib, and `pydantic`. Never FastAPI/HTTP/Temporal/DSPy. This is the constraint that keeps the SDK embeddable and fast to import.
 - **One implementation per concern.** Never a second router, PII redactor, error base, or config source. Variation = one interface + strategy.
-- **Determinism inside workflows.** No wall-clock/`random` in workflow-path code; use the runtime's clock; preserve Temporal sandbox constraints.
-- **Behavior-preserving.** Repackaging must not change what the engine does; prove with parity tests.
+- **Determinism inside workflows.** No wall-clock/`random` in workflow-path code; use the runtime's clock; preserve Temporal sandbox constraints so replay is exact.
+- **Test-defined behavior.** Each phase lands its behavior together with the tests that define it. A capability with no test is not delivered.
 
 ---
 
-## 5. Package Isolation & Scope Rules (hard boundaries)
+## 5. Repository Isolation & Scope Rules (hard boundaries)
 
 These make the golden rules (§0) enforceable:
 
-1. **The SDK package imports nothing from the repo.** No `from backend...`, `from apps...`, `from services...`, no sibling-package imports. If the SDK needs engine logic, **relocate a self-contained copy** into the SDK package (framework-free code lifts cleanly; contaminated code is re-implemented minimally). CI enforces this with an import-linter/grep gate: any `backend.`/`apps.`/`services.` import in `packages/korchestrator/src` **fails the build**.
-2. **Own dependency manifest.** `packages/korchestrator/pyproject.toml` declares its own deps: a tiny core (`pydantic` only) plus **optional extras** (§10.6). It never inherits the backend's `pyproject`.
-3. **Touch only the SDK package.** All work happens under `packages/korchestrator/` (and, for the TS client, `packages/korchestrator-client-ts/`). Do not modify `backend/`, `frontend/`, `apps/`, `services/`, `website/`, or root configs — except adding the package to the workspace member list and its own CI workflow file.
+1. **The SDK imports nothing from an application repository.** No `from backend...`, `from apps...`, `from services...`, and no dependency on an application package. If behavior is needed that exists elsewhere, implement the smallest required contract *here*. CI enforces this with an import-isolation gate (§15).
+2. **Own dependency manifest.** This repository's `pyproject.toml` declares the SDK's dependencies: a tiny core (`pydantic` only) plus **optional extras** (§10.6). It never inherits another project's manifest.
+3. **Only SDK concerns live here.** Source, tests, examples, docs, CI, and release configuration belong to this repository. Do not add frontend or backend application code, deployment manifests for a hosted service, or infrastructure-as-code for someone else's platform.
 4. **Dynamic, not hardcoded.** Runtime (local/Temporal), model gateway, router strategy, and persistence backend are all selected by config at runtime behind interfaces. No hardcoded endpoints, keys, models, or file paths anywhere in the package.
-5. **Independently releasable.** Because it is self-contained with its own manifest and CI, the package builds to a wheel/sdist and publishes on a version tag via GitHub Actions with **no dependency on the rest of the monorepo building**.
+5. **Independently buildable, releasable, and deployable.** Self-contained with its own manifest and CI, the SDK builds to a wheel/sdist (and a TypeScript package where enabled) and publishes on a version tag via GitHub Actions. No other repository needs to build, deploy, or even exist first.
 
 ---
 
-## 6. Engineering, Git & Commit Discipline (from the hardening standard)
+## 6. Engineering, Git & Commit Discipline
 
-Apply the repository's existing engineering standard to all SDK work:
+**Branching**
 
-**Branching & commits**
-- Work only on the dedicated SDK branch (`feature/korch-sdk`). **Never commit to `dev` or `main`.**
+- `main` — released state only; every commit on it corresponds to a tagged release.
+- `develop` — integration branch; phases merge here.
+- Work happens on short-lived branches off `develop`: `feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `chore/`, `security/` plus a concise slug (e.g. `feat/p2-pregel-kernel`).
+- **Never commit directly to `main` or `develop`.** Open a PR into `develop`; release PRs go `develop → main`.
+
+**Commits**
+
 - Commit **phase-wise or task-wise** — not one giant commit. Prefer one commit per coherent unit.
-- **Conventional-commit** messages, professional and descriptive, referencing the phase/story. Examples:
+- **Conventional-commit** messages, professional and descriptive, referencing the phase. Examples:
   - `feat(sdk): scaffold korchestrator package with pydantic-only core [P0]`
-  - `feat(sdk-core): lift framework-free Pregel kernel + reducers [P2]`
-  - `feat(sdk-routing): package v2.1 routers behind BaseRouter [P5]`
-  - `test(sdk): add parity tests vs engine pregel runner [P2]`
-- **No co-author trailers.** Each commit leaves the package **green** (build + tests pass).
+  - `feat(core): implement framework-free Pregel kernel + reducers [P2]`
+  - `feat(routing): add router strategies behind BaseRouter [P5]`
+  - `test(core): cover superstep activation and halting rules [P2]`
+- Each commit leaves the package **green** (build + tests pass).
 
-**Definition of Done per phase** — a phase is complete only when: all its tasks are done; all tests pass and behavior changes are covered by tests; `ruff` + `mypy --strict` are clean on the package; the phase's Validation and Completion Criteria pass; work is committed with professional messages; the §14 checklist row is checked.
+**Definition of Done per phase** — a phase is complete only when: all its tasks are done; all tests pass and behavior is covered by tests; `ruff` + `mypy --strict` are clean on the package; the phase's Validation and Completion Criteria pass; work is committed with professional messages and merged via PR; the §14 checklist row is checked.
 
-**ADR discipline** — record non-obvious decisions (naming, version, license, extras matrix, runtime split) as short ADRs in `packages/korchestrator/docs/adr/`. Any structural deviation from this spec needs an ADR + reviewer sign-off.
+**ADR discipline** — record non-obvious decisions (naming, version, license, extras matrix, runtime split, remote contract, external backend boundary) as short ADRs in `docs/adr/` with context, decision, alternatives, consequences, and rollback. Any structural deviation from this spec needs an ADR + reviewer sign-off.
 
 **Anti-patterns to reject in review (hard "no")** — a second copy of a concern (router/PII/errors/config); a framework import inside `core/`; a feature smeared across horizontal `models/`/`utils/` instead of one module; a God file (>~500 lines) or God function (>~50 lines); a sideways import between sibling SDK modules or a cycle; a raw `os.getenv`/hardcoded endpoint outside `config/`; **any import from `backend`/`apps`/`services`.**
 
@@ -255,79 +273,80 @@ Apply the repository's existing engineering standard to all SDK work:
 
 ## 7. Target SDK Package Structure (professional, publish-ready)
 
-The SDK is a **package under the monorepo** (`packages/`, per the hardening standard §6.5), self-contained, with an internal layout that follows the universal SDK standard mapped onto Korchestrator's real modules.
+The SDK is the primary and only product of this repository: a `src/`-layout Python package with a public API, a framework-free kernel, optional integrations, tests, documentation, and release tooling.
 
 ### 7.1 Layout
 
 ```text
-packages/korchestrator/                 the SDK / framework (Python) — self-contained, independently publishable
-├── src/
+korch-sdk/                              THIS repository — self-contained, independently publishable
+├── src/                                Python source root (src-layout: imports resolve from the install, not the CWD)
 │   └── korchestrator/
-│       ├── __init__.py                  PUBLIC API — the only surface users import (explicit __all__)
-│       ├── py.typed                     ships type information
-│       ├── version.py                   single source of truth for the version
-│       ├── config/                      typed Settings (arg > env > file > default); the ONLY place env is read
-│       ├── interfaces/                  ARI ports + protocols (the contracts)
-│       │   ├── identity.py              IIdentityProvider
-│       │   ├── sandbox.py               IExecutionSandbox
-│       │   ├── model_gateway.py         IModelGateway
-│       │   ├── runtime.py               IDurableRuntime (Temporal/local behind one port)
-│       │   ├── repository.py            GraphRepository / TenantStore protocols
-│       │   ├── router.py                BaseRouter protocol
-│       │   └── connector.py             AUBConnector / tool protocols
-│       ├── core/                        FRAMEWORK-FREE kernel (Pregel) — pydantic only
-│       │   ├── pregel.py                PregelRunner (run_superstep + synchronize)
-│       │   ├── graph.py                 AgentGraph, Node, Edge, topology builder
-│       │   └── reducers.py              reducer_append / reducer_merge_dict / reducer_last_value
-│       ├── models/                      Pydantic domain models (DTOs)
-│       │   ├── state.py                 AgentState, StateUpdate, Message, Performative, RunStatus
-│       │   ├── agent.py                 AgentConfig, AgentPersona, AgentDescriptor
-│       │   ├── plan.py                  ExecutionPlan, TaskDecomposition (compiled-signature plan)
-│       │   └── routing.py               ModelCard, TaskSemantics, RoutingResult, RoutingContext
-│       ├── agents/                      L2 Cognitive — DSPy intelligence (extra: [dspy])
-│       │   ├── worker.py                WorkerAgent (TypedPredictor + ReAct loop)
-│       │   ├── architect.py             ArchitectAgent (meta-agent: intent + plan)
-│       │   ├── signatures.py            DSPy Signatures (compiled signatures)
-│       │   └── base.py                  Agent base + think(state)->StateUpdate contract
-│       ├── taxonomy/                    intent/difficulty classification + agent descriptors
-│       ├── routing/                     L2 model routing v2.1 (strategies behind BaseRouter)
-│       ├── runtime/                     L1 durability adapters implementing IDurableRuntime
-│       │   ├── local_runtime.py         in-process (no Temporal) — dev/embed default
-│       │   └── temporal_runtime.py      Temporal adapter (extra: [temporal])
-│       ├── context/                     L3 Context Compiler + MVC + pruning/summarization
-│       ├── persistence/                 L3 Context Graph client + backends (in-memory/mock/neo4j/pg)
-│       ├── providers/                   default ARI implementations
+│       ├── __init__.py                 PUBLIC API — the only surface users import (explicit __all__)
+│       ├── py.typed                    ships type information
+│       ├── version.py                  single source of truth for the version
+│       ├── config/                     typed Settings (arg > env > file > default); the ONLY place env is read
+│       ├── interfaces/                 ARI ports + protocols (the contracts)
+│       │   ├── identity.py             IIdentityProvider
+│       │   ├── sandbox.py              IExecutionSandbox
+│       │   ├── model_gateway.py        IModelGateway
+│       │   ├── runtime.py              IDurableRuntime (Temporal/local behind one port)
+│       │   ├── repository.py           GraphRepository / TenantStore protocols
+│       │   ├── router.py               BaseRouter protocol
+│       │   └── connector.py            AUBConnector / tool protocols
+│       ├── core/                       FRAMEWORK-FREE kernel (Pregel) — pydantic only
+│       │   ├── pregel.py               PregelRunner (run_superstep + synchronize)
+│       │   ├── graph.py                AgentGraph, Node, Edge, topology builder
+│       │   └── reducers.py             reducer_append / reducer_merge_dict / reducer_last_value
+│       ├── models/                     Pydantic domain models (DTOs)
+│       │   ├── state.py                AgentState, StateUpdate, Message, Performative, RunStatus
+│       │   ├── agent.py                AgentConfig, AgentPersona, AgentDescriptor
+│       │   ├── plan.py                 ExecutionPlan, TaskDecomposition (compiled-signature plan)
+│       │   └── routing.py              ModelCard, TaskSemantics, RoutingResult, RoutingContext
+│       ├── agents/                     L2 Cognitive — DSPy intelligence (extra: [dspy])
+│       │   ├── worker.py               WorkerAgent (TypedPredictor + ReAct loop)
+│       │   ├── architect.py            ArchitectAgent (meta-agent: intent + plan)
+│       │   ├── signatures.py           DSPy Signatures (compiled signatures)
+│       │   └── base.py                 Agent base + think(state)->StateUpdate contract
+│       ├── taxonomy/                   intent/difficulty classification + agent descriptors
+│       ├── routing/                    L2 model routing (strategies behind BaseRouter)
+│       ├── runtime/                    L1 durability adapters implementing IDurableRuntime
+│       │   ├── local_runtime.py        in-process (no Temporal) — dev/embed default
+│       │   └── temporal_runtime.py     Temporal adapter (extra: [temporal])
+│       ├── context/                    L3 Context Compiler + MVC + pruning/summarization
+│       ├── persistence/                L3 Context Graph client + backends (in-memory/mock/neo4j/pg)
+│       ├── providers/                  default ARI implementations
 │       │   ├── identity_local.py · sandbox_local.py · gateway_openai.py · mock_lm.py
-│       ├── tools/                       L4 Agent Utility Bridge (AUB)
+│       ├── tools/                      L4 Agent Utility Bridge (AUB)
 │       │   ├── bridge.py · registry.py · connectors/ (base + search + file_system)
-│       ├── mcp/                         L4 MCP client + tool registry
-│       ├── a2a/                         A2A typed message passing / handoff transformer
-│       ├── governance/                  L5 trust scoring, HITL, policy
-│       ├── security/                    L5 Shield / PII redaction, secret handling, sanitization
-│       ├── events/                      streaming / AG-UI publisher (transport-agnostic)
-│       ├── clients/                     remote client (korchestrator.remote) (extra: [remote])
-│       ├── services/                    high-level façade (Korch / Swarm / Agent builders)
-│       ├── serializers/                 object<->JSON/dict/YAML (version-tagged)
-│       ├── validators/                  input/config/response/runtime validation
-│       ├── telemetry/                   optional OTel metrics + tracing (extra: [otel])
-│       ├── logging/                     namespaced, disable-able logging (no root-logger mutation)
-│       ├── exceptions/                  custom exception hierarchy
-│       ├── types/                       shared typing/Protocols/TypedDicts
-│       └── constants/                   defaults, enums, error codes
+│       ├── mcp/                        L4 MCP client + tool registry
+│       ├── a2a/                        A2A typed message passing / handoff transformer
+│       ├── governance/                 L5 trust scoring, HITL, policy
+│       ├── security/                   L5 Shield / PII redaction, secret handling, sanitization
+│       ├── events/                     streaming / AG-UI publisher (transport-agnostic)
+│       ├── clients/                    remote client (korchestrator.remote) (extra: [remote])
+│       ├── services/                   high-level façade (Korch / Swarm / Agent builders)
+│       ├── serializers/                object<->JSON/dict/YAML (version-tagged)
+│       ├── validators/                 input/config/response/runtime validation
+│       ├── telemetry/                  optional OTel metrics + tracing (extra: [otel])
+│       ├── logging/                    namespaced, disable-able logging (no root-logger mutation)
+│       ├── exceptions/                 custom exception hierarchy
+│       ├── types/                      shared typing/Protocols/TypedDicts
+│       └── constants/                  defaults, enums, error codes
+├── clients/typescript/                 optional TS twin — @kendralabs/korchestrator-sdk (remote surface only)
 ├── tests/                              unit / integration / e2e / regression / smoke
 ├── examples/                           executable examples (local + remote)
-├── docs/                               SDK docs source + docs/adr/
+├── docs/                               documentation source + docs/adr/
 ├── scripts/                            build/release/validation scripts
 ├── benchmarks/                         performance suites
-├── .github/workflows/                  release.yml (build+publish on tag), ci.yml
-├── pyproject.toml                      OWN manifest — pydantic core + optional extras
+├── .github/workflows/                  ci.yml · release.yml (publish on v* tag) · docs.yml
+├── pyproject.toml                      authoritative Python manifest — pydantic core + optional extras
 ├── README.md · LICENSE · CHANGELOG.md · CONTRIBUTING.md
 ├── CODE_OF_CONDUCT.md · SECURITY.md · MANIFEST.in
 ├── .gitignore · .editorconfig · .pre-commit-config.yaml
-└── mkdocs.yml                          (or feed the existing website/ Docusaurus site)
+└── mkdocs.yml                          documentation site build configuration
 ```
 
-**TypeScript client** lives at `packages/korchestrator-client-ts/` (`@kendralabs/korchestrator-sdk`), mirroring the remote surface only, with dual CJS/ESM build and its own release workflow (§10.8, Phase 9).
+**TypeScript client.** `clients/typescript/` publishes `@kendralabs/korchestrator-sdk`, mirroring the **remote surface only** (never the local kernel), with a dual CJS/ESM build and its own release job (§10.8, Phase 9). It lives in this repository but is versioned and published as a separate package.
 
 ### 7.2 Layering & dependency rule (hard "no" in review)
 
@@ -342,7 +361,7 @@ config, exceptions, logging, telemetry, serializers, validators, security → le
 - `core/` imports only `interfaces/` + `models/` + stdlib + `pydantic`. **No** FastAPI/HTTP/Temporal/DSPy.
 - `agents/` may import `dspy`; `runtime/temporal_runtime.py` may import `temporalio` — both **optional extras**, lazy-imported.
 - No sideways imports between sibling feature folders; communicate via `interfaces`/`models`.
-- **No import of any in-repo package** (§5).
+- **No import from any application repository** (§5).
 
 ---
 
@@ -376,11 +395,13 @@ from korchestrator.remote import KorchestratorClient
 result = KorchestratorClient("https://engine.example.com", api_key="sk-...").run_and_wait("...")
 ```
 
+Tiers 1–3 run entirely inside the installed package. Tier 4 is the **only** tier that talks to an external service, it is optional (`[remote]` extra), and nothing in Tiers 1–3 depends on it.
+
 ---
 
 ## 9. Cross-Cutting Standards (apply to every phase)
 
-- **9.1 Configuration** — precedence **arg > env > `.env` > default**; one typed `Settings` (`pydantic-settings`) is the only place env is read; map every engine env var (§13.5); zero-config local default = MockLM.
+- **9.1 Configuration** — precedence **arg > env > `.env` > default**; one typed `Settings` (`pydantic-settings`) is the only place env is read; support every variable in §13.5; zero-config local default = MockLM.
 - **9.2 Type safety** — full hints, typed responses, `py.typed`, `mypy --strict` clean.
 - **9.3 Error handling** — one hierarchy rooted at `KorchError`: `AuthError`, `ValidationError`, `NetworkError`, `ProviderError`, `TimeoutError`, `RateLimitError`, `QuotaExceededError`, `RoutingError`, `GovernanceHaltError`, `RunFailedError`, `RunTimeoutError`, `ToolError` (codes `TOOL_NOT_FOUND`/`TOOL_ACCESS_DENIED`/`NOT_IMPLEMENTED`). Never leak a raw `temporalio`/`httpx`/`dspy` exception — wrap it.
 - **9.4 Logging** — namespaced `korchestrator` logger, off by default, fully disable-able; never mutate the root logger; no `print()`.
@@ -394,17 +415,52 @@ result = KorchestratorClient("https://engine.example.com", api_key="sk-...").run
 
 ---
 
-## 10. Release Engineering Standards
+## 10. Release, Versioning & Deployment Standards
 
-- **10.1 Testing** — unit, integration, e2e, regression, performance, smoke; coverage floor enforced (baseline then ratchet). MockLM makes the full agent path runnable in CI with no network.
-- **10.2 Documentation** — install, quickstart, tutorials, API reference (autogenerated), architecture, examples, migration, FAQ, troubleshooting. Feed the existing `website/` Docusaurus site with a new SDK section.
+- **10.1 Testing** — unit, integration, e2e, regression, performance, smoke; coverage floor enforced (baseline then ratchet). MockLM makes the full agent path runnable in CI with no network and no API keys.
+- **10.2 Documentation** — install, quickstart, tutorials, API reference (autogenerated), architecture, examples, migration, FAQ, troubleshooting, versioning, release, and deployment. Documentation is **owned, built, and published from this repository** (MkDocs → GitHub Pages, or the configured docs host). No external website is required.
 - **10.3 Examples** — executable-without-modification for: local one-liner, typed swarm, custom agent, custom tool/connector, custom router, MCP server, remote client, HITL pause/resume, streaming.
-- **10.4 CI/CD** — lint (ruff), format, type-check (mypy), test+coverage, security scan (bandit/pip-audit/gitleaks), build, version-validate, docs-build, publish.
+- **10.4 CI/CD** — lint (ruff), format, type-check (mypy), test+coverage, security scan (bandit/pip-audit/gitleaks), import-isolation gate, build, version-validate, clean-environment install smoke test, docs-build, publish, docs deploy.
 - **10.5 Code quality** — Ruff, ruff-format, MyPy, Pytest, Coverage, pre-commit.
-- **10.6 Dependency management** — core depends only on `pydantic`. Extras: `[dspy]` (agents), `[temporal]` (durable runtime), `[routing]` (semantic/embedding routing), `[mcp]` (MCP tools), `[remote]` (HTTP client), `[otel]` (telemetry), `[all]`. Pin appropriately; minimize transitive deps.
-- **10.7 Versioning & compatibility** — SemVer, single source in `version.py`, templated everywhere; reconcile the §2.10 drift at Phase 0; never break public API without a major bump; deprecate ≥1 minor before removal; ship migration guides; maintain `CHANGELOG.md`.
-- **10.8 Packaging & publishing (GitHub Actions release)** — build wheel + sdist; ship `py.typed`; **publish on a `v*` version tag** via `.github/workflows/release.yml` (Python → internal registry / PyPI; TS → npm with `NODE_AUTH_TOKEN`, dual CJS/ESM via `dist/cjs` + `dist/esm` and `package.json` `exports`). SBOM + signed artifacts. Each release: version, changelog, migration notes, release notes, tested build, published docs.
-- **10.9 OSS-readiness** — LICENSE (decide Apache-2.0/MIT/BSD vs Proprietary), README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY, issue/PR templates, GitHub Actions.
+- **10.6 Dependency management** — core depends only on `pydantic`. Extras: `[dspy]` (agents), `[temporal]` (durable runtime), `[routing]` (semantic/embedding routing), `[mcp]` (MCP tools), `[remote]` (HTTP client), `[otel]` (telemetry), `[all]`. Pin appropriately; minimize transitive deps; every dependency must be necessary, maintained, licensed, and removable.
+
+### 10.7 Versioning & compatibility
+
+- **SemVer (`MAJOR.MINOR.PATCH`)** for the Python SDK and, independently, for the TypeScript client.
+- **One authoritative version** lives in `src/korchestrator/version.py`. `pyproject.toml`, `__version__`, docs, the TS package manifest, and the release tag all derive from it. CI fails if any of them disagree.
+- **Start at `0.1.0`.** While `0.x`, a **minor** bump may contain breaking changes — this must be stated plainly in the README and CHANGELOG. From `1.0.0` onward the full compatibility policy below applies without exception.
+- **Never break the public API (§8) without a major bump** plus a migration guide.
+- **Deprecation policy** — a deprecated public name emits a `DeprecationWarning`, stays for at least one minor release, and documents its replacement, migration path, and removal version before it is removed.
+- **Compatibility surface** — the public API is `korchestrator.__all__`, the ARI ports, the documented models, and the remote contract in §13. Anything else is internal and may change in any release.
+- **`CHANGELOG.md`** follows Keep a Changelog with ISO dates; every user-visible change lands with its changelog entry in the same PR.
+
+### 10.8 Release process
+
+1. Open a release PR into `main` with the version bump in `version.py` and a reviewed `CHANGELOG.md` entry.
+2. Full CI must be green: lint, types, tests + coverage floor, security scan, isolation gate, build, version-validate, docs-build.
+3. Merge, then create a signed **`vX.Y.Z`** tag on `main`.
+4. The tag triggers `release.yml`: build wheel + sdist (and CJS+ESM for the TS client), smoke-test the built artifact in a clean environment, then publish (Python → configured registry/PyPI; TypeScript → npm).
+5. Publish GitHub release notes stating supported Python/Node versions, dependency changes, public API changes, migrations, and known limitations.
+6. Deploy the documentation for the released version.
+
+Releases are **immutable**: a published version is never overwritten. A bad release is superseded by a new patch version, and yanked at the registry if it is harmful.
+
+### 10.9 Deployment & consumption
+
+The SDK is **deployed by publishing package artifacts**, not by running a service. There is no server, container, or environment to operate in this repository.
+
+- **Consumers install it**: `pip install korchestrator` (plus the extras they need), pinned to a compatible range. TypeScript consumers `npm install @kendralabs/korchestrator-sdk`.
+- **What "deployment" means here**: (a) immutable package artifacts on the configured registry, (b) the documentation site published from `docs/`, (c) the git tag and release notes.
+- **Infrastructure the SDK may *connect to*** (Temporal, Postgres/Neo4j, a model gateway, MCP servers) is provisioned and operated by the consumer, selected by config at runtime (§5.4), and always optional — the default install runs with none of it.
+- **A hosted backend is out of scope.** If a service later depends on the published SDK, its hosting, authentication, tenancy, scaling, and infrastructure live in that service's own repository (Phase 13). Nothing about its deployment belongs here.
+
+### 10.10 Artifact integrity
+
+Ship `py.typed` in the wheel; generate an SBOM per release; sign artifacts where the registry supports it; retain build provenance and checksums; verify a clean-environment install of the built artifact (not the source tree) before marking a release complete.
+
+### 10.11 OSS-readiness
+
+LICENSE (decision per §2.10), README, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY (including the vulnerability-reporting channel and supported-version window), issue/PR templates, and GitHub Actions.
 
 ---
 
@@ -422,14 +478,14 @@ Requirements → Architecture → Public API → Core Modules → Internal Imple
 
 ## 12. Build Phases
 
-> Each phase: **Objective · Build · Public surface · Validation · Completion criteria.** Execute in order. Every change is behavior-preserving over the engine and confined to the SDK package.
+> Each phase: **Objective · Build · Public surface · Validation · Completion criteria.** Execute in order. Every phase is confined to this repository and lands with the tests that define its behavior.
 
 ### PHASE 0 — Foundations, Scope Freeze & Scaffolding
-**Objective:** Stand up the self-contained package skeleton; decide naming/version/license/extras; put the quality + isolation net in place.
-**Build:** (1) Create `packages/korchestrator/` with the §7.1 layout (stub modules + `__init__.py`), its **own** `pyproject.toml` (name `korchestrator`, `hatchling`, `requires-python >=3.10`, core dep `pydantic` only, extras per §10.6), `version.py`, `py.typed`. (2) OSS-readiness files + `.pre-commit-config.yaml`. (3) ADRs: naming, one authoritative version, license, extras matrix. (4) CI: ruff, `mypy --strict` on the package, pytest+coverage floor, build check, **and the import-isolation gate** (fail on any `backend.`/`apps.`/`services.` import). (5) `.github/workflows/release.yml` skeleton (publish on `v*` tag).
+**Objective:** Stand up the self-contained repository skeleton; settle naming/version/license/extras; put the quality + isolation net in place.
+**Build:** (1) Create the §7.1 layout (`src/korchestrator/` with stub modules + `__init__.py`), the **authoritative** `pyproject.toml` (name `korchestrator`, `hatchling`, `requires-python >=3.10`, core dep `pydantic` only, extras per §10.6), `version.py` (`0.1.0`), and `py.typed`. (2) OSS-readiness files + `.pre-commit-config.yaml`. (3) ADRs for every §2.10 decision: naming, single authoritative version, license, extras matrix, remote contract, external-backend boundary. (4) CI (`ci.yml`): ruff, `mypy --strict`, pytest + coverage floor, build check, version-validate, and the **import-isolation gate**. (5) `release.yml` skeleton (publish on `v*` tag) and `docs.yml` (build + deploy documentation).
 **Public surface:** `__version__`.
-**Validation:** `pip install -e packages/korchestrator`; `import korchestrator`; CI green including the isolation gate.
-**Completion:** Package builds standalone; naming/version/license/extras ADR'd; CI + isolation gate active; version drift reconciled.
+**Validation:** `pip install -e .`; `import korchestrator`; CI green including the isolation gate and version-validate.
+**Completion:** Package builds standalone; all §2.10 decisions ADR'd; CI + isolation gate active; version single-sourced.
 
 ### PHASE 1 — Public API & Interface Contracts (ARI + Protocols)
 **Objective:** Design the public surface and contracts first (API-first).
@@ -439,99 +495,99 @@ Requirements → Architecture → Public API → Core Modules → Internal Imple
 **Completion:** Every port/protocol defined + documented; façade API frozen; exception hierarchy final. (Anti-rework crux — no contract change after this without an ADR.)
 
 ### PHASE 2 — Core Execution Kernel (Pregel, framework-free)
-**Objective:** Relocate the deterministic BSP engine as the dependency-light heart (pydantic only).
-**Build:** (1) Re-implement (lift the framework-free code from `backend/core/state` + `backend/core/runtime`) into `models/state.py` (`AgentState`, `StateUpdate`, `Message`, `Performative`, `RunStatus`), `core/reducers.py`, `core/pregel.py` (`PregelRunner.run_superstep` via `asyncio.gather` + `synchronize`), `core/graph.py` (`AgentGraph`, `Node`, `Edge`, topology builder). Assert no framework/`backend.` imports remain. (2) Parameterize the runner to take an injected `IModelGateway`/agent-callable (DIP). Preserve activation rules (step 0 = all nodes; later = nodes with inbox messages; halt on `max_supersteps` default 10 or `halted=True`).
+**Objective:** Build the deterministic BSP engine as the dependency-light heart (pydantic only).
+**Build:** (1) `models/state.py` (`AgentState`, `StateUpdate`, `Message`, `Performative`, `RunStatus`), `core/reducers.py` (`reducer_append` / `reducer_merge_dict` / `reducer_last_value`), `core/pregel.py` (`PregelRunner.run_superstep` via `asyncio.gather` + `synchronize`), `core/graph.py` (`AgentGraph`, `Node`, `Edge`, topology builder). (2) The runner takes an injected `IModelGateway`/agent-callable (DIP) — it never constructs its own. (3) Activation rules: superstep 0 activates all nodes; later supersteps activate only nodes with inbox messages; halt on `max_supersteps` (default 10) or `halted=True`. (4) Reducers are associative and order-independent so the barrier merge is deterministic.
 **Public surface:** `korchestrator.core`, `korchestrator.models`.
-**Validation:** Port the engine's Pregel unit tests to run against the package with **only `pydantic`** installed; supersteps/reducers/routing/halting behave identically (parity test).
-**Completion:** Kernel runs a superstep with only pydantic; behavior matches the engine on ported tests.
+**Validation:** Kernel test suite runs with **only `pydantic`** installed and covers: activation per superstep, each reducer, message routing along edges, both halting conditions, and identical results across repeated runs of the same graph + seed.
+**Completion:** Kernel runs a superstep with only pydantic installed; determinism and halting are test-locked.
 
 ### PHASE 3 — Runtime Adapters (Local + Durable behind IDurableRuntime)
 **Objective:** Run locally with no infra AND durably on Temporal — selected by config.
-**Build:** (1) `runtime/local_runtime.py` — in-process `IDurableRuntime` driving the Pregel loop (no Temporal import). Default for embed/dev/CI. (2) `runtime/temporal_runtime.py` — re-implement the Temporal workflow/activity adapter behind `IDurableRuntime`, preserving determinism (`workflow.now()`, `patched()` gates), retry policy, HITL signals (pause/resume up to 24h), activity boundary. `temporalio` imported only here (extra `[temporal]`). (3) Config selects runtime (`KORCH_RUNTIME=local|temporal`).
+**Build:** (1) `runtime/local_runtime.py` — in-process `IDurableRuntime` driving the Pregel loop (no Temporal import). Default for embed/dev/CI. (2) `runtime/temporal_runtime.py` — Temporal workflow/activity adapter behind `IDurableRuntime`, preserving determinism (`workflow.now()`, `patched()` gates), retry policy, HITL signals (pause/resume up to 24h), and the activity boundary. `temporalio` is imported **only** here (extra `[temporal]`). (3) Config selects the runtime (`KORCH_RUNTIME=local|temporal`).
 **Public surface:** `Korch(runtime=...)`/Settings; `IDurableRuntime` for custom runtimes.
-**Validation:** Same swarm completes on both runtimes with equivalent `RunResult`; Temporal replay test passes; forced mid-run crash resumes from last superstep.
-**Completion:** Local runtime works zero-infra; Temporal preserves durability/HITL/determinism; runtime swappable by config.
+**Validation:** The same swarm completes on both runtimes with an equivalent `RunResult`; the Temporal replay test passes; a forced mid-run crash resumes from the last superstep with no duplicated work.
+**Completion:** Local runtime works zero-infra; Temporal preserves durability/HITL/determinism; runtime swappable by config alone.
 
 ### PHASE 4 — Cognitive Layer (Agents, Compiled Signatures, Taxonomy, Model Gateway)
-**Objective:** Package the reasoning layer (L2) — meta-agents, workers, compiled signatures, intent taxonomy, model providers.
-**Build:** (1) `agents/worker.py` (`WorkerAgent`: `TypedPredictor` + ReAct loop ≤3, per-agent `dspy.context`), `agents/architect.py` (`ArchitectAgent` meta-agent: intent+difficulty → `ExecutionPlan`), `agents/signatures.py` (compiled signatures), `agents/base.py` (`think(state)->StateUpdate`, `is_complete`). Extra `[dspy]`. (2) `taxonomy/` — intent/difficulty classification + agent descriptors. (3) `providers/`: `gateway_openai.py` (default `IModelGateway`), `mock_lm.py` (deterministic MockLM), `identity_local.py`, `sandbox_local.py`; `get_lm(model_name)` factory.
+**Objective:** Build the reasoning layer (L2) — meta-agents, workers, compiled signatures, intent taxonomy, model providers.
+**Build:** (1) `agents/worker.py` (`WorkerAgent`: `TypedPredictor` + ReAct loop ≤3, per-agent `dspy.context`), `agents/architect.py` (`ArchitectAgent` meta-agent: intent + difficulty → `ExecutionPlan`), `agents/signatures.py` (compiled signatures), `agents/base.py` (`think(state)->StateUpdate`, `is_complete`). Extra `[dspy]`, lazy-imported. (2) `taxonomy/` — intent/difficulty classification + agent descriptors. (3) `providers/`: `gateway_openai.py` (default `IModelGateway`), `mock_lm.py` (deterministic MockLM), `identity_local.py`, `sandbox_local.py`; `get_lm(model_name)` factory.
 **Public surface:** `Agent`, `WorkerAgent`, `ArchitectAgent`, `Signature` base, taxonomy classifier, `IModelGateway` + providers.
-**Validation:** A custom agent (new signature + `think`) runs under MockLM; heterogeneous per-agent models honored in one superstep; ported intelligence tests pass.
-**Completion:** Agents run under MockLM with no network; real models via gateway; adding an agent needs no core edit.
+**Validation:** A custom agent (new signature + `think`) runs end-to-end under MockLM with no network; heterogeneous per-agent models are honored within one superstep; the base install (no `[dspy]`) still imports cleanly.
+**Completion:** Agents run under MockLM offline; real models work via the gateway; adding an agent requires no core edit.
 
-### PHASE 5 — Model Routing Subsystem (v2.1)
-**Objective:** Per-agent model selection as strategies behind one `BaseRouter`, simplest path default.
-**Build:** `routing/` with models (`ModelCard`, `TaskSemantics`, `RoutingResult`, `RoutingContext`), `get_router()` factory, and strategies Explicit / Semantic / Algorithmic / Composite / UserFunction + legacy Financial fallback. Semantic/embedding + ModelCard-DB are opt-in (extra `[routing]`); Explicit + one fallback is default. Config: `ROUTING_STRATEGY`, `AGENT_MODEL_MAP`, `ROUTING_WEIGHTS`, `ROUTING_PRIORITY_ORDER`, `EMBEDDING_PROVIDER`, `MODELCARD_*`. Cache router/embedding singletons.
+### PHASE 5 — Model Routing Subsystem
+**Objective:** Per-agent model selection as strategies behind one `BaseRouter`, with the simplest path as the default.
+**Build:** `routing/` with models (`ModelCard`, `TaskSemantics`, `RoutingResult`, `RoutingContext`), a `get_router()` factory, and strategies Explicit / Semantic / Algorithmic / Composite / UserFunction plus a documented fallback. Semantic/embedding routing and the ModelCard DB are opt-in (extra `[routing]`); **Explicit + one fallback is the default**. Config: `ROUTING_STRATEGY`, `AGENT_MODEL_MAP`, `ROUTING_WEIGHTS`, `ROUTING_PRIORITY_ORDER`, `EMBEDDING_PROVIDER`, `MODELCARD_*`. Cache router/embedding singletons.
 **Public surface:** `get_router()`, `BaseRouter`, routing models.
-**Validation:** Explicit mapping picks the named model; custom `BaseRouter` plugs in via config; cost influences algorithmic ranking; embedding cache expires.
-**Completion:** Routing works on the default (no-embedding) install; advanced strategies load only with the extra.
+**Validation:** Explicit mapping picks the named model; a custom `BaseRouter` plugs in via config without editing the package; cost influences algorithmic ranking; the embedding cache expires as configured.
+**Completion:** Routing works on the default (no-embedding) install; advanced strategies load only with the `[routing]` extra.
 
 ### PHASE 6 — Integration & Observability (AUB, MCP, A2A, Streaming, Context Compiler)
-**Objective:** Package L4 tool integration, A2A messaging, real-time streaming, and the L3 context compiler/MVC.
-**Build:** (1) `tools/` AUB — `bridge.py` (`invoke_tool`, schema validation, timeout, rate limiting, OTel spans, Shield gate), `registry.py` (`ConnectorRegistry` + plugin loading), `connectors/` (base + search + file_system, MockSearch fallback). Preserve `TOOL_ACCESS_DENIED`/`TOOL_NOT_FOUND`. (2) `mcp/` — MCP client + hierarchical tool registry. (3) `a2a/` — typed directed messages / `HandoffTransformer` (reads `messages`, passes structured findings). (4) `context/` — Context Compiler + **Minimum Viable Context** extraction + pruning/summarization (off-loop, graceful degradation). (5) `events/` — streaming / AG-UI publisher (transport-agnostic; SSE-capable). (6) Extension framework: `middleware`/`events` registration (pre/post-superstep, pre/post-tool, on-message, on-governance-pause).
+**Objective:** Build L4 tool integration, A2A messaging, real-time streaming, and the L3 context compiler/MVC.
+**Build:** (1) `tools/` AUB — `bridge.py` (`invoke_tool`, schema validation, timeout, rate limiting, OTel spans, Shield gate), `registry.py` (`ConnectorRegistry` + plugin loading), `connectors/` (base + search + file_system, MockSearch fallback). Emit `TOOL_ACCESS_DENIED`/`TOOL_NOT_FOUND` per §9.3. (2) `mcp/` — MCP client + hierarchical tool registry. (3) `a2a/` — typed directed messages / `HandoffTransformer` (reads `messages`, passes structured findings). (4) `context/` — Context Compiler + **Minimum Viable Context** extraction + pruning/summarization (off the hot loop, degrades gracefully). (5) `events/` — streaming / AG-UI publisher, transport-agnostic and SSE-capable (the SDK emits events; it does not serve HTTP). (6) Extension framework: `middleware`/`events` registration (pre/post-superstep, pre/post-tool, on-message, on-governance-pause).
 **Public surface:** `AUBConnector`, `register_tool`/`register_connector`, MCP client, `register_middleware`, `on(event, handler)`, streaming subscriber, context compiler.
-**Validation:** A custom connector is invokable by an agent; an MCP tool loads; a middleware/hook fires; MVC reduces token usage; Shield denies an over-privileged call.
+**Validation:** A custom connector is invokable by an agent; an MCP tool loads; a middleware/hook fires in the documented order; MVC measurably reduces context size; Shield denies an over-privileged call.
 **Completion:** Adding a tool/MCP server/hook needs no core edit; streaming + context compilation work.
 
 ### PHASE 7 — Governance, Security & Context Graph (Zero-Trust)
-**Objective:** Package L5 governance + the bitemporal Context Graph (L3).
-**Build:** (1) `governance/` — trust scoring (`ControlTowerTelemetry`), `check_governance`/intervention → runtime pause signal, HITL resume/modify/cancel, per-agent `hitl_threshold` with global `GOVERNANCE_TRUST_THRESHOLD` fallback, policy engine + audit. (2) `security/` Shield — the single consolidated PII redactor (PAN+Luhn, IBAN, intl phone, SSN, secrets), fail-closed for high-sensitivity flows. (3) `persistence/` — `ContextGraphClient` (bitemporal `DecisionNode`/`EventNode`, valid-time/transaction-time, confidence, provenance, event sourcing) behind `GraphRepository`; backends in-memory (default), mock, Neo4j/Postgres (extras). `PERSISTENCE_BACKEND=none` runs fully standalone.
+**Objective:** Build L5 governance + the bitemporal Context Graph (L3).
+**Build:** (1) `governance/` — trust scoring (`ControlTowerTelemetry`), `check_governance`/intervention → runtime pause signal, HITL resume/modify/cancel, per-agent `hitl_threshold` with a global `GOVERNANCE_TRUST_THRESHOLD` fallback, policy engine + audit log. (2) `security/` Shield — the single consolidated PII redactor (PAN + Luhn, IBAN, international phone, SSN, secrets), fail-closed for high-sensitivity flows. (3) `persistence/` — `ContextGraphClient` (bitemporal `DecisionNode`/`EventNode`, valid-time/transaction-time, confidence, provenance, event sourcing) behind `GraphRepository`; backends in-memory (default), mock, Neo4j/Postgres (extras). `PERSISTENCE_BACKEND=none` runs fully standalone.
 **Public surface:** governance config on `Korch`/`Swarm`, HITL controls (`pause`/`resume`/`cancel`/`edit_resume`), `ContextGraphClient`, `GraphRepository`.
-**Validation:** Run auto-pauses below threshold and resumes on signal; PII redaction covers required formats and fails closed; context-graph queries tenant-scoped + time-travel; standalone (no KCG) run completes.
-**Completion:** Governance/HITL, Shield, Context Graph usable from the SDK; standalone default needs no external services.
+**Validation:** A run auto-pauses below threshold and resumes on signal; PII redaction covers every required format and fails closed; context-graph queries are tenant-scoped and support time-travel; a fully standalone run (no external graph store) completes.
+**Completion:** Governance/HITL, Shield, and Context Graph are usable from the SDK; the default install needs no external services.
 
 ### PHASE 8 — Config, Telemetry, Logging, Errors, Serialization, Validation
 **Objective:** Finalize the §9 cross-cutting foundations as first-class, tested modules.
-**Build:** `config/` (one typed `Settings`, precedence arg>env>file>default, every engine env var, zero-config MockLM default); `logging/` (namespaced, disable-able); `telemetry/` (optional OTel, zero-cost off, extra `[otel]`); `exceptions/` (finalized, wrapping all internal errors); `serializers/` (version-tagged round-trip); `validators/`; `security/` secret handling; `constants/` (error codes/defaults).
+**Build:** `config/` (one typed `Settings`, precedence arg > env > file > default, every §13.5 variable, zero-config MockLM default); `logging/` (namespaced, disable-able); `telemetry/` (optional OTel, zero-cost when off, extra `[otel]`); `exceptions/` (finalized, wrapping all internal errors); `serializers/` (version-tagged round-trip); `validators/`; `security/` secret handling; `constants/` (error codes/defaults).
 **Public surface:** `Settings`/`configure()`, `enable_logging()`, exceptions, `to_json`/`from_json`.
-**Validation:** env read only inside `config/`; logging fully disable-able; every internal exception surfaces as `KorchError`; serialization round-trips stable across a version bump.
+**Validation:** env is read only inside `config/` (test-enforced); logging is fully disable-able; every internal exception surfaces as a `KorchError` subclass; serialization round-trips stay stable across a version bump.
 **Completion:** All §9 standards implemented + tested; no raw internal exception escapes; config single-sourced.
 
 ### PHASE 9 — Client SDKs (remote HTTP + TypeScript parity)
-**Objective:** Fold the thin client into the SDK as `korchestrator.remote`, close its gaps, and ship the first-class TypeScript SDK (epic E9).
-**Build:** (1) Relocate the Python thin client to `clients/`, re-export as `korchestrator.remote.KorchestratorClient` (extra `[remote]`). Honor the remote contract in §13 (auth header/scopes, run lifecycle, status normalization, webhook). Fix documented-but-missing methods (`create_key`/`list_keys`/`revoke_key`, `task_queue`); add wrappers for unwrapped endpoints (SSE `stream`, `edit-resume`, raw-`AgentState` submit, `tools`, `models`, `swarm-templates`). (2) TypeScript SDK per **epic-9-sdk.md**: `KorchestratorClient` with `baseUrl`, `apiKey?`/`accessToken?` (API key **or** KIAM JWT, mutually exclusive, `Authorization: Bearer`), `tenantId?`, `timeout` (30s), `retries` (3, exp backoff; 429+503 retry, 4xx never); `ApiError { status, message, code, traceId }`; runs API (`launch`/`launchSwarm`/`get`/`list`/`cancel`/`resume`/`stream` AsyncIterable/`waitForCompletion`); swarms/models/keys APIs; types from engine OpenAPI via `openapi-typescript`; JSDoc on every method; `msw` tests (`runs`/`stream`/`auth`/`errors`); dual CJS/ESM (`dist/cjs` + `dist/esm`, `package.json` `exports`); GitHub Action publishes to npm on `v*` tag. Fix the `KOrchestratorClient` README typo. Document the Python/TS parity matrix.
-**Public surface:** `korchestrator.remote` (Python) + `@kendralabs/korchestrator-sdk` (TS).
-**Validation:** Every documented method exists + tested (respx / `msw`); parity matrix complete; streaming example consumes SSE; TS works in Node **and** browser; CJS+ESM both resolve.
-**Completion:** Thin client folded in, gaps closed, TS SDK shipped per E9 acceptance, docs match code.
+**Objective:** Ship the optional remote client as `korchestrator.remote`, plus the first-class TypeScript twin.
+**Build:** (1) Implement the Python thin client under `clients/`, re-exported as `korchestrator.remote.KorchestratorClient` (extra `[remote]`, `httpx`-based, async + sync). Honor the §13 contract exactly: the single chosen auth scheme and scopes, run lifecycle, status normalization, and webhook semantics. Surface: run/launch, swarm run, raw-`AgentState` submit, `get_run`, `wait`/`run_and_wait`, `list_runs`, `get_run_summary`, `me`/`my_quota`/`my_runs`, `resume`, `cancel`, `edit_resume`, SSE `stream`, `tools`, `models`, `swarm_templates`, and key management (`create_key`/`list_keys`/`revoke_key`) where the contract authorizes it. (2) The TypeScript SDK: `KorchestratorClient` with `baseUrl`, `apiKey?`/`accessToken?` (mutually exclusive), `tenantId?`, `timeout` (30s), `retries` (3, exponential backoff; retry 429 + 503, never 4xx); `ApiError { status, message, code, traceId }`; the runs API (`get`/`list`/`cancel`/`resume`/`stream` as AsyncIterable/`waitForCompletion`); swarms/models/keys APIs; generated API types; JSDoc on every method; `msw` tests; dual CJS/ESM (`dist/cjs` + `dist/esm` with `package.json` `exports`); npm publish on a `v*` tag. (3) Maintain the Python/TypeScript **parity matrix** in the docs.
+**Public surface:** `korchestrator.remote` (Python) + `@kendralabs/korchestrator-sdk` (TypeScript).
+**Validation:** Every documented method exists and is tested against a mocked transport (`respx` / `msw`); the parity matrix is complete with intentional gaps labeled; the streaming example consumes SSE; the TS client works in Node **and** browser; CJS + ESM both resolve.
+**Completion:** Remote client shipped behind its extra, TS twin published, docs match code exactly, and the local kernel remains usable with neither installed.
 
 ### PHASE 10 — Testing, Benchmarks & Quality Gates
 **Objective:** Comprehensive, enforced coverage against the final shape.
-**Build:** unit (every module), integration (runtime swap, routing, tools, MCP, governance), e2e (full swarm local + Temporal), regression (behavior-parity vs engine), performance (`benchmarks/`: superstep parallelism ~1× not N×, startup, memory), smoke (import + one-liner). Enforce coverage floor; ratchet it. Temporal replay test + live-mode smoke against a stub gateway.
-**Validation:** CI full matrix green; benchmarks baseline; parity confirms no behavior change.
-**Completion:** All test types present + green; coverage floor enforced; benchmarks recorded.
+**Build:** unit (every module), integration (runtime swap, routing, tools, MCP, governance), e2e (full swarm on local + Temporal), regression (a locked test per fixed bug), performance (`benchmarks/`: superstep parallelism scales ~1× not N×, import/startup time, memory), smoke (import + one-liner on a clean install). Enforce the coverage floor and ratchet it. Include the Temporal replay test and a live-mode smoke against a stub gateway.
+**Validation:** Full CI matrix green across supported Python versions; benchmarks recorded as a baseline; no test depends on network, wall-clock sleeps, or shared developer state.
+**Completion:** All test types present + green; coverage floor enforced; benchmark baseline committed.
 
 ### PHASE 11 — Documentation, Examples & DX
 **Objective:** Ship docs as part of the product.
-**Build:** Add an SDK section to the `website/` Docusaurus site: Installation, Quick Start (§8 one-liner), Tutorials (swarm, custom agent, custom tool, MCP, custom router, HITL, streaming), auto-generated API Reference, Architecture Guide (ARI ports, BSP, FractalFlow, durability, context graph), Migration Guide (from raw REST / in-repo extension → SDK), FAQ, Troubleshooting. Every `examples/` script runs unmodified.
-**Validation:** Docs build in CI; every example green; a new dev goes install→first-run from the Quick Start alone.
-**Completion:** Full doc set published; examples executable; migration guide present.
+**Build:** Repository-owned documentation site (`docs/` + `mkdocs.yml`): Installation, Quick Start (§8 one-liner), Tutorials (swarm, custom agent, custom tool, MCP, custom router, HITL, streaming), auto-generated API Reference, Architecture Guide (ARI ports, BSP, FractalFlow, durability, context graph), Migration Guide (from driving a hosted engine over raw REST → using the SDK), FAQ, Troubleshooting, and the Versioning / Release / Deployment pages derived from §10. Every `examples/` script runs unmodified on a clean install.
+**Validation:** Docs build in CI with no broken links; every example runs green; a new developer gets from install to first successful run using the Quick Start alone.
+**Completion:** Full doc set published; examples executable; migration and deployment guidance present.
 
 ### PHASE 12 — CI/CD, Packaging, Versioning & Publishing
-**Objective:** Automated, reproducible GitHub Actions release.
-**Build:** CI stages — lint, format, type-check, test+coverage, security scan (bandit/pip-audit/gitleaks), build (wheel+sdist / CJS+ESM), version-validate (single source), docs-build, publish on `v*` tag (Python → registry/PyPI; TS → npm). SBOM + signed artifacts. `CHANGELOG.md` discipline; release notes; SemVer + deprecation policy.
-**Validation:** A tagged release builds, tests, scans, versions, publishes, updates docs automatically; installing the published artifact reproduces the examples.
-**Completion:** One-tag release; artifacts signed; versioning enforced; publishing automated.
+**Objective:** Automated, reproducible, one-tag GitHub Actions release.
+**Build:** CI stages — lint, format, type-check, test + coverage, security scan (bandit/pip-audit/gitleaks), import-isolation gate, build (wheel + sdist / CJS + ESM), version-validate (single source per §10.7), clean-environment install smoke test of the built artifact, docs-build. `release.yml` publishes only after all of these pass on a `vX.Y.Z` tag (Python → configured registry/PyPI; TypeScript → npm), then generates SBOM + checksums, signs artifacts where supported, publishes release notes, and deploys the documentation. Enforce `CHANGELOG.md`, SemVer, and the deprecation policy.
+**Validation:** A tagged release builds, tests, scans, verifies the version everywhere, installs from the built artifact in a clean environment, publishes immutably, and deploys docs — with **no backend or frontend job anywhere in the pipeline**.
+**Completion:** One-tag release works end to end; artifact integrity metadata available; versioning enforced; publishing and docs deployment automated.
 
-### PHASE 13 — Backend Re-platform on the SDK — ⚠️ FUTURE / OUT OF SCOPE ⚠️
-> **Do NOT execute during SDK creation.** This phase modifies `backend/`, which §0 forbids for this effort. It is planned as a **separate, approval-gated** initiative after the SDK ships.
-**Objective (future):** Make the FastAPI backend a thin consumer of the SDK (imports `korchestrator`; adds only transport/auth/tenancy; the SDK never imports the service), proving the SDK-first architecture.
-**Completion (future):** Backend is a thin adapter; the SDK is the single source of truth for engine logic; parity tests pass.
+### PHASE 13 — External Backend Adapter — ⚠️ FUTURE / OUT OF SCOPE ⚠️
+> **Do NOT execute during SDK creation.** This phase belongs to a separate backend repository and is not a dependency of this one. It requires explicit approval and its own implementation plan after the SDK is released.
+**Objective (future):** Let an external service (e.g. FastAPI) consume the **published** SDK as a thin adapter that adds only transport, authentication, and tenancy. The SDK must never import, require, or be versioned against that service.
+**Completion (future):** The external backend is a thin adapter; the SDK remains the source of truth for orchestration behavior; cross-repository contract tests pass against a published SDK version.
 
 ---
 
-## 13. Remote API & Concepts Reference (for the Phase-9 client)
+## 13. Remote API & Concepts Reference (the Phase-9 contract)
 
-The `korchestrator.remote` client and the TS SDK must honor the live engine contract from `sdk/SDK_REFERENCE.md`:
+This section is the **authoritative contract** for the remote client surface. It describes the API a hosted Korchestrator engine is expected to expose; the SDK's job is to speak it correctly. It creates no dependency on any particular service existing — Tiers 1–3 (§8) are unaffected if no engine is deployed.
 
-**13.1 Concepts** — `run_id` (UUID, stable), `objective` (NL goal, ≥10 chars), `swarm` (directed agent graph), `superstep` (one parallel round), `agent`, `message` (`type` ∈ thought/tool/answer/handoff), `final_answer` (concatenated `answer` messages), `governance_paused`, `trust_score` (0.0–1.0, persists), `mock_mode`, `task_queue`.
+**13.1 Concepts** — `run_id` (UUID, stable), `objective` (natural-language goal, ≥10 chars), `swarm` (directed agent graph), `superstep` (one parallel round), `agent`, `message` (`type` ∈ thought/tool/answer/handoff), `final_answer` (concatenated `answer` messages), `governance_paused`, `trust_score` (0.0–1.0, persists across supersteps), `mock_mode`, `task_queue`.
 
-**13.2 Auth** — `X-API-Key: sk-...` (per-tenant, shown once). Scopes: `korchestrator:read` (GET), `korchestrator:write` (POST run/resume/cancel), `korchestrator:admin` (keys). Errors: 401 (bad key), 403 (scope), 402 (quota). *(epic-9 alternative: `Authorization: Bearer` with API key or KIAM JWT — reconcile to the live engine and document.)*
+**13.2 Auth** — **one** scheme, chosen and ADR'd in Phase 0 (§2.10), implemented identically in both clients: either `Authorization: Bearer <api-key | KIAM JWT>` or `X-API-Key: sk-...` (per-tenant, shown once). Scopes: `korchestrator:read` (GET), `korchestrator:write` (POST run/resume/cancel), `korchestrator:admin` (key management). Errors: 401 (bad credentials), 403 (insufficient scope), 402 (quota exceeded). Credentials are never logged and never written to disk by the SDK.
 
 **13.3 Endpoints** — `POST /v1/run/auto` (plan), `POST /v1/run/swarm` (explicit graph), `POST /v1/run` (raw AgentState), `GET /v1/run/{id}`, `GET /v1/run/{id}/stream` (SSE), `POST /v1/run/{id}/{resume|cancel|edit-resume}`, `GET /v1/runs`, `GET /v1/runs/{id}/summary`, `GET /v1/me[/quota|/runs]`, `POST|GET /v1/keys`, `DELETE /v1/keys/{id}`, `GET /v1/tools`, `POST /v1/tools/register`, `GET /v1/models`, `GET /v1/swarm-templates`.
 
-**13.4 Lifecycle & status** — `started → running → (governance_paused → resume/cancel/edit-resume) → completed|failed|cancelled|timed_out`. Normalize numeric Temporal statuses (`1→running, 2→completed, 3→failed, 4→cancelled, 6→timed_out`). Webhook: single POST on terminal state (`run_id, status, superstep, completed_at, final_answer, message_count`), 10s timeout, no retry — handle idempotently.
+**13.4 Lifecycle & status** — `started → running → (governance_paused → resume | cancel | edit-resume) → completed | failed | cancelled | timed_out`. Normalize numeric Temporal statuses (`1→running, 2→completed, 3→failed, 4→cancelled, 6→timed_out`) into the string form above. Webhook: a single POST on terminal state (`run_id, status, superstep, completed_at, final_answer, message_count`), 10s timeout, **no retry** — consumers must handle it idempotently.
 
-**13.5 Engine env vars the client/Settings must recognize** — `MOCK_LLM`, `KENDRA_AI_GATEWAY_URL`/`LLM_GATEWAY_URL`, `KENDRA_GATEWAY_API_KEY`, `GOVERNANCE_TRUST_THRESHOLD`, `PERSISTENCE_BACKEND` (`kcg`/`none`), `ROUTING_STRATEGY` (`explicit`/`semantic`/`algorithmic`/`composite`), `AGENT_MODEL_MAP`, `KORCH_ENGINE_*` (address/namespace/queue/api-key), embedding/ModelCard vars.
+**13.5 Environment variables `Settings` must recognize** — `MOCK_LLM`, `KENDRA_AI_GATEWAY_URL`/`LLM_GATEWAY_URL`, `KENDRA_GATEWAY_API_KEY`, `GOVERNANCE_TRUST_THRESHOLD`, `PERSISTENCE_BACKEND` (`kcg`/`none`), `ROUTING_STRATEGY` (`explicit`/`semantic`/`algorithmic`/`composite`), `AGENT_MODEL_MAP`, `KORCH_RUNTIME` (`local`/`temporal`), `KORCH_ENGINE_*` (address/namespace/queue/api-key), and the embedding/ModelCard variables from §12 Phase 5. All are read **only** inside `config/` (§9.1).
 
 ---
 
@@ -539,53 +595,62 @@ The `korchestrator.remote` client and the TS SDK must honor the live engine cont
 
 | Phase | Delivers | Key public surface |
 |---|---|---|
-| P0 Foundations | Self-contained scaffold, naming/version/license, CI + isolation gate, release workflow | `__version__` |
+| P0 Foundations | Self-contained scaffold, naming/version/license ADRs, CI + isolation gate, release + docs workflows | `__version__` |
 | P1 Contracts | ARI ports + protocols + façade signatures + exceptions | `interfaces/`, `KorchError`, `Korch`/`Swarm`/`Agent` |
 | P2 Kernel | Framework-free Pregel + state + reducers (pydantic only) | `korchestrator.core`, `korchestrator.models` |
 | P3 Runtime | Local + Temporal behind `IDurableRuntime` | runtime selection |
 | P4 Cognitive | DSPy agents, compiled signatures, taxonomy, gateway providers | `Agent`, `WorkerAgent`, `ArchitectAgent`, `IModelGateway` |
-| P5 Routing | v2.1 strategies behind `BaseRouter` | `get_router`, `BaseRouter` |
+| P5 Routing | Strategies behind `BaseRouter` | `get_router`, `BaseRouter` |
 | P6 Integration | AUB, MCP, A2A, streaming, context compiler/MVC, middleware | `AUBConnector`, MCP client, `register_*`, `on(...)` |
 | P7 Governance | Trust/HITL/policy, Shield/PII, Context Graph | HITL controls, `ContextGraphClient` |
 | P8 Cross-cutting | Config, logging, telemetry, errors, serde, validation | `Settings`, exceptions, `to/from_json` |
-| P9 Clients | Remote client folded in; TS SDK (E9) | `korchestrator.remote`, `@kendralabs/korchestrator-sdk` |
+| P9 Clients | Remote client + TypeScript twin | `korchestrator.remote`, `@kendralabs/korchestrator-sdk` |
 | P10 Testing | Full test matrix + benchmarks | — |
-| P11 Docs | SDK docs + examples | — |
-| P12 Release | GitHub Actions publish on tag | published artifact |
-| P13 Re-platform | *(future, out of scope)* backend consumes SDK | thin `backend/api` |
+| P11 Docs | Documentation site + examples | — |
+| P12 Release | GitHub Actions publish + docs deploy on tag | published artifacts |
+| P13 External adapter | *(future, out of scope)* external service consumes the published SDK | thin service adapter |
 
-**Final gate (all required):** §3 checklist satisfied; SDK is self-contained (isolation gate green); the §8 one-liner runs zero-infra; durable mode preserves crash-recovery/HITL/determinism; every §2.5 functionality reachable; docs/examples/tests/CI-CD/versioning/OSS files complete; package publishes on tag.
+**Final gate (all required):** §3 checklist satisfied; the SDK is self-contained (isolation gate green); the §8 one-liner runs zero-infra on a clean install; durable mode preserves crash-recovery/HITL/determinism; every §2.5 capability is reachable from the public API; docs, examples, tests, CI/CD, versioning, deployment guidance, and OSS files are complete; the package publishes on a tag.
 
 ---
 
 ## 15. Standard Validation Commands
 
 ```bash
-# Quality (package-scoped only)
-ruff check packages/korchestrator
-mypy --strict packages/korchestrator/src/korchestrator
-pytest packages/korchestrator/tests --cov=korchestrator --cov-report=term-missing
+# Quality
+ruff check src/korchestrator tests
+mypy --strict src/korchestrator
+pytest tests --cov=korchestrator --cov-report=term-missing
 
-# Isolation gate — MUST return nothing
-grep -RnE "from (backend|apps|services)\.|import (backend|apps|services)\." packages/korchestrator/src && echo "ISOLATION VIOLATION" || echo "OK"
+# Isolation gate — MUST print OK
+grep -RnE "from (backend|apps|services)\.|import (backend|apps|services)\." src/korchestrator \
+  && echo "ISOLATION VIOLATION" || echo "OK"
 
-# Zero-infra smoke (only pydantic + base install)
+# Zero-infra smoke (base install: pydantic only)
 python -c "from korchestrator import Korch; print(Korch().run('Summarize durable agent execution').final_answer)"
 
 # Durable path (extra)
-pip install -e 'packages/korchestrator[temporal]' && pytest packages/korchestrator/tests/e2e -k temporal
+pip install -e '.[temporal]' && pytest tests/e2e -k temporal
 
-# Build & publish dry-run
-python -m build packages/korchestrator
+# Version must agree everywhere (version.py, package metadata, tag)
+python -c "import korchestrator; print(korchestrator.__version__)"
+
+# Build, then verify the ARTIFACT (not the source tree) installs clean
+python -m build
+pip install --force-reinstall dist/*.whl && python -c "import korchestrator; print(korchestrator.__version__)"
+
+# Docs
+mkdocs build --strict
 ```
 
 ---
 
 ## 16. Final Notes for the Executing Agent
 
-- **Build only the SDK package** under `packages/korchestrator/` (+ `packages/korchestrator-client-ts/` for the TS client). **Do not modify `backend/`, `frontend/`, `apps/`, `services/`, or `website/`.** Backend re-platform (Phase 13) is a future, separate effort.
-- **Keep the package self-contained** — no imports from any in-repo module; its own `pyproject.toml`; publishable via GitHub Actions on a version tag.
+- **Build only the SDK** in this repository (`src/korchestrator/`, plus `clients/typescript/` when the TS client is enabled). **Do not add a backend or a frontend.** The external backend adapter (Phase 13) is a future, separate effort in a different repository.
+- **Keep the SDK self-contained** — no imports from application repositories; this repository owns its `pyproject.toml`, tests, docs, CI, versioning, release, and deployment configuration; it publishes via GitHub Actions on a version tag.
 - **Be dynamic** — runtime, gateway, router, and persistence are config-selected behind interfaces; nothing hardcoded.
-- Execute phases **in order**; the contract (Phase 1) is frozen thereafter without an ADR.
-- Keep `core` framework-free; heavy capabilities as optional extras; never leak an internal exception; never break the public API without a major bump + migration guide.
-- **Don't over-engineer.** Package the functionality the engine already has (§2.5), simply. The SDK is a product for developers — architecture, stability, docs, tests, versioning, and DX matter as much as the engine underneath.
+- **Execute phases in order.** The Phase 1 contract is frozen thereafter without an ADR.
+- Keep `core` framework-free; keep heavy capabilities as optional extras; never leak an internal exception; never break the public API without a major bump + migration guide.
+- **Deployment means publishing artifacts**, not running a service (§10.9). If a task asks you to deploy a server from this repository, it is out of scope — say so.
+- **Don't over-engineer.** Deliver the §2.5 capability surface simply. The SDK is a product for developers — architecture, stability, docs, tests, versioning, and DX matter as much as the engine underneath.
