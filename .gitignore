@@ -1,0 +1,4 @@
+# --- Claude Code --------------------------------------------------------------
+# .claude/ IS tracked — it is project configuration shared by the whole team.
+# Only personal, machine-local overrides are ignored.
+.claude/settings.json
