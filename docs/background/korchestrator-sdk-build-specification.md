@@ -2,6 +2,21 @@
 
 # Korchestrator SDK — Developer Guide & Build Specification
 
+> **⚠️ Superseded as the working specification.** This document is a **source input**. The
+> authoritative, maintained specification set now lives in [`docs/specs/`](../specs/README.md)
+> (00–11), with decisions recorded in [`docs/adr/`](../adr/README.md). Where the two disagree,
+> `docs/specs/` wins.
+>
+> Known differences, all deliberate and ADR-backed:
+> - **TypeScript client** — §7.1 and §12 Phase 9 here treat it as in scope. It is **deferred**:
+>   specified for parity, not built in Phases 0–12 ([ADR 0008](../adr/0008-typescript-client-deferred.md)).
+>   There is no `clients/typescript/` directory and no npm job in CI.
+> - **License** — settled as Apache-2.0 ([ADR 0003](../adr/0003-license-apache-2-0.md)).
+> - **Remote auth** — settled as `Authorization: Bearer` ([ADR 0005](../adr/0005-remote-auth-bearer-token.md)).
+> - **Engineering log path** — `.claude/memory/ENGINEERING_LOG.md`.
+>
+> Keep this file for provenance. Do not build from it directly.
+
 **Document type:** Authoritative developer guide and build specification for the standalone SDK repository. This document is self-sufficient — it is the single ground truth for what the SDK is, how it is built, versioned, released, and deployed.
 **Repository:** `korch-sdk` (branches: `main` = released, `develop` = integration).
 **Package:** Python `korchestrator` (optional TypeScript twin `@kendralabs/korchestrator-sdk`).
