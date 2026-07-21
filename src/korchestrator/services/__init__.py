@@ -4,4 +4,8 @@ Allowed imports (beyond stdlib + pydantic): every korchestrator module. Composes
 graph and exposes the Korch / Swarm / Agent facade. The one wiring site.
 """
 
-__all__: list[str] = []
+from korchestrator.services.agent import Agent
+from korchestrator.services.korch import Korch
+from korchestrator.services.swarm import Swarm
+
+__all__ = ["Agent", "Korch", "Swarm"]

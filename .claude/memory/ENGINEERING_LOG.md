@@ -10,6 +10,271 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P1 review] Fix defects found in the P0+P1 review — v0.1.0
+
+**Type:** fix · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Addressed the findings from the pre-merge review (boundary-auditor: clean; api-reviewer: 2
+defects + 1 defect/hygiene + 3 suggestions). Fixed:
+- **`Agent.__init__` now wraps pydantic's error** — it catches `pydantic.ValidationError` and raises
+  `korchestrator.ValidationError` (code `KORCH_VALIDATION_FAILED`) with `... from exc`, so only
+  `KorchError` subclasses cross the Tier-2 façade boundary (API rule A5; spec 08 §2.2/§7). The
+  façade test now asserts the wrapped `KorchError`, its code, and the preserved `__cause__`.
+- **CHANGELOG** gained an `### Added` block covering the entire P1 surface (exception tree, models,
+  ARI ports/protocols, façade, the 27-name public API) — it previously documented only P0.
+- **Docstring examples are now CI-enforced** — added a `pytest --doctest-modules src/korchestrator`
+  step to the CI `static` job (9 examples, all offline). Rewrote the `Settings.from_env` example to
+  stop mutating `os.environ` (it now uses bare `Settings()` for defaults and an explicit override for
+  precedence — deterministic regardless of ambient env).
+- **`Settings.from_env(**overrides: Any)`** gained an inline justification comment for the `Any`
+  (per python-standards).
+
+Two review items were **deferred by design** and recorded in `PROJECT_STATE.md` §6: the
+`ConfigurationError`/`ValidationError` overlap (ADR before P8's `configure()`), and `ToolError`'s
+specific default code (revisit at the P6 tool bridge). Both have no call site yet.
+
+**Why.** The `Agent` exception leak and the missing CHANGELOG are cheap now but would each be a MAJOR
+fix after `0.1.0` ships (changing a boundary exception type; missing user-facing paperwork). Fixing
+before the P0/P1 merge keeps the frozen surface correct from the first release.
+
+**Design decisions.** Tier-3 users constructing `AgentConfig`/`AgentPersona` directly still get raw
+pydantic errors (documented, intended); only the curated Tier-2 `Agent` façade wraps. Doctest
+enforcement lives in the single-Python `static` job to avoid 4× matrix redundancy.
+
+**Architecture changes.** None — `services/agent.py` now imports `korchestrator.exceptions`
+(façade may import leaf utilities). Import contracts unchanged: 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/services/agent.py`, `src/korchestrator/config/settings.py`,
+`tests/unit/services/test_facade.py`, `CHANGELOG.md`, `.github/workflows/ci.yml`,
+`.claude/memory/PROJECT_STATE.md`.
+
+**Breaking changes.** None (pre-release; this corrects the surface before it is first frozen in a
+release).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Façade test asserts the wrapped `KorchError` + cause + code;
+`pytest --doctest-modules src/korchestrator` green (9 examples); full suite + `ruff`/`mypy --strict`
+re-confirmed.
+
+**Known limitations / future improvements.** See the two deferred items above (P6, P8).
+
+---
+
+## 2026-07-21 · [P1.5–P1.6] Freeze the public façade and the surface guard — v0.1.0
+
+**Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Froze the public surface. `services/` defines the Tier-1/2 façade: `Agent` (validates into
+an `AgentConfig`), `Swarm` (fluent builder — `add`/`edges`/`size` functional, `run` raises
+`NotImplementedError`), and `Korch` (composition root — `run` raises `NotImplementedError`). The
+top-level `korchestrator/__init__.py` re-exports the curated 27-name `__all__`. `tests/unit/
+test_public_surface.py` locks the surface against a golden file (`public_surface.json`) and carries
+the spec-04 Tier 1/2/3 examples as `xfail(strict=True)` tests; `tests/unit/services/test_facade.py`
+locks the current façade behaviour.
+
+**Why.** This is the anti-rework crux: the surface users import is frozen before implementation
+(spec 12 P1.5/P1.6; spec 04). The golden snapshot makes any future change to `__all__` a deliberate,
+reviewed act; the xfail-strict examples force the markers off the moment behaviour lands.
+
+**Design decisions.** (1) The P1 `__all__` is spec 04 §6's list **minus** `configure`,
+`enable_logging`, `from_json`, `to_json` — those come from the config/logging/serializers work in P8,
+and spec 04 §6 explicitly says the list "grows in P8". So P1 freezes 27 names; P8 adds the four
+(each a MINOR that updates the golden file). `TimeoutError` is intentionally not top-level (would
+shadow the builtin under `import *`); `ConfigurationError` is likewise internal-only per spec 04 §6.
+(2) Builders are functional data-collection so the topology surface is real and type-checks (`Self`
+via `typing_extensions` for 3.10); only execution (`run`) is deferred to P4.9, its
+`NotImplementedError` line coverage-excluded. (3) Docstring examples that would execute the deferred
+path carry `# doctest: +SKIP`; the authoritative offline examples live as xfail-strict tests. (4) The
+`Agent(id=...)` parameter keeps the public name `id` (matching `AgentConfig.id` and spec 04), with a
+scoped `# noqa: A002`.
+
+**Architecture changes.** `services/` is the composition root and the only module that imports across
+layers (config, interfaces, models, its own submodules) — legal per spec 05. Import contracts remain
+3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/services/{agent,swarm,korch}.py`, `services/__init__.py`,
+`src/korchestrator/__init__.py`, `tests/unit/services/test_facade.py`,
+`tests/unit/test_public_surface.py`, `tests/unit/public_surface.json`.
+
+**Breaking changes.** None (initial public surface; frozen — any change now needs an ADR + CHANGELOG +
+version decision + golden-file update in the same PR).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `from korchestrator import Korch, Swarm, Agent` works; snapshot test passes; the
+three tier examples xfail-strict; façade behaviour locked; `import korchestrator` pulls in no optional
+dependency (base-install lazy check green); `ruff`, `ruff format`, `mypy --strict` clean on 47 source
+files; import contracts 3 kept, 0 broken. **P1 Definition of Done met.**
+
+**Known limitations / future improvements.** `Korch.run`/`Swarm.run` execute against the kernel in
+P4.9 (removing the xfail markers). The top-level `__all__` grows by four names in P8. The
+async surface (`A8` sync-wrapper detail) is settled when the kernel lands.
+
+---
+
+## 2026-07-21 · [P1.3–P1.4] Freeze the ARI ports and supporting protocols — v0.1.0
+
+**Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Defined the interface contracts as `runtime_checkable` Protocols, re-exported from
+`korchestrator.interfaces`: the three ARI ports — `IModelGateway` (spec 03 §4 verbatim),
+`IIdentityProvider`, `IExecutionSandbox` — and the supporting protocols `IDurableRuntime`,
+`GraphRepository`, `TenantStore`, `BaseRouter`, `AUBConnector`. Each docstring states its
+implementations, concurrency expectations, and (for the ARI ports) the default implementation.
+Structural-conformance tests lock the shape (exports, `isinstance` for conforming fakes, rejection
+of non-conforming classes).
+
+**Why.** These are the seams the whole SDK depends on; they must be frozen before any implementation
+(spec 12 P1.3/P1.4; spec 03 §4). A port exists only because it has >1 real implementation.
+
+**Design decisions.** Three points of note. (1) **`IDurableRuntime.run` takes `AgentState`, not an
+`AgentGraph`** — `AgentGraph` lives in `core/` (P2.4) and `interfaces/` must not import outward, so
+the graph/gateway/clock are injected into the concrete runtime at construction and `run` references
+`models` only. (2) **The identity, sandbox, tenant, and connector method shapes are intentionally
+minimal** and use only defined models (`ToolResult`, `AgentState`) plus primitives — spec 03 §4/§4.1
+give these in prose without exact signatures; they are the P1 contract and may be enriched via an ADR
+when their implementations land (P4.2, P6, P7). (3) `BaseRouter.select_model(context: RoutingContext)`
+uses the `RoutingContext` model (whose docstring is literally "everything a select_model call may
+consider"), rather than spec 11's shorthand `(task, models)`.
+
+**Two contract corrections made here (each was a spec bug that blocked a green gate):**
+- **import-linter `layers` order.** Spec 03 §9 listed `models` above `interfaces`, which forbids
+  `interfaces → models`. But the ARI ports must import model types (the spec's own `IModelGateway`
+  imports `Message`/`ModelCard`; spec 05 §1 lists `models` as an allowed import for `interfaces`).
+  import-linter forbids a lower layer importing a higher one, so `interfaces` is now placed **above**
+  `models`. Verified: 3 contracts kept, 0 broken.
+- **coverage `exclude_lines`.** Added `^\s*\.\.\.$` so Protocol stub bodies (`...`) are not counted as
+  uncovered executable code — the same treatment `@overload` and `if TYPE_CHECKING:` already get. No
+  floor is lowered; only non-executable placeholders are excluded (measured before/after).
+
+**Architecture changes.** `interfaces/` now depends inward on `models/` only, as spec 05 allows; the
+layers contract reflects the real (and spec-05-sanctioned) `interfaces → models` edge.
+
+**Files/modules affected.** `src/korchestrator/interfaces/{model_gateway,identity,sandbox,runtime,
+repository,router,connector}.py`, `interfaces/__init__.py`, `tests/unit/interfaces/test_protocols.py`,
+`.importlinter`, `pyproject.toml` (coverage exclude).
+
+**Breaking changes.** None (new surface; frozen from here — changes need an ADR).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Interface conformance tests pass; `ruff`, `ruff format`, `mypy --strict` clean on
+44 source files; import contracts 3 kept, 0 broken; full suite + coverage floors re-confirmed.
+
+**Known limitations / future improvements.** The minimal identity/sandbox/tenant/connector shapes
+(see design note 2) are the most likely P1 contracts to be revisited (with an ADR) as
+implementations land.
+
+---
+
+## 2026-07-21 · [P1.2] Define the model contracts — v0.1.0
+
+**Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Defined the frozen Pydantic domain models (fields = the contract; behaviour lands in P2):
+`types.JSONValue`; `models/state.py` (`MessageRole`, `Performative`, `RunStatus`, `Message`,
+`StateUpdate`, `AgentState`); `models/agent.py` (`AgentPersona`, `AgentConfig`, `AgentDescriptor`);
+`models/plan.py` (`TaskDecomposition`, `ExecutionPlan`); `models/routing.py` (`ModelCard`,
+`TaskSemantics`, `RoutingContext`, `RoutingResult`); `models/result.py` (`RunResult`);
+`models/tool.py` (`ToolResult`); all re-exported from `korchestrator.models`. Every model is
+`frozen=True, extra="forbid"`. Contract tests (one module per source module) lock construction,
+defaults, field constraints (ranges, patterns, min-length, enum membership), frozen enforcement, and
+nested-JSON acceptance.
+
+**Why.** The models are contracts referenced by the interfaces (P1.3/P1.4) and the façade; they must
+be frozen before implementation (spec 12 P1.2; spec 05 §3). Frozen + `extra="forbid"` is what makes
+the frozen-snapshot determinism rule real (spec 05 §5).
+
+**Design decisions.** Two mechanism-level deviations from the spec 05 §3 listings, each required to
+make the intended types actually work; the field contracts are unchanged. (1) **`JSONValue` uses
+`TypeAliasType`** (PEP 695, via `typing_extensions`, a base-install pydantic dependency) rather than
+the spec's inline `str | ... | list["JSONValue"] | dict[...]` alias — pydantic v2 resolves a *named*
+recursive alias but recurses infinitely building a schema from an inline recursive union (reproduced,
+then fixed). The resulting type is identical. (2) **`Mapping` is imported from `collections.abc`**,
+not `typing` (spec's import), to satisfy ruff `UP035`. Field definitions, constraints, and defaults
+follow spec 05 §3 exactly, including `protected_namespaces=()` on the models with a `model` /
+`model_name` field.
+
+**Architecture changes.** `models/` (contract layer) depends inward on `types/` only; intra-package
+model imports (`plan`←`agent`, `result`←`state`, `tool`/`state`←`types`) are within the package and
+legal. No sibling feature imports.
+
+**Files/modules affected.** `src/korchestrator/types/__init__.py`,
+`src/korchestrator/models/{state,agent,plan,routing,result,tool}.py`,
+`src/korchestrator/models/__init__.py`, `tests/unit/models/test_{state,agent,plan,routing,result,tool}.py`.
+
+**Breaking changes.** None (new surface; frozen from here — changes need an ADR).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 88 model/exception/constant tests pass; `ruff`, `ruff format`, `mypy --strict`
+clean on 37 source files; recursive `JSONValue` verified constructing and JSON round-tripping nested
+data. `models/` coverage meets the 95% floor.
+
+**Known limitations / future improvements.** No behaviour yet: reducer channel binding,
+`Message.id`/`valid_time` derivation, and `RunResult.final_answer` derivation land in P2. Serde
+round-trip/version-tag stability tests are P8.5. Models are not yet re-exported at the top level (the
+frozen `__all__` is P1.5).
+
+---
+
+## 2026-07-21 · [P1.1] Freeze the KorchError hierarchy — v0.1.0
+
+**Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Froze the exception hierarchy. `constants/error_codes.py` holds the stable code strings
+(compatibility surface). `exceptions/errors.py` defines `KorchError` (message + stable `code` +
+string `context`) and its subclasses — `ConfigurationError`, `ValidationError`, `AuthError`,
+`NetworkError`, `TimeoutError`, `RateLimitError`, `QuotaExceededError`, `ProviderError`,
+`RoutingError`, `ToolError`, `GovernanceHaltError`, `RunFailedError`, `RunTimeoutError`,
+`MissingExtraError` — re-exported from `korchestrator.exceptions`. Tests lock subclassing, default
+codes, message/code/context storage, the deliberate-but-not-builtin `TimeoutError`, cause
+preservation, and the code-string snapshot.
+
+**Why.** Everything catchable in the SDK is a `KorchError`; the tree and its codes are a contract
+that must be frozen before any layer raises (spec 12 P1.1; spec 08 §2). Codes are part of the
+compatibility surface and are snapshot-locked.
+
+**Design decisions.** The hierarchy is the **union** of two specs that disagreed: spec 08 §2.1's tree
+adds `ConfigurationError`; the P1.1 task list and `.claude/rules` add `MissingExtraError`. Both are
+included so no raiser is left without its class. `KORCH_MISSING_EXTRA` is a new code (absent from the
+spec 08 tree) for `MissingExtraError`, matching the optional-dependency contract. `KorchError.__init__`
+follows spec 08 §2.1 verbatim (`message`, keyword-only `code`, `**context: str`). `TimeoutError`
+deliberately shadows the builtin (spec 08 §2.1) and subclasses `KorchError` only; the two import sites
+carry `# noqa: A004` with the reason. Code strings live in `constants/error_codes.py` and the classes
+reference them, so a code exists once.
+
+**Architecture changes.** `exceptions/` (leaf) now depends inward on `constants/` only, as spec 05
+allows. No behaviour beyond construction.
+
+**Files/modules affected.** `src/korchestrator/constants/error_codes.py`,
+`src/korchestrator/exceptions/errors.py`, `src/korchestrator/exceptions/__init__.py`,
+`tests/unit/exceptions/test_errors.py`, `tests/unit/constants/test_error_codes.py`.
+
+**Breaking changes.** None (new surface, frozen from here per P1 DoD — changes now need an ADR).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 40 exception/constant tests pass; `ruff`, `ruff format`, `mypy --strict` clean on
+31 source files; import contracts 3 kept, 0 broken. Full suite + coverage floor re-confirmed.
+
+**Known limitations / future improvements.** These classes are not yet re-exported at the top level —
+that lands with the frozen `__all__` in P1.5. Error-wrapping boundary tests (asserting only
+`KorchError` escapes each public entry point) arrive with the code that raises, audited in P8.4.
+
+---
+
 ## 2026-07-21 · [P0.5–P0.8] Quality net, import contracts, and CI/CD skeletons — v0.1.0
 
 **Type:** ci · **Phase:** P0 · **Author:** Claude (agent)
