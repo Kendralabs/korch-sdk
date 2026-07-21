@@ -12,7 +12,7 @@ import korchestrator
 
 def test_package_imports_and_reports_version() -> None:
     assert korchestrator.__version__ == "0.1.0"
-    assert korchestrator.__all__ == ["__version__"]
+    assert "__version__" in korchestrator.__all__
 
 
 def test_settings_construct_on_a_pydantic_only_install() -> None:

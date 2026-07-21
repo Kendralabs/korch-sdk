@@ -36,6 +36,8 @@ jobs:
         run: ruff format --check src/korchestrator tests examples benchmarks
       - name: Types
         run: mypy --strict src/korchestrator
+      - name: Docstring examples (offline)
+        run: pytest --doctest-modules src/korchestrator
       - name: Import contracts (layering, isolation, no cycles)
         run: lint-imports
       - name: Import-isolation gate

@@ -71,5 +71,7 @@ def test_package_docstring_names_its_layer(package: str) -> None:
 
 
 def test_top_level_package_exposes_version() -> None:
-    assert korchestrator.__all__ == ["__version__"]
+    # The full public surface is guarded by tests/unit/test_public_surface.py; here we only
+    # assert the version is exported. (__all__ grew from the P0 placeholder to the frozen P1 set.)
+    assert "__version__" in korchestrator.__all__
     assert korchestrator.__version__ == "0.1.0"

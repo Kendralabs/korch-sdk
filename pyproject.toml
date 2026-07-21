@@ -149,6 +149,8 @@ exclude_lines = [
   "if TYPE_CHECKING:",
   "raise NotImplementedError",
   "@overload",
+  # Protocol / stub method bodies are non-executable placeholders (like @overload above).
+  "^\\s*\\.\\.\\.$",
 ]
 
 [tool.bandit]

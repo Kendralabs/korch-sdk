@@ -19,12 +19,17 @@ forbidden_modules =
 [importlinter:contract:layers]
 name = inward-only layering
 type = layers
+# NOTE: `interfaces` sits ABOVE `models`, correcting spec 03 §9's snippet (which listed models
+# above interfaces). The ARI ports depend on model types — the spec's own IModelGateway example
+# imports Message/ModelCard, and spec 05 §1 lists `models` as an allowed import for `interfaces`.
+# import-linter forbids a lower layer importing a higher one, so interfaces must be the higher of
+# the two contract layers. models depends on nothing above it.
 layers =
     korchestrator.services
     korchestrator.agents
     korchestrator.core
-    korchestrator.models
     korchestrator.interfaces
+    korchestrator.models
 
 [importlinter:contract:features-are-independent]
 name = feature modules must not import each other
