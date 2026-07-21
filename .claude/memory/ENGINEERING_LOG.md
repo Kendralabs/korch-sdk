@@ -10,6 +10,59 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P1.2] Define the model contracts — v0.1.0
+
+**Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Defined the frozen Pydantic domain models (fields = the contract; behaviour lands in P2):
+`types.JSONValue`; `models/state.py` (`MessageRole`, `Performative`, `RunStatus`, `Message`,
+`StateUpdate`, `AgentState`); `models/agent.py` (`AgentPersona`, `AgentConfig`, `AgentDescriptor`);
+`models/plan.py` (`TaskDecomposition`, `ExecutionPlan`); `models/routing.py` (`ModelCard`,
+`TaskSemantics`, `RoutingContext`, `RoutingResult`); `models/result.py` (`RunResult`);
+`models/tool.py` (`ToolResult`); all re-exported from `korchestrator.models`. Every model is
+`frozen=True, extra="forbid"`. Contract tests (one module per source module) lock construction,
+defaults, field constraints (ranges, patterns, min-length, enum membership), frozen enforcement, and
+nested-JSON acceptance.
+
+**Why.** The models are contracts referenced by the interfaces (P1.3/P1.4) and the façade; they must
+be frozen before implementation (spec 12 P1.2; spec 05 §3). Frozen + `extra="forbid"` is what makes
+the frozen-snapshot determinism rule real (spec 05 §5).
+
+**Design decisions.** Two mechanism-level deviations from the spec 05 §3 listings, each required to
+make the intended types actually work; the field contracts are unchanged. (1) **`JSONValue` uses
+`TypeAliasType`** (PEP 695, via `typing_extensions`, a base-install pydantic dependency) rather than
+the spec's inline `str | ... | list["JSONValue"] | dict[...]` alias — pydantic v2 resolves a *named*
+recursive alias but recurses infinitely building a schema from an inline recursive union (reproduced,
+then fixed). The resulting type is identical. (2) **`Mapping` is imported from `collections.abc`**,
+not `typing` (spec's import), to satisfy ruff `UP035`. Field definitions, constraints, and defaults
+follow spec 05 §3 exactly, including `protected_namespaces=()` on the models with a `model` /
+`model_name` field.
+
+**Architecture changes.** `models/` (contract layer) depends inward on `types/` only; intra-package
+model imports (`plan`←`agent`, `result`←`state`, `tool`/`state`←`types`) are within the package and
+legal. No sibling feature imports.
+
+**Files/modules affected.** `src/korchestrator/types/__init__.py`,
+`src/korchestrator/models/{state,agent,plan,routing,result,tool}.py`,
+`src/korchestrator/models/__init__.py`, `tests/unit/models/test_{state,agent,plan,routing,result,tool}.py`.
+
+**Breaking changes.** None (new surface; frozen from here — changes need an ADR).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 88 model/exception/constant tests pass; `ruff`, `ruff format`, `mypy --strict`
+clean on 37 source files; recursive `JSONValue` verified constructing and JSON round-tripping nested
+data. `models/` coverage meets the 95% floor.
+
+**Known limitations / future improvements.** No behaviour yet: reducer channel binding,
+`Message.id`/`valid_time` derivation, and `RunResult.final_answer` derivation land in P2. Serde
+round-trip/version-tag stability tests are P8.5. Models are not yet re-exported at the top level (the
+frozen `__all__` is P1.5).
+
+---
+
 ## 2026-07-21 · [P1.1] Freeze the KorchError hierarchy — v0.1.0
 
 **Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
