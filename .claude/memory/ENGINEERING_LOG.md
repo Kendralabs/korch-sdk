@@ -10,6 +10,63 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P1.3–P1.4] Freeze the ARI ports and supporting protocols — v0.1.0
+
+**Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Defined the interface contracts as `runtime_checkable` Protocols, re-exported from
+`korchestrator.interfaces`: the three ARI ports — `IModelGateway` (spec 03 §4 verbatim),
+`IIdentityProvider`, `IExecutionSandbox` — and the supporting protocols `IDurableRuntime`,
+`GraphRepository`, `TenantStore`, `BaseRouter`, `AUBConnector`. Each docstring states its
+implementations, concurrency expectations, and (for the ARI ports) the default implementation.
+Structural-conformance tests lock the shape (exports, `isinstance` for conforming fakes, rejection
+of non-conforming classes).
+
+**Why.** These are the seams the whole SDK depends on; they must be frozen before any implementation
+(spec 12 P1.3/P1.4; spec 03 §4). A port exists only because it has >1 real implementation.
+
+**Design decisions.** Three points of note. (1) **`IDurableRuntime.run` takes `AgentState`, not an
+`AgentGraph`** — `AgentGraph` lives in `core/` (P2.4) and `interfaces/` must not import outward, so
+the graph/gateway/clock are injected into the concrete runtime at construction and `run` references
+`models` only. (2) **The identity, sandbox, tenant, and connector method shapes are intentionally
+minimal** and use only defined models (`ToolResult`, `AgentState`) plus primitives — spec 03 §4/§4.1
+give these in prose without exact signatures; they are the P1 contract and may be enriched via an ADR
+when their implementations land (P4.2, P6, P7). (3) `BaseRouter.select_model(context: RoutingContext)`
+uses the `RoutingContext` model (whose docstring is literally "everything a select_model call may
+consider"), rather than spec 11's shorthand `(task, models)`.
+
+**Two contract corrections made here (each was a spec bug that blocked a green gate):**
+- **import-linter `layers` order.** Spec 03 §9 listed `models` above `interfaces`, which forbids
+  `interfaces → models`. But the ARI ports must import model types (the spec's own `IModelGateway`
+  imports `Message`/`ModelCard`; spec 05 §1 lists `models` as an allowed import for `interfaces`).
+  import-linter forbids a lower layer importing a higher one, so `interfaces` is now placed **above**
+  `models`. Verified: 3 contracts kept, 0 broken.
+- **coverage `exclude_lines`.** Added `^\s*\.\.\.$` so Protocol stub bodies (`...`) are not counted as
+  uncovered executable code — the same treatment `@overload` and `if TYPE_CHECKING:` already get. No
+  floor is lowered; only non-executable placeholders are excluded (measured before/after).
+
+**Architecture changes.** `interfaces/` now depends inward on `models/` only, as spec 05 allows; the
+layers contract reflects the real (and spec-05-sanctioned) `interfaces → models` edge.
+
+**Files/modules affected.** `src/korchestrator/interfaces/{model_gateway,identity,sandbox,runtime,
+repository,router,connector}.py`, `interfaces/__init__.py`, `tests/unit/interfaces/test_protocols.py`,
+`.importlinter`, `pyproject.toml` (coverage exclude).
+
+**Breaking changes.** None (new surface; frozen from here — changes need an ADR).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Interface conformance tests pass; `ruff`, `ruff format`, `mypy --strict` clean on
+44 source files; import contracts 3 kept, 0 broken; full suite + coverage floors re-confirmed.
+
+**Known limitations / future improvements.** The minimal identity/sandbox/tenant/connector shapes
+(see design note 2) are the most likely P1 contracts to be revisited (with an ADR) as
+implementations land.
+
+---
+
 ## 2026-07-21 · [P1.2] Define the model contracts — v0.1.0
 
 **Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
