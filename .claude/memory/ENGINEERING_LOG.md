@@ -10,6 +10,54 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P0.3] Minimal typed Settings — v0.1.0
+
+**Type:** feature · **Phase:** P0 · **Author:** Claude (agent)
+
+**What.** Added `config/settings.py` with the `Settings` model carrying the three fields Phases 0-3
+need — `mock_llm` (default `True`), `korch_runtime` (`local`/`temporal`, default `local`),
+`persistence_backend` (`none`/`memory`/`kcg`, default `memory`) — plus `Settings.from_env()`, the one
+place the package reads the environment. Exported `Settings` from `korchestrator.config`. Landed
+`tests/unit/config/test_settings.py` (defaults, env reading, argument precedence, invalid-value
+rejection, immutability) and `tests/unit/test_module_contract.py` (every spec-05 package has an
+explicit `__all__` and a layer-naming docstring). Recorded [ADR 0009](../../docs/adr/0009-settings-on-pydantic-core-no-pydantic-settings.md).
+
+**Why.** P3 selects the runtime by config and P5 selects the router by config, so a minimal typed
+`Settings` is needed before Phase 8 (spec 12, sequencing correction 1). The env-read-only-in-`config/`
+rule applies from here on.
+
+**Design decisions.** **ADR 0009**: `Settings` is built on `pydantic.BaseModel` and reads `os.environ`
+directly inside `config/`, rather than on `pydantic-settings`. Spec 05/P0.3 name `pydantic-settings`,
+but `config/` has no extra and sits on the base-install one-liner path, so importing it would make it
+a base dependency — which ADR 0004 and golden rule 3 forbid without a superseding ADR. Preserving the
+flagship pydantic-only base install won out over the minor convenience of the library for three scalar
+fields; richer `.env`/secret handling is revisited in P8. Bare `Settings()` performs no environment
+access (pure, test-friendly); `Settings.from_env(**overrides)` applies precedence argument > env >
+default. `frozen=True` + `extra="forbid"`. The module-contract test doubles as the coverage vehicle
+that keeps the empty skeleton stubs meaningfully exercised at P0.
+
+**Architecture changes.** Establishes `config/` as the single environment reader; no other module
+reads env. Boundaries note updated in `config/__init__.py`.
+
+**Files/modules affected.** `src/korchestrator/config/settings.py`, `src/korchestrator/config/__init__.py`,
+`tests/unit/config/test_settings.py`, `tests/unit/test_module_contract.py`, `docs/adr/0009-*.md`.
+
+**Breaking changes.** None (new surface).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 65 tests pass; total coverage 100%; `ruff check`, `ruff format --check`, and
+`mypy --strict` clean on 29 source files. `Settings` construction and `from_env` precedence, env
+reading, invalid-value rejection, and immutability are all locked; the module contract is locked.
+
+**Known limitations / future improvements.** No `.env` file support and no `SecretStr` fields yet
+(P8). No `configure()` / `get_settings()` process-default accessor yet (P8). The conditional
+`mock_llm` default (off when a gateway key is present) arrives with the gateway fields in P8.
+
+---
+
 ## 2026-07-21 · [P0.2] Authoritative pyproject manifest — v0.1.0
 
 **Type:** foundation · **Phase:** P0 · **Author:** Claude (agent)
