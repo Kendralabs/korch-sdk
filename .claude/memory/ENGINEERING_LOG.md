@@ -10,6 +10,53 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P0.2] Authoritative pyproject manifest — v0.1.0
+
+**Type:** foundation · **Phase:** P0 · **Author:** Claude (agent)
+
+**What.** Added the authoritative `pyproject.toml` verbatim from spec 02 §8: `hatchling` build
+backend with the dynamic version sourced from `src/korchestrator/version.py`; requires-python
+`>=3.10`; the single core dependency `pydantic>=2.7,<3`; the full extras matrix
+(`dspy`/`temporal`/`routing`/`mcp`/`remote`/`otel`/`all`/`dev`); and the ruff, mypy, pytest, coverage
+and bandit configuration.
+
+**Why.** The manifest is the single authoritative build/metadata/toolchain contract; every gate reads
+its configuration from here, and the dynamic version keeps `version.py` the single source of truth
+(spec 12, P0.2; ADR 0002, ADR 0004).
+
+**Design decisions.** Copied the manifest exactly as specified so tool config and the extras matrix
+match the design record with no drift, with **one necessary correction**: the spec's
+`addopts = "... --xfail-strict"` names a pytest CLI flag that does not exist (pytest errors with
+"unrecognized arguments: --xfail-strict", blocking the entire test run). The intent — strict xfail,
+required by P1.6 — is expressed by the pytest ini option `xfail_strict = true`, which this manifest
+uses instead. Spec 09 §3.1 confirms the intent ("`xfail` is strict"); only the mechanism was wrong.
+**MANIFEST.in was deliberately not created**: spec 02 §6 lists
+it (a setuptools-era artifact), but the build backend is `hatchling`, which ignores MANIFEST.in and
+instead takes sdist/wheel contents from `[tool.hatch.build.targets.*]` — already configured to ship
+`src/korchestrator` (incl. `py.typed`), `README.md`, `LICENSE`, and `CHANGELOG.md`. Adding an inert
+MANIFEST.in would be misleading. `import-linter` is not yet in the `[dev]` extra; it is added in P0.6
+where the contracts land.
+
+**Architecture changes.** None (build/metadata configuration only).
+
+**Files/modules affected.** `pyproject.toml`.
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `tomllib` parses the manifest; `pip install -e .` succeeds; installed
+distribution metadata reports `0.1.0` (dynamic version resolves from `version.py`). Full
+`python -m build` wheel verification runs at phase acceptance once `LICENSE` lands (P0.4).
+
+**Known limitations / future improvements.** The `[dev]` extra pulls in the heavy `[all]` stack
+(dspy, temporalio, sentence-transformers, mcp, httpx, otel); Phase 0 gates are run against a targeted
+tool subset locally, with the full matrix delegated to CI.
+
+---
+
 ## 2026-07-21 · [P0.1] Package skeleton — v0.1.0
 
 **Type:** foundation · **Phase:** P0 · **Author:** Claude (agent)
