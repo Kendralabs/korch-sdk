@@ -1,0 +1,2 @@
+# Placeholder — the Pregel kernel and its tests land in P2. This directory exists now so the
+# base-install CI job (pytest tests/unit/core ...) has a valid path to collect.

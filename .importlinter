@@ -1,0 +1,40 @@
+[importlinter]
+root_package = korchestrator
+# Required by import-linter because the kernel-is-framework-free contract names external
+# forbidden modules (temporalio, dspy, httpx, fastapi, opentelemetry).
+include_external_packages = True
+
+[importlinter:contract:kernel-is-framework-free]
+name = core must not import frameworks or optional extras
+type = forbidden
+source_modules =
+    korchestrator.core
+forbidden_modules =
+    temporalio
+    dspy
+    httpx
+    fastapi
+    opentelemetry
+
+[importlinter:contract:layers]
+name = inward-only layering
+type = layers
+layers =
+    korchestrator.services
+    korchestrator.agents
+    korchestrator.core
+    korchestrator.models
+    korchestrator.interfaces
+
+[importlinter:contract:features-are-independent]
+name = feature modules must not import each other
+type = independence
+modules =
+    korchestrator.routing
+    korchestrator.tools
+    korchestrator.mcp
+    korchestrator.a2a
+    korchestrator.governance
+    korchestrator.persistence
+    korchestrator.context
+    korchestrator.events

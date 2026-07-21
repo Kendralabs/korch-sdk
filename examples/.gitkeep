@@ -1,0 +1,2 @@
+# Runnable examples land in P11 (spec 02 §5.1). Placeholder so the CI lint/format/examples
+# paths (ruff ... examples; for f in examples/*.py) are valid before then.

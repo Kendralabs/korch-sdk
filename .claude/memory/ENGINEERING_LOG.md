@@ -10,6 +10,71 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P0.5–P0.8] Quality net, import contracts, and CI/CD skeletons — v0.1.0
+
+**Type:** ci · **Phase:** P0 · **Author:** Claude (agent)
+
+**What.** Landed the local quality net and the CI/CD skeletons (the plan groups these four tasks
+under one commit):
+
+- **P0.5** — `.pre-commit-config.yaml` (spec 02 §9 verbatim) and the `scripts/` helpers:
+  `check_isolation.sh` (isolation gate, prints `OK`), `validate_version.py` (spec 10 §3.1),
+  `check_env_reads.py` (env-confinement gate), and `smoke_install.sh` (clean-env wheel smoke).
+- **P0.6** — `.importlinter` with the three enforceable contracts from spec 03 §9
+  (kernel-is-framework-free `forbidden`, inward-only `layers`, feature `independence`); added
+  `import-linter` to the `[dev]` extra.
+- **P0.7** — `.github/workflows/ci.yml`: static (lint/format/mypy/import-linter/isolation/env-reads/
+  version-validate), test matrix 3.10–3.13 with coverage + per-package floors, the pydantic-only
+  base-install job, security (bandit/pip-audit/gitleaks), build + clean-env wheel smoke, examples,
+  and docs. Added a P0 smoke test (`tests/smoke/test_import_and_one_liner.py`) and placeholder
+  `tests/unit/core` / `tests/unit/models` directories so the base-install job's pytest path is valid
+  now. `.github/dependabot.yml` completes the inventory.
+- **P0.8** — `.github/workflows/release.yml` (tag-triggered build + artifact verification; publish
+  deferred to P12), `.github/workflows/docs.yml` (spec 10 §7), `mkdocs.yml` (Material, `specs/`/`adr/`/
+  `background/` excluded from the site), and a stub `docs/index.md` so the strict docs build passes.
+
+**Why.** The isolation gate, version single-sourcing, import contracts, and CI must be active and
+blocking before code volume grows (spec 11 P0 DoD; spec 03 §9; spec 09 §9).
+
+**Design decisions.** Three deliberate, documented deviations from the literal spec, each to make a
+mandated gate real: (1) `import-linter` was added to the `[dev]` extra — spec 02 §8's dev list omits
+it, but P0.6/P0.7 and spec 03 §9 require the contracts and the CI step that runs them. (2) The
+`[importlinter]` config sets `include_external_packages = True`, which import-linter requires whenever
+a `forbidden` contract names external modules (the spec's §9 snippet omitted it, so the contracts
+would not load without it). Import-linter has no standalone "no cycles" contract type; D4 (no cycles)
+is enforced by the `layers` contract, exactly as spec 03 §9's own enforcement table maps it. (3) Two
+small CI accommodations keep every job green during scaffolding without weakening any gate: the
+examples loop uses `shopt -s nullglob` so it is a no-op until examples land in P11, and a stub
+`docs/index.md` plus `exclude_docs` let `mkdocs build --strict` pass now; both jobs become substantive
+as their phase lands.
+
+**Architecture changes.** None to `src/`. The enforcement machinery (isolation, env-confinement,
+version-validate, import contracts) is now wired into pre-commit and CI.
+
+**Files/modules affected.** `.pre-commit-config.yaml`, `scripts/{check_isolation.sh,validate_version.py,
+check_env_reads.py,smoke_install.sh}`, `.importlinter`, `pyproject.toml` (dev extra),
+`.github/workflows/{ci,release,docs}.yml`, `.github/dependabot.yml`, `mkdocs.yml`, `docs/index.md`,
+`tests/smoke/test_import_and_one_liner.py`, `tests/unit/{core,models}/.gitkeep`.
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Locally verified: `check_isolation.sh` prints `OK`; `validate_version.py` prints
+`version-validate OK: 0.1.0`; `check_env_reads.py` passes; `lint-imports` reports 3 contracts kept, 0
+broken; the base-install pytest path (`tests/unit/core tests/unit/models tests/smoke`) collects and
+passes 2 smoke tests; `python -m build` + clean-env wheel install imports `0.1.0` with pydantic only;
+`mkdocs build --strict` succeeds. The full CI matrix and the security scans run in GitHub Actions once
+pushed.
+
+**Known limitations / future improvements.** The `examples` CI job is a no-op until P11 adds runnable
+examples; the docs site is a stub until P11; `release.yml` builds and verifies but does not publish
+until P12 wires Trusted Publishing.
+
+---
+
 ## 2026-07-21 · [P0.4] OSS-readiness files — v0.1.0
 
 **Type:** docs · **Phase:** P0 · **Author:** Claude (agent)
