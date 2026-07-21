@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a capability or improvement for the SDK
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The SDK is **one product**: an installable, self-contained Python library. Requests
+        for a backend, frontend, service, or infrastructure are out of scope
+        (`docs/specs/01-scope-and-principles.md`). Please check that scope before filing.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and where does the SDK fall short today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: >
+        What you would like to see. If it touches the public surface, sketch the signature
+        and the return type; if it adds a dependency, name the extra it belongs behind.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed, and why this one is preferable.
+    validations:
+      required: false
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: This is a change to the installable SDK, not a request for a hosted service or app.
+          required: true

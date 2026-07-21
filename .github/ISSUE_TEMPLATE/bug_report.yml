@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a defect in the Korchestrator SDK
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please do **not** include secrets, tokens, API keys, or
+        personal data anywhere in this report. For security vulnerabilities, use the private
+        channel in `SECURITY.md` instead of a public issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A clear description of the defect and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: >
+        The smallest code that reproduces the issue. It should run on a clean install under
+        MockLM (no network, no API key).
+      render: python
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Korchestrator version
+      description: Output of `python -c "import korchestrator; print(korchestrator.__version__)"`.
+    validations:
+      required: true
+  - type: dropdown
+    id: python-version
+    attributes:
+      label: Python version
+      options: ["3.10", "3.11", "3.12", "3.13", "other"]
+    validations:
+      required: true
+  - type: input
+    id: extras
+    attributes:
+      label: Installed extras
+      description: e.g. none (base), [temporal], [all]. Output of `pip show korchestrator` helps.
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Tracebacks or logs, with any secrets or personal data removed.
+      render: shell
+    validations:
+      required: false
