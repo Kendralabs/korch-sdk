@@ -10,6 +10,54 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P1.1] Freeze the KorchError hierarchy — v0.1.0
+
+**Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Froze the exception hierarchy. `constants/error_codes.py` holds the stable code strings
+(compatibility surface). `exceptions/errors.py` defines `KorchError` (message + stable `code` +
+string `context`) and its subclasses — `ConfigurationError`, `ValidationError`, `AuthError`,
+`NetworkError`, `TimeoutError`, `RateLimitError`, `QuotaExceededError`, `ProviderError`,
+`RoutingError`, `ToolError`, `GovernanceHaltError`, `RunFailedError`, `RunTimeoutError`,
+`MissingExtraError` — re-exported from `korchestrator.exceptions`. Tests lock subclassing, default
+codes, message/code/context storage, the deliberate-but-not-builtin `TimeoutError`, cause
+preservation, and the code-string snapshot.
+
+**Why.** Everything catchable in the SDK is a `KorchError`; the tree and its codes are a contract
+that must be frozen before any layer raises (spec 12 P1.1; spec 08 §2). Codes are part of the
+compatibility surface and are snapshot-locked.
+
+**Design decisions.** The hierarchy is the **union** of two specs that disagreed: spec 08 §2.1's tree
+adds `ConfigurationError`; the P1.1 task list and `.claude/rules` add `MissingExtraError`. Both are
+included so no raiser is left without its class. `KORCH_MISSING_EXTRA` is a new code (absent from the
+spec 08 tree) for `MissingExtraError`, matching the optional-dependency contract. `KorchError.__init__`
+follows spec 08 §2.1 verbatim (`message`, keyword-only `code`, `**context: str`). `TimeoutError`
+deliberately shadows the builtin (spec 08 §2.1) and subclasses `KorchError` only; the two import sites
+carry `# noqa: A004` with the reason. Code strings live in `constants/error_codes.py` and the classes
+reference them, so a code exists once.
+
+**Architecture changes.** `exceptions/` (leaf) now depends inward on `constants/` only, as spec 05
+allows. No behaviour beyond construction.
+
+**Files/modules affected.** `src/korchestrator/constants/error_codes.py`,
+`src/korchestrator/exceptions/errors.py`, `src/korchestrator/exceptions/__init__.py`,
+`tests/unit/exceptions/test_errors.py`, `tests/unit/constants/test_error_codes.py`.
+
+**Breaking changes.** None (new surface, frozen from here per P1 DoD — changes now need an ADR).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 40 exception/constant tests pass; `ruff`, `ruff format`, `mypy --strict` clean on
+31 source files; import contracts 3 kept, 0 broken. Full suite + coverage floor re-confirmed.
+
+**Known limitations / future improvements.** These classes are not yet re-exported at the top level —
+that lands with the frozen `__all__` in P1.5. Error-wrapping boundary tests (asserting only
+`KorchError` escapes each public entry point) arrive with the code that raises, audited in P8.4.
+
+---
+
 ## 2026-07-21 · [P0.5–P0.8] Quality net, import contracts, and CI/CD skeletons — v0.1.0
 
 **Type:** ci · **Phase:** P0 · **Author:** Claude (agent)
