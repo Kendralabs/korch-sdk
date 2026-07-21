@@ -1,0 +1,155 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "korchestrator"
+dynamic = ["version"]
+description = "Durable multi-agent execution kernel: Pregel BSP supersteps, Temporal durability, typed compiled signatures."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+authors = [{ name = "Kendra Laboratories Limited" }]
+keywords = ["agents", "orchestration", "multi-agent", "temporal", "pregel", "llm"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+dependencies = ["pydantic>=2.7,<3"]
+
+[project.optional-dependencies]
+dspy = ["dspy-ai>=2.5,<3"]
+temporal = ["temporalio>=1.7,<2"]
+routing = ["sentence-transformers>=3.0,<4", "numpy>=1.26"]
+mcp = ["mcp>=1.2,<2"]
+remote = ["httpx>=0.27,<1"]
+otel = [
+  "opentelemetry-api>=1.25",
+  "opentelemetry-sdk>=1.25",
+]
+all = [
+  "korchestrator[dspy]",
+  "korchestrator[temporal]",
+  "korchestrator[routing]",
+  "korchestrator[mcp]",
+  "korchestrator[remote]",
+  "korchestrator[otel]",
+]
+dev = [
+  "korchestrator[all]",
+  "build>=1.2",
+  "bandit>=1.7",
+  "hypothesis>=6.100",
+  "import-linter>=2.0",
+  "mypy>=1.10",
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.25",
+  "pip-audit>=2.7",
+  "pre-commit>=3.7",
+  "pytest>=8.2",
+  "pytest-asyncio>=0.23",
+  "pytest-cov>=5.0",
+  "respx>=0.21",
+  "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/kendralabs/korch-sdk"
+Documentation = "https://kendralabs.github.io/korch-sdk"
+Changelog = "https://github.com/kendralabs/korch-sdk/blob/main/CHANGELOG.md"
+Issues = "https://github.com/kendralabs/korch-sdk/issues"
+
+# --- build -----------------------------------------------------------------
+
+[tool.hatch.version]
+path = "src/korchestrator/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/korchestrator"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/korchestrator", "tests", "README.md", "LICENSE", "CHANGELOG.md"]
+
+# --- lint / format ---------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "TID", "PTH", "RUF", "D", "ANN", "S"]
+ignore = ["D203", "D213", "ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN", "S101"]
+"benchmarks/**" = ["D", "ANN"]
+"examples/**" = ["D", "ANN", "T201"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"backend".msg = "The SDK must not import from application repositories."
+"apps".msg = "The SDK must not import from application repositories."
+"services".msg = "The SDK must not import from application repositories."
+"frontend".msg = "The SDK must not import from application repositories."
+
+# --- types -----------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["src/korchestrator"]
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+disallow_any_generics = true
+no_implicit_reexport = true
+
+[[tool.mypy.overrides]]
+module = ["dspy.*", "temporalio.*", "mcp.*", "sentence_transformers.*"]
+ignore_missing_imports = true
+
+# --- tests -----------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+xfail_strict = true
+asyncio_mode = "auto"
+markers = [
+  "slow: takes more than one second; excluded from the fast unit run",
+  "temporal: requires the [temporal] extra and a Temporal test environment",
+  "benchmark: performance measurement; never part of the blocking gate",
+]
+filterwarnings = ["error", "default::DeprecationWarning:korchestrator.*"]
+
+# --- coverage --------------------------------------------------------------
+
+[tool.coverage.run]
+source = ["korchestrator"]
+branch = true
+parallel = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@overload",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", "benchmarks", "examples"]

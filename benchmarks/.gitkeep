@@ -1,0 +1,2 @@
+# Performance suites and baseline.json land in P10 (spec 02 §5.4). Placeholder so the CI
+# lint/format paths (ruff ... benchmarks) are valid before then.
