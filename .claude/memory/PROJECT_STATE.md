@@ -12,9 +12,9 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P1 — Public API & Interface Contracts — **complete** (on branch `feat/p1-contracts`, off `chore/p0-foundations`; both pending push/PR) |
-| **Last completed phase** | P1 — all six tasks (P1.1–P1.6) landed. Every contract is frozen. |
-| **Blocking** | Nothing. P2 (Pregel kernel) is ready to begin once P0+P1 merge. |
+| **Active phase** | P2 — Pregel kernel — **in progress** on branch `feat/p2-pregel-kernel` (off `develop`). Landed: P2.1 reducers, P2.2 laws, P2.4 graph. Remaining: P2.3 barrier/state, P2.5 runner, P2.6 routing, P2.7 determinism suite. |
+| **Last completed phase** | P1 — merged into `develop` (with P0) as two reviewed `--no-ff` merges. |
+| **Blocking** | Nothing. Next up: P2.3 (ChannelSchema + barrier Reduce) → P2.5 runner. |
 | **Code written** | P0 foundation (see below) plus: the `KorchError` tree + error codes; the frozen domain models (`state`/`agent`/`plan`/`routing`/`result`/`tool` + `types.JSONValue`); the ARI ports and supporting protocols; and the frozen public façade (`Korch`/`Swarm`/`Agent`) with the 27-name `__all__` guarded by a golden snapshot. |
 
 The package now builds standalone (`pip install -e .`, `python -m build`, clean-env wheel install all
