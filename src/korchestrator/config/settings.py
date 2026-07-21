@@ -64,7 +64,12 @@ class Settings(BaseModel):
     persistence_backend: Literal["none", "memory", "kcg"] = "memory"
 
     @classmethod
-    def from_env(cls, **overrides: Any) -> Settings:
+    def from_env(
+        cls,
+        # `Any`: overrides are heterogeneous field values (bool, Literal strings) validated by
+        # pydantic on construction; a precise union would just restate the field types.
+        **overrides: Any,
+    ) -> Settings:
         """Build ``Settings`` from the environment, with explicit overrides winning.
 
         Precedence, highest first: keyword argument, environment variable, declared
@@ -80,13 +85,11 @@ class Settings(BaseModel):
             A validated, immutable :class:`Settings`.
 
         Example:
-            >>> import os
-            >>> os.environ["KORCH_RUNTIME"] = "temporal"
-            >>> Settings.from_env().korch_runtime
+            >>> from korchestrator.config import Settings
+            >>> Settings().persistence_backend  # bare construction reads no environment
+            'memory'
+            >>> Settings.from_env(korch_runtime="temporal").korch_runtime  # explicit arg wins
             'temporal'
-            >>> Settings.from_env(korch_runtime="local").korch_runtime  # arg wins
-            'local'
-            >>> del os.environ["KORCH_RUNTIME"]
         """
         from_environment = {
             field: os.environ[var] for var, field in _ENV_TO_FIELD.items() if var in os.environ

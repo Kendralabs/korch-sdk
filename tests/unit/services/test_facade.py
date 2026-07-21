@@ -26,11 +26,17 @@ def test_agent_carries_model_and_tools() -> None:
     assert agent.config.tools == ("grep",)
 
 
-def test_agent_rejects_an_invalid_id() -> None:
-    from pydantic import ValidationError
+def test_agent_rejects_an_invalid_id_with_a_korch_error() -> None:
+    # The façade wraps pydantic's error — only KorchError subclasses cross this boundary (A5).
+    from pydantic import ValidationError as PydanticValidationError
 
-    with pytest.raises(ValidationError):
+    from korchestrator import KorchError, ValidationError
+
+    with pytest.raises(ValidationError) as info:
         Agent(id="Upper", role="r")
+    assert isinstance(info.value, KorchError)
+    assert info.value.code == "KORCH_VALIDATION_FAILED"
+    assert isinstance(info.value.__cause__, PydanticValidationError)
 
 
 def test_swarm_builder_collects_agents_and_edges() -> None:

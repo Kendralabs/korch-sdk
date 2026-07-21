@@ -10,6 +10,59 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P1 review] Fix defects found in the P0+P1 review — v0.1.0
+
+**Type:** fix · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Addressed the findings from the pre-merge review (boundary-auditor: clean; api-reviewer: 2
+defects + 1 defect/hygiene + 3 suggestions). Fixed:
+- **`Agent.__init__` now wraps pydantic's error** — it catches `pydantic.ValidationError` and raises
+  `korchestrator.ValidationError` (code `KORCH_VALIDATION_FAILED`) with `... from exc`, so only
+  `KorchError` subclasses cross the Tier-2 façade boundary (API rule A5; spec 08 §2.2/§7). The
+  façade test now asserts the wrapped `KorchError`, its code, and the preserved `__cause__`.
+- **CHANGELOG** gained an `### Added` block covering the entire P1 surface (exception tree, models,
+  ARI ports/protocols, façade, the 27-name public API) — it previously documented only P0.
+- **Docstring examples are now CI-enforced** — added a `pytest --doctest-modules src/korchestrator`
+  step to the CI `static` job (9 examples, all offline). Rewrote the `Settings.from_env` example to
+  stop mutating `os.environ` (it now uses bare `Settings()` for defaults and an explicit override for
+  precedence — deterministic regardless of ambient env).
+- **`Settings.from_env(**overrides: Any)`** gained an inline justification comment for the `Any`
+  (per python-standards).
+
+Two review items were **deferred by design** and recorded in `PROJECT_STATE.md` §6: the
+`ConfigurationError`/`ValidationError` overlap (ADR before P8's `configure()`), and `ToolError`'s
+specific default code (revisit at the P6 tool bridge). Both have no call site yet.
+
+**Why.** The `Agent` exception leak and the missing CHANGELOG are cheap now but would each be a MAJOR
+fix after `0.1.0` ships (changing a boundary exception type; missing user-facing paperwork). Fixing
+before the P0/P1 merge keeps the frozen surface correct from the first release.
+
+**Design decisions.** Tier-3 users constructing `AgentConfig`/`AgentPersona` directly still get raw
+pydantic errors (documented, intended); only the curated Tier-2 `Agent` façade wraps. Doctest
+enforcement lives in the single-Python `static` job to avoid 4× matrix redundancy.
+
+**Architecture changes.** None — `services/agent.py` now imports `korchestrator.exceptions`
+(façade may import leaf utilities). Import contracts unchanged: 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/services/agent.py`, `src/korchestrator/config/settings.py`,
+`tests/unit/services/test_facade.py`, `CHANGELOG.md`, `.github/workflows/ci.yml`,
+`.claude/memory/PROJECT_STATE.md`.
+
+**Breaking changes.** None (pre-release; this corrects the surface before it is first frozen in a
+release).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Façade test asserts the wrapped `KorchError` + cause + code;
+`pytest --doctest-modules src/korchestrator` green (9 examples); full suite + `ruff`/`mypy --strict`
+re-confirmed.
+
+**Known limitations / future improvements.** See the two deferred items above (P6, P8).
+
+---
+
 ## 2026-07-21 · [P1.5–P1.6] Freeze the public façade and the surface guard — v0.1.0
 
 **Type:** feature · **Phase:** P1 · **Author:** Claude (agent)

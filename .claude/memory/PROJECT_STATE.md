@@ -93,6 +93,8 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Coverage floor enforced | Global 80% is wired (`fail_under=80`) and green (100% at this size); `core/`+`models/` 95% checked in CI. Ratchet from P2 as behaviour lands. | P2+ |
 | `import-linter` contracts configured | `.importlinter` with 3 contracts (framework-free, layers, feature-independence); `lint-imports` reports 3 kept, 0 broken. `include_external_packages=True` added (import-linter requirement, omitted from spec §9 snippet). | ✔ P0 |
 | Manifest corrections during P0 | `--xfail-strict` → `xfail_strict=true` (spec named a nonexistent pytest flag); `import-linter` added to `[dev]`. Both recorded in the engineering log. | ✔ P0 |
+| `ConfigurationError` vs `ValidationError` overlap | Both nominally cover "invalid configuration"; spec 08 §1.2 says `configure()` raises `ValidationError`, so `ConfigurationError` has no call site yet and is not in `__all__`. Resolve via ADR (retire it, or specify which failures use which) **before `configure()` lands**. Raised by the P1 API review. | P8 |
+| `ToolError` default code is specific | `ToolError.default_code = TOOL_NOT_FOUND` — a raiser that omits `code=` gets a misleading "not found". No raiser exists until the tool bridge (P6); revisit then (generic default or required `code`). Raised by the P1 API review. | P6 |
 | Benchmark baseline not established | Committed baseline lands in P10. | P10 |
 | TS parity matrix | Ships as documentation in P9 with every method marked `TS: planned`. | P9 |
 | Backlog capabilities deliberately unbuilt | Context Graph external backends, speculative execution, FinOps quotas, KL DSL. Interface-now/implement-minimally; revisit post-1.0 only with real demand. | Post-1.0 |
