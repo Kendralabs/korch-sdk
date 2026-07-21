@@ -10,6 +10,49 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P0.4] OSS-readiness files — v0.1.0
+
+**Type:** docs · **Phase:** P0 · **Author:** Claude (agent)
+
+**What.** Added the open-source readiness set: Apache-2.0 `LICENSE` (full unmodified text) and
+`NOTICE`; `CONTRIBUTING.md` (branch/commit/gate/PR/ADR expectations derived from the repo rules);
+`CODE_OF_CONDUCT.md` (Contributor Covenant 2.1); `SECURITY.md` (private reporting channel, response
+window, `0.x` supported-version policy); `CHANGELOG.md` (Keep a Changelog with the verbatim `0.x`
+notice and a `## [0.1.0]` working section); `.editorconfig`; and `.github/` templates
+(`ISSUE_TEMPLATE/bug_report.yml`, `feature_request.yml`, `config.yml`, `PULL_REQUEST_TEMPLATE.md`).
+
+**Why.** These files make the repository publishable and set contributor expectations before code
+volume grows (spec 11 P0 build item 4; spec 02 §6).
+
+**Design decisions.** `CHANGELOG.md`'s working section is titled `## [0.1.0] - Unreleased` rather than
+`## [Unreleased]`, because `scripts/validate_version.py` (spec 10 §3.1) unconditionally requires a
+`## [0.1.0]` section for the current source version; the substring satisfies the gate while
+"Unreleased" stays honest until P12 stamps the date. Enforcement/security contacts use org-consistent
+`kendralabs.com` addresses matching the repository URLs already in `pyproject.toml`; maintainers
+should confirm these mailboxes exist. `README.md` was left unchanged — its full refresh belongs to
+P11; its current "source does not exist yet" note is superseded by the P0 scaffold and will be
+rewritten there.
+
+**Architecture changes.** None.
+
+**Files/modules affected.** `LICENSE`, `NOTICE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
+`SECURITY.md`, `CHANGELOG.md`, `.editorconfig`, `.github/ISSUE_TEMPLATE/*`,
+`.github/PULL_REQUEST_TEMPLATE.md`.
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Not executable code; `LICENSE` presence unblocks the `python -m build` acceptance
+run (verified at phase close). No behaviour change.
+
+**Known limitations / future improvements.** `README.md` refresh and the full docs site are P11;
+`kendralabs.com` contact addresses need maintainer confirmation.
+
+---
+
 ## 2026-07-21 · [P0.3] Minimal typed Settings — v0.1.0
 
 **Type:** feature · **Phase:** P0 · **Author:** Claude (agent)
