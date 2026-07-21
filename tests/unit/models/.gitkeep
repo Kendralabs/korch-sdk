@@ -1,0 +1,2 @@
+# Placeholder — the domain models and their tests land in P1/P2. This directory exists now so
+# the base-install CI job (pytest ... tests/unit/models ...) has a valid path to collect.

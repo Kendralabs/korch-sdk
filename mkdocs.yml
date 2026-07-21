@@ -1,0 +1,41 @@
+site_name: Korchestrator SDK
+site_description: Durable, deterministic, multi-agent execution as an installable Python library.
+site_url: https://kendralabs.github.io/korch-sdk
+repo_url: https://github.com/kendralabs/korch-sdk
+repo_name: kendralabs/korch-sdk
+copyright: Copyright 2026 Kendra Laboratories Limited
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+
+# docs/specs/ and docs/adr/ are the engineering record, and docs/background/ holds superseded
+# source inputs — none of them are part of the published user site (spec 02 §5.2). Excluding
+# them from the build keeps `mkdocs build --strict` clean and prevents publishing a superseded
+# spec beside the current one.
+exclude_docs: |
+  background/
+  specs/
+  adr/
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
