@@ -10,6 +10,48 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P2.4] AgentGraph and topology validation — v0.1.0
+
+**Type:** feature · **Phase:** P2 · **Author:** Claude (agent)
+
+**What.** Implemented `core/graph.py`: `Node` (an `AgentConfig` plus its bound compute callable),
+`Edge` (`source -> target`), the `AgentCallable` type, and `AgentGraph` with topology validation and
+deterministic adjacency accessors (`node_ids`, `nodes`, `edges`, `outbound`, `has_edge`, `has_node`,
+`get_node`). Re-exported from `korchestrator.core` (the Tier-3 surface). Tests lock valid
+construction, all validation failures, cycles-allowed, and orphan-allowed.
+
+**Why.** The kernel runs a directed agent graph; cycles are first-class (that is why it is Pregel,
+not a DAG runner). Validation must happen once, before superstep 0 (spec 06 §4).
+
+**Design decisions.** `Node`/`Edge` are frozen dataclasses (not pydantic models) because a node holds
+a live callable, which is not serialisable — the graph's topology, not its callables, is what serde
+(P8.5) will persist. Validation raises `ValidationError` (the kernel may import `exceptions`) for an
+empty graph, duplicate ids, dangling edge endpoints, and disallowed self-edges; cycles are allowed
+with no check. **Orphan nodes are legal** (spec 06 §4 lists no orphan check) — superstep 0 activates
+every node, so an orphan runs once and deactivates; this resolves the ambiguous "orphan" item in the
+spec 12 P2.4 list in favour of the spec-06 rule. Adjacency is stored sorted for stable, deterministic
+routing regardless of edge input order.
+
+**Architecture changes.** `core/graph.py` imports only `models` and `exceptions` (both legal for the
+kernel). No framework, no optional dependency. Import contracts 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/core/graph.py`, `core/__init__.py`,
+`tests/unit/core/test_graph.py`.
+
+**Breaking changes.** None (new Tier-3 surface).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 8 graph tests pass; graph doctest passes; `ruff`, `ruff format`, `mypy --strict`
+clean on 49 source files; import contracts 3 kept, 0 broken.
+
+**Known limitations / future improvements.** The graph is topology + callables only; the superstep
+runner that drives it (activation, barrier, halting) and message routing land in P2.5/P2.6.
+
+---
+
 ## 2026-07-21 · [P2.1–P2.2] Reducers with algebraic laws — v0.1.0
 
 **Type:** feature · **Phase:** P2 · **Author:** Claude (agent)
