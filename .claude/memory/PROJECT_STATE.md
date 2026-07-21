@@ -12,10 +12,10 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P0 — Foundations, Scope Freeze & Scaffolding — **complete** (on branch `chore/p0-foundations`, pending push/PR into `develop`) |
-| **Last completed phase** | P0 — all eight tasks (P0.1–P0.8) landed. |
-| **Blocking** | Nothing. P1 (Contracts) is ready to begin once the P0 branch merges. |
-| **Code written** | The package skeleton (26 module packages, `version.py`, `py.typed`), the authoritative `pyproject.toml`, the minimal typed `config.Settings`, the OSS-readiness files, the quality net (pre-commit + `scripts/`), the `.importlinter` contracts, and the CI/CD workflow skeletons. |
+| **Active phase** | P1 — Public API & Interface Contracts — **complete** (on branch `feat/p1-contracts`, off `chore/p0-foundations`; both pending push/PR) |
+| **Last completed phase** | P1 — all six tasks (P1.1–P1.6) landed. Every contract is frozen. |
+| **Blocking** | Nothing. P2 (Pregel kernel) is ready to begin once P0+P1 merge. |
+| **Code written** | P0 foundation (see below) plus: the `KorchError` tree + error codes; the frozen domain models (`state`/`agent`/`plan`/`routing`/`result`/`tool` + `types.JSONValue`); the ARI ports and supporting protocols; and the frozen public façade (`Korch`/`Swarm`/`Agent`) with the 27-name `__all__` guarded by a golden snapshot. |
 
 The package now builds standalone (`pip install -e .`, `python -m build`, clean-env wheel install all
 verified), imports as `0.1.0`, and every local gate is green: ruff, ruff-format, `mypy --strict`,
@@ -27,7 +27,7 @@ env-confinement, and version single-sourcing. `mkdocs build --strict` passes on 
 | Phase | Title | Status |
 |---|---|---|
 | P0 | Foundations, scope freeze, scaffolding | **Complete** (branch `chore/p0-foundations`) |
-| P1 | Public API & interface contracts | Not started |
+| P1 | Public API & interface contracts | **Complete** (branch `feat/p1-contracts`) |
 | P2 | Core execution kernel (Pregel) | Not started |
 | P3 | Runtime adapters (local + Temporal) | Not started |
 | P4 | Cognitive layer (agents, signatures, taxonomy) | Not started |
@@ -49,15 +49,25 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | Module | Layer | Status | Phase |
 |---|---|---|---|
 | `config/` | Leaf utility | **tested** (minimal `Settings` + `from_env`; P8 finalizes) | P0, P8 |
-| `interfaces/` · `core/` · `models/` · `agents/` · `taxonomy/` · `routing/` · `runtime/` · `context/` · `persistence/` · `providers/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `services/` · `serializers/` · `validators/` · `telemetry/` · `logging/` · `exceptions/` · `types/` · `constants/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P1–P9 |
+| `constants/` · `exceptions/` | Leaf utility | **tested** (`KorchError` tree + error codes, frozen) | P1 |
+| `types/` · `models/` | Contract | **tested** (`JSONValue` + frozen domain models, frozen) | P1 |
+| `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen) | P1 |
+| `services/` | Façade | **tested** (`Korch`/`Swarm`/`Agent` signatures; `run` → `NotImplementedError` until P4.9) | P1, P4 |
+| `core/` · `agents/` · `taxonomy/` · `routing/` · `runtime/` · `context/` · `persistence/` · `providers/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P2–P9 |
 
 ## 4. Public surface
 
-**Currently exported:** nothing — the package does not exist.
-**Target for P1 (frozen thereafter):** the `__all__` in `docs/specs/04-public-api.md` §6.
+**Currently exported (frozen at P1):** 27 names — `Agent`, `AgentState`, `Korch`, `Swarm`, the 4 ARI
+ports (`IDurableRuntime`/`IExecutionSandbox`/`IIdentityProvider`/`IModelGateway`), the 13 top-level
+`KorchError` subclasses, `Message`/`RunResult`/`RunStatus`/`StateUpdate`, `Settings`, and
+`__version__`. Full list in `tests/unit/public_surface.json`.
 
-The surface is guarded by a golden-file snapshot test from P1 onward. Changing it is a deliberate
-act requiring a CHANGELOG entry and a version decision in the same PR.
+**Grows in P8** by four names (`configure`, `enable_logging`, `from_json`, `to_json`) — each a MINOR
+addition that updates the golden snapshot. `korchestrator.exceptions.TimeoutError` is part of the
+compatibility surface but intentionally not top-level.
+
+The surface is guarded by the golden-file snapshot test (`tests/unit/test_public_surface.py`).
+Changing it is a deliberate act requiring a CHANGELOG entry and a version decision in the same PR.
 
 ## 5. Settled decisions
 

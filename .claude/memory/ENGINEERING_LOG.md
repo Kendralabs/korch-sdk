@@ -10,6 +10,60 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P1.5–P1.6] Freeze the public façade and the surface guard — v0.1.0
+
+**Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
+
+**What.** Froze the public surface. `services/` defines the Tier-1/2 façade: `Agent` (validates into
+an `AgentConfig`), `Swarm` (fluent builder — `add`/`edges`/`size` functional, `run` raises
+`NotImplementedError`), and `Korch` (composition root — `run` raises `NotImplementedError`). The
+top-level `korchestrator/__init__.py` re-exports the curated 27-name `__all__`. `tests/unit/
+test_public_surface.py` locks the surface against a golden file (`public_surface.json`) and carries
+the spec-04 Tier 1/2/3 examples as `xfail(strict=True)` tests; `tests/unit/services/test_facade.py`
+locks the current façade behaviour.
+
+**Why.** This is the anti-rework crux: the surface users import is frozen before implementation
+(spec 12 P1.5/P1.6; spec 04). The golden snapshot makes any future change to `__all__` a deliberate,
+reviewed act; the xfail-strict examples force the markers off the moment behaviour lands.
+
+**Design decisions.** (1) The P1 `__all__` is spec 04 §6's list **minus** `configure`,
+`enable_logging`, `from_json`, `to_json` — those come from the config/logging/serializers work in P8,
+and spec 04 §6 explicitly says the list "grows in P8". So P1 freezes 27 names; P8 adds the four
+(each a MINOR that updates the golden file). `TimeoutError` is intentionally not top-level (would
+shadow the builtin under `import *`); `ConfigurationError` is likewise internal-only per spec 04 §6.
+(2) Builders are functional data-collection so the topology surface is real and type-checks (`Self`
+via `typing_extensions` for 3.10); only execution (`run`) is deferred to P4.9, its
+`NotImplementedError` line coverage-excluded. (3) Docstring examples that would execute the deferred
+path carry `# doctest: +SKIP`; the authoritative offline examples live as xfail-strict tests. (4) The
+`Agent(id=...)` parameter keeps the public name `id` (matching `AgentConfig.id` and spec 04), with a
+scoped `# noqa: A002`.
+
+**Architecture changes.** `services/` is the composition root and the only module that imports across
+layers (config, interfaces, models, its own submodules) — legal per spec 05. Import contracts remain
+3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/services/{agent,swarm,korch}.py`, `services/__init__.py`,
+`src/korchestrator/__init__.py`, `tests/unit/services/test_facade.py`,
+`tests/unit/test_public_surface.py`, `tests/unit/public_surface.json`.
+
+**Breaking changes.** None (initial public surface; frozen — any change now needs an ADR + CHANGELOG +
+version decision + golden-file update in the same PR).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `from korchestrator import Korch, Swarm, Agent` works; snapshot test passes; the
+three tier examples xfail-strict; façade behaviour locked; `import korchestrator` pulls in no optional
+dependency (base-install lazy check green); `ruff`, `ruff format`, `mypy --strict` clean on 47 source
+files; import contracts 3 kept, 0 broken. **P1 Definition of Done met.**
+
+**Known limitations / future improvements.** `Korch.run`/`Swarm.run` execute against the kernel in
+P4.9 (removing the xfail markers). The top-level `__all__` grows by four names in P8. The
+async surface (`A8` sync-wrapper detail) is settled when the kernel lands.
+
+---
+
 ## 2026-07-21 · [P1.3–P1.4] Freeze the ARI ports and supporting protocols — v0.1.0
 
 **Type:** feature · **Phase:** P1 · **Author:** Claude (agent)
