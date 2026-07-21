@@ -29,5 +29,21 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 - OSS-readiness files: Apache-2.0 `LICENSE`, `NOTICE`, `CONTRIBUTING.md`,
   `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue and pull-request templates, and
   `.editorconfig`.
+- The `KorchError` exception hierarchy — `KorchError` and its subclasses (`ConfigurationError`,
+  `ValidationError`, `AuthError`, `NetworkError`, `TimeoutError`, `RateLimitError`,
+  `QuotaExceededError`, `ProviderError`, `RoutingError`, `ToolError`, `GovernanceHaltError`,
+  `RunFailedError`, `RunTimeoutError`, `MissingExtraError`) — each carrying a stable error code.
+  Everything the SDK raises deliberately is a `KorchError`.
+- The frozen Pydantic domain models: `AgentState`, `Message`, `StateUpdate`, `MessageRole`,
+  `Performative`, `RunStatus`, `AgentConfig`, `AgentPersona`, `AgentDescriptor`, `ExecutionPlan`,
+  `TaskDecomposition`, `ModelCard`, `TaskSemantics`, `RoutingContext`, `RoutingResult`, `RunResult`,
+  `ToolResult`. All are immutable and reject unknown fields.
+- The ARI ports (`IIdentityProvider`, `IExecutionSandbox`, `IModelGateway`) and the supporting
+  protocols (`IDurableRuntime`, `GraphRepository`, `TenantStore`, `BaseRouter`, `AUBConnector`),
+  reachable via `korchestrator.interfaces`.
+- The public façade — `Korch` (Tier-1 one-liner), `Swarm` (Tier-2 typed builder), and `Agent` —
+  and the frozen, curated top-level public API (`korchestrator.__all__`, 27 names) guarded by a
+  golden-file snapshot test. Execution (`Korch.run`/`Swarm.run`) is wired to the kernel in a later
+  release; the builder surface is usable now.
 
 [0.1.0]: https://github.com/kendralabs/korch-sdk/releases/tag/v0.1.0

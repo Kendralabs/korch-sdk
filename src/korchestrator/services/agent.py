@@ -6,6 +6,9 @@ The user-facing ``Agent`` builder — a thin, typed constructor that produces th
 
 from __future__ import annotations
 
+from pydantic import ValidationError as PydanticValidationError
+
+from korchestrator.exceptions import ValidationError
 from korchestrator.models.agent import AgentConfig, AgentPersona
 
 __all__ = ["Agent"]
@@ -35,6 +38,11 @@ class Agent:
         'lead'
         >>> agent.config.persona.role
         'review-lead'
+
+    Raises:
+        ValidationError: If any input fails validation (e.g. an ``id`` that does not match the
+            allowed pattern). This is ``korchestrator.ValidationError`` — the façade never lets a
+            raw pydantic error escape (spec 08 §2.2, §7).
     """
 
     def __init__(
@@ -51,15 +59,22 @@ class Agent:
         timeout_seconds: float = 120.0,
     ) -> None:
         """Validate the inputs into an immutable :class:`AgentConfig`."""
-        self._config = AgentConfig(
-            id=id,
-            persona=AgentPersona(role=role, goal=goal, backstory=backstory),
-            model=model,
-            tools=tools,
-            max_react_steps=max_react_steps,
-            hitl_threshold=hitl_threshold,
-            timeout_seconds=timeout_seconds,
-        )
+        try:
+            self._config = AgentConfig(
+                id=id,
+                persona=AgentPersona(role=role, goal=goal, backstory=backstory),
+                model=model,
+                tools=tools,
+                max_react_steps=max_react_steps,
+                hitl_threshold=hitl_threshold,
+                timeout_seconds=timeout_seconds,
+            )
+        except PydanticValidationError as exc:
+            raise ValidationError(
+                f"Invalid agent configuration for id={id!r}: {exc}. "
+                "Check the id pattern (^[a-z0-9][a-z0-9_-]{0,63}$), the numeric bounds, and role.",
+                code="KORCH_VALIDATION_FAILED",
+            ) from exc
 
     @property
     def id(self) -> str:
