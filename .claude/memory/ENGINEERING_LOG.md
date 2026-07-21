@@ -10,6 +10,59 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P2.1–P2.2] Reducers with algebraic laws — v0.1.0
+
+**Type:** feature · **Phase:** P2 · **Author:** Claude (agent)
+
+**What.** Implemented `core/reducers.py` — the four channel reducers (`LastValue`, `Append`,
+`UniqueAppend`, `MergeDict`) plus the `Reducer` protocol and the `Delta` type — and proved their
+algebraic laws with Hypothesis property tests (`tests/unit/core/test_reducers.py`). Each reducer
+merges a channel's current value with one superstep's `(agent_id, value)` deltas. Registered a
+Hypothesis test profile in `tests/conftest.py`.
+
+**Why.** Reducers are the barrier's merge mechanism; if they are not associative and
+order-independent, `asyncio.gather` completion order or Temporal's replay interleaving could change
+the result and corrupt a replay (spec 06 §3). This is the deterministic heart the whole kernel rests
+on, so the laws are property-tested, not example-tested.
+
+**Design decisions.** Deltas are `(agent_id, value)` pairs and each reducer **sorts by `agent_id`
+internally**, so it is a genuinely order-independent pure function. This adds the `agent_id` key to
+spec 06 §3's illustrative `Sequence[T]` signature — deliberately, because the order-independence the
+spec mandates for `LastValue`/`Append` needs a total order over the deltas, and `agent_id` (unique
+per node) is exactly that order. A reducer is applied **once per channel per superstep** (collect →
+sort → apply), not folded incrementally; incremental folding with re-sorting would break `Append`'s
+result, so the operative guarantee is order-independence of the whole delta set, matching spec 06
+§3's "sorts deltas by agent_id before folding". `MergeDict` deep-merges with conflicting leaves
+resolved by highest `agent_id` (LastValue) and raises `ValidationError` on a non-mapping delta. Two
+CI-plumbing corrections: `tests/conftest.py` registers a Hypothesis profile (`max_examples=50`,
+`deadline=None`, suppress `too_slow`) so property tests are deterministic and robust on slow machines
+(no wall-clock decides a test — spec 09 §3); and the base-install CI job now installs `hypothesis`
+(a test tool, not a package runtime dependency — the kernel imports only pydantic/stdlib, and the
+"optional deps absent" check still guards the real extras).
+
+**Architecture changes.** `core/` gains its first real module. It imports only
+`korchestrator.exceptions` and `korchestrator.types` (both legal for the kernel per spec 05); no
+framework, no optional dependency. Import contracts still 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/core/reducers.py`, `core/__init__.py`,
+`tests/unit/core/test_reducers.py`, `tests/conftest.py`, `.github/workflows/ci.yml`.
+
+**Breaking changes.** None (new internal surface).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 15 property/behaviour tests pass (Hypothesis: order-independence for all four,
+idempotence for `LastValue`/`UniqueAppend`/`MergeDict`, explicit non-idempotence for `Append`,
+totality on empty deltas); 4 reducer doctests pass; `ruff`, `ruff format`, `mypy --strict` clean on
+the kernel (`JSONValue` isinstance narrowing holds under strict); import contracts 3 kept, 0 broken.
+
+**Known limitations / future improvements.** Channel→reducer binding, the barrier Reduce step, and
+frozen-snapshot enforcement land in P2.3; the graph in P2.4; the superstep runner in P2.5.
+
+---
+
 ## 2026-07-21 · [P1 review] Fix defects found in the P0+P1 review — v0.1.0
 
 **Type:** fix · **Phase:** P1 · **Author:** Claude (agent)
