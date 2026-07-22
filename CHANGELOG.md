@@ -15,6 +15,10 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Shield redactor (Phase 7): `korchestrator.security.Shield` — the single consolidated PII/secret
+  redactor. `redact(text)`/`redact_value(json)` mask emails, secrets (JWT, AWS/`sk-`/Slack tokens,
+  Bearer), IBANs, SSNs, Luhn-validated card numbers (PAN), and E.164 phone numbers to
+  `[MASKED_<TYPE>]`, returning what changed. A `high_sensitivity` mode fails toward masking.
 - Extension framework (Phase 6): agent-to-agent messaging (`korchestrator.a2a` — `directed_message`,
   `HandoffTransformer`); transport-agnostic event streaming (`korchestrator.events` — `Event`,
   `EventPublisher`, `Subscription`, `format_sse`; the SDK emits, it does not serve HTTP); and

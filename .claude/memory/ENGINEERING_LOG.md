@@ -10,6 +10,52 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P7.1] Shield — the consolidated PII/secret redactor — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Added `security/redactor.py` — the single consolidated `Shield`. `redact(text)` masks
+detected entities to `[MASKED_<TYPE>]`: `EMAIL`, `SECRET` (JWT, AWS access keys, `sk-`/`ghp_`/Slack
+tokens, `Bearer` tokens), `IBAN`, `SSN`, `PAN` (13-19 digit runs validated by the Luhn checksum), and
+`PHONE` (E.164 7-15 digit runs), returning a `RedactionResult` (masked text, changed flag, sorted
+types). `redact_value` walks JSON structures and matches the bridge's `Redactor` seam so `Shield`
+plugs straight in. A `high_sensitivity` mode masks any 12-19 digit run as a PAN even without a valid
+Luhn checksum (fails toward masking).
+
+**Why.** P7.1, built first per the spec ("governance audit and trace ingestion depend on redaction
+existing"). One redactor on the ingest path before anything reaches persistence, telemetry, logs, or
+an event subscriber (spec 08 §2.4).
+
+**Design decisions.** (1) **One redactor, period** — a second anywhere is a review rejection; it lives
+in `security/` (leaf utility). (2) Detectors run most-specific-first (email, secrets, IBAN, SSN, then
+Luhn-checked PAN, then digit-counted phone) so an SSN or card isn't misread as a phone. (3) PAN uses
+the real Luhn checksum and PHONE bounds the digit count to E.164's 7-15, so a non-card 16-digit run is
+left alone by default (and only masked under `high_sensitivity`). (4) The governance *fail-closed*
+(deny a high-sensitivity flow when the redactor is unavailable) is a `governance/` behaviour landing
+in P7.2-P7.4; `Shield` itself only masks.
+
+**Architecture changes.** `security/` populated (leaf); imports types/pydantic/stdlib only.
+import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/security/{__init__,redactor}.py` (new);
+`tests/unit/security/test_redactor.py` (new).
+
+**Breaking changes.** None. New `korchestrator.security` surface; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean; 14 tests + 3 doctests pass;
+import-linter 4/4. Covered: every required format masked; a non-Luhn card-like run not masked (default)
+but masked under high-sensitivity; a 16-digit run is not a phone; clean text untouched; multiple
+entities in one string; recursive JSON redaction; non-strings unchanged.
+
+**Known limitations / future improvements.** Governance fail-closed denial (P7.2-P7.4). The redactor is
+not yet wired as the bridge's default `Redactor` — that composition wiring lands with governance.
+
+---
+
 ## 2026-07-22 · [P6.5/P6.7/P6.8] A2A messaging, event streaming, middleware/hooks — v0.1.0 · closes P6
 
 **Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
