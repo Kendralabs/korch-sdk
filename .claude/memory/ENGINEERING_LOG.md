@@ -10,6 +10,68 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.5] Lazy DSPy signatures — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** `agents/signatures.py`: a `Signature` base users subclass to declare a reasoning contract
+with `InputField`/`OutputField` markers and a docstring instruction — **all without importing
+`dspy`**. `Signature.to_dspy()` materialises a real `dspy.Signature` on demand via
+`dspy.make_signature(...)`, resolving annotations to real types first (PEP 563 stores them as
+strings). `load_dspy()` is the lazy-import guard raising `MissingExtraError`. Ships the built-in
+`WorkerSignature` (role/objective/context → answer/is_final) and `ArchitectSignature`
+(objective/intent/difficulty → roles/rationale). Exported from `korchestrator.agents`.
+
+**Why.** The cognitive layer must be authored and imported on a `pydantic`-only base install, yet
+DSPy signatures are normally module-level classes subclassing `dspy.Signature` — which would force a
+top-level `dspy` import (golden rule B5). Declaring signatures dspy-free and compiling them lazily is
+what lets the base install import cleanly and raise `MissingExtraError` only when reasoning actually
+runs (spec 05 §57, spec 11 P4 validation).
+
+**Design decisions.** (1) A dspy-free declarative `Signature` — fields are lightweight `_FieldSpec`
+markers, materialised to `dspy.InputField`/`OutputField` only in `to_dspy()`. Verified against the
+installed dspy: `import korchestrator.agents` pulls in no `dspy`. (2) `to_dspy()` validates fields
+**before** importing dspy, so a malformed signature fails fast (and offline) with `ValidationError`.
+(3) Annotations are resolved with `get_type_hints` because `from __future__ import annotations` stores
+them as strings, which `dspy.make_signature` rejects. (4) `InputField`/`OutputField` keep DSPy's
+PascalCase names (noqa N802) and return `Any` so `x: str = InputField()` type-checks — mirroring
+`dspy`'s own API. (5) `MissingExtraError` is tested deterministically by patching
+`sys.modules["dspy"]=None`, so the test holds whether or not the extra is installed.
+
+**Architecture changes.** `agents/` gains the signatures module; `dspy` is imported only inside
+`load_dspy()` (never at module top), satisfying the confinement. Import-linter 4/4 kept.
+`korchestrator.agents.__all__` grows by five names (`Signature`, `InputField`, `OutputField`,
+`WorkerSignature`, `ArchitectSignature`) — a subpackage surface; the top-level `korchestrator.__all__`
+is unchanged. Added a scoped `filterwarnings` ignore for dspy's import-time DeprecationWarnings so a
+third-party warning cannot fail our `warnings-are-errors` suite; our own code's warnings still error.
+
+**Files/modules affected.** `src/korchestrator/agents/signatures.py` (new), `agents/__init__.py`,
+`tests/unit/agents/test_signatures.py` (new), `pyproject.toml` (filterwarnings), `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; top-level `__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 8 unit tests (dspy-free declaration + field order; subclass inheritance and
+override precedence; built-in signatures' fields; `load_dspy`/`to_dspy` → `MissingExtraError` when
+absent; fieldless → `ValidationError`; and — with dspy present — `to_dspy` produces a real
+`dspy.Signature` with the right fields and instruction). `signatures.py` 99% covered; `ruff`/`format`/
+`mypy --strict` clean (60 files); import-linter 4/4 kept; isolation gate `OK`; doctest passes;
+`import korchestrator.agents` verified dspy-free.
+
+**Known limitations / future improvements.** (1) The `[dspy]` extra pins `dspy-ai>=2.5,<3`, but
+`dspy-ai` now redirects to the `dspy` package, which installs as `3.2.1` — the `<3` bound does not
+constrain the real module. The extras matrix should move to `dspy>=2.5` (a spec-02 §8 change worth an
+ADR/follow-up); the code targets the stable `make_signature`/`InputField`/`OutputField` API that spans
+these versions. (2) "Compiled" here means declared, not DSPy-optimised — teleprompter/optimizer
+compilation against training data is out of scope for P4. Next: P4.6 `WorkerAgent` consumes these
+signatures via `TypedPredictor` + a bounded ReAct loop, run under MockLM so the full agent path stays
+offline and deterministic.
+
+---
+
 ## 2026-07-22 · [P4.4] Unified Agent base — declarative + subclassable — v0.1.0
 
 **Type:** feature · **Phase:** P4 · **Author:** Claude (agent) · **ADR:** 0012

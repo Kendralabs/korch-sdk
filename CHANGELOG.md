@@ -90,6 +90,12 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   (spec 08 §5); enterprise deployments supply KIAM/KACP and OpenSandbox. The sandbox tool registry
   is empty until the Agent Utility Bridge (P6) populates it.
 
+- Lazy DSPy **signatures** (`korchestrator.agents`): a `Signature` base with `InputField` /
+  `OutputField` markers that declare a reasoning contract **without importing `dspy`**, plus the
+  built-in `WorkerSignature` and `ArchitectSignature`. `Signature.to_dspy()` materialises a real
+  `dspy.Signature` on demand — the only point that requires the `[dspy]` extra, raising an actionable
+  `MissingExtraError` when it is absent. So `import korchestrator.agents` stays `pydantic`-only and
+  the cognitive layer is authored offline; the worker compiles the signature at call time.
 - The unified `Agent` base (`korchestrator.agents.Agent`, re-exported as `korchestrator.Agent` and
   `korchestrator.services.Agent`): one class that is both the declarative Tier-2 builder
   (`Agent(id="lead", role="review-lead")`, unchanged) and the subclassable Tier-3 base with the

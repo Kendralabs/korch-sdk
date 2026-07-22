@@ -6,5 +6,19 @@ signatures.
 """
 
 from korchestrator.agents.base import Agent
+from korchestrator.agents.signatures import (
+    ArchitectSignature,
+    InputField,
+    OutputField,
+    Signature,
+    WorkerSignature,
+)
 
-__all__ = ["Agent"]
+__all__ = [
+    "Agent",
+    "ArchitectSignature",
+    "InputField",
+    "OutputField",
+    "Signature",
+    "WorkerSignature",
+]

@@ -131,7 +131,13 @@ markers = [
   "temporal: requires the [temporal] extra and a Temporal test environment",
   "benchmark: performance measurement; never part of the blocking gate",
 ]
-filterwarnings = ["error", "default::DeprecationWarning:korchestrator.*"]
+filterwarnings = [
+  "error",
+  "default::DeprecationWarning:korchestrator.*",
+  # dspy emits import-time DeprecationWarnings from its own signatures; they are third-party and
+  # must not fail (or clutter) our suite. Our code's warnings still error.
+  "ignore::DeprecationWarning:dspy.*",
+]
 
 # --- coverage --------------------------------------------------------------
 
