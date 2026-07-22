@@ -43,3 +43,30 @@ modules =
     korchestrator.persistence
     korchestrator.context
     korchestrator.events
+
+[importlinter:contract:httpx-confined-to-http-owners]
+name = httpx only in clients and providers (ADR 0011)
+type = forbidden
+# httpx belongs to the [remote] extra and is owned by exactly two HTTP-facing modules:
+# clients/ (the remote KorchestratorClient) and providers/gateway_openai.py (the model gateway).
+# A stray httpx import in any other layer fails here rather than relying on prose (ADR 0011).
+source_modules =
+    korchestrator.agents
+    korchestrator.core
+    korchestrator.interfaces
+    korchestrator.models
+    korchestrator.routing
+    korchestrator.runtime
+    korchestrator.services
+    korchestrator.taxonomy
+    korchestrator.tools
+    korchestrator.mcp
+    korchestrator.a2a
+    korchestrator.governance
+    korchestrator.persistence
+    korchestrator.context
+    korchestrator.events
+    korchestrator.config
+    korchestrator.telemetry
+forbidden_modules =
+    httpx
