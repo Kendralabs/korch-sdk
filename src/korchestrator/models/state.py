@@ -109,6 +109,7 @@ class AgentState(BaseModel):
     inbox: Mapping[str, tuple[Message, ...]] = Field(default_factory=dict)
     superstep: int = Field(default=0, ge=0)
     halted: bool = False
+    halted_agents: tuple[str, ...] = ()
     status: RunStatus = RunStatus.STARTED
     trust_score: float = Field(default=1.0, ge=0.0, le=1.0)
     transaction_time: datetime
