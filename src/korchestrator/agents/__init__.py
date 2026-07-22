@@ -5,4 +5,6 @@ dspy (lazy, [dspy] extra). The DSPy reasoning layer: agent base, worker, archite
 signatures.
 """
 
-__all__: list[str] = []
+from korchestrator.agents.base import Agent
+
+__all__ = ["Agent"]

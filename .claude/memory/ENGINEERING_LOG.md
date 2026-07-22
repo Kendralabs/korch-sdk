@@ -10,6 +10,65 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.4] Unified Agent base — declarative + subclassable — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent) · **ADR:** 0012
+
+**What.** `agents/base.py`: the single `Agent` class. It keeps the P1.5 declarative constructor
+(`Agent(id, role, model, …)`, pydantic→`ValidationError` wrapping) and adds the frozen-snapshot
+behavioural surface — `async think(state) -> StateUpdate` (base raises `NotImplementedError`;
+subclasses override), `is_complete(state) -> bool` (default `False`), `bind(*, clock) -> Self`,
+`clock` (a `_BoundClock` exposing `now()`), and `to_node() -> Node`. Re-exported from
+`korchestrator.agents`, `korchestrator.services` (a one-line re-export), and the top level — all three
+paths are the *same* object. `services/swarm.py` now imports `Agent` from `korchestrator.agents`.
+
+**Why.** Spec 04 (Tier 2) shows a declarative `Agent(id, role)`; spec 07 §4 (Tier 3) shows a
+subclassable `korchestrator.agents.Agent` with `think`. Taken literally that is two different classes
+named `Agent` — a footgun. The product owner chose to **unify** them (ADR 0012): one concept, one
+name, both usage styles.
+
+**Design decisions.** (1) Canonical home is `agents/` (behaviour belongs in the cognitive layer);
+`services/agent.py` re-exports it, preserving spec 04 §7's `from korchestrator.services import Agent`
+path — so the public surface and golden snapshot are unchanged (additive, non-breaking). (2) The
+frozen-snapshot rule is enforced structurally: `AgentState` is a frozen model, so `think` physically
+cannot mutate it; a test locks this. (3) The clock is injected, not read: `bind(clock=…)` takes the
+kernel's `Callable[[], datetime]` and `_BoundClock` adapts it to the `self.clock.now()` agents call,
+so agent timestamps stay replay-safe (no `datetime.now()`). (4) Base `think` raises
+`NotImplementedError` — a declarative agent has no reasoning until the façade wires the default worker
+(P4.9); custom (overridden) agents run now. Consistent with P1's `run()`-raises pattern. (5) The
+P1.5 role-based constructor is kept verbatim rather than spec 07's `persona=` example, since spec 04's
+signature is the frozen public one; custom agents pass `role=`.
+
+**Architecture changes.** `agents/` gains its first real class, importing `core` (`Node`), `models`,
+`exceptions` — all inward, no `dspy`. `services` → `agents` re-export is legal inward layering.
+Import-linter 4/4 kept; `korchestrator.__all__` unchanged.
+
+**Files/modules affected.** `src/korchestrator/agents/base.py` (new),
+`src/korchestrator/agents/__init__.py`, `src/korchestrator/services/agent.py` (now a re-export),
+`src/korchestrator/services/swarm.py` (import source), `tests/unit/agents/test_base.py` (new),
+`docs/adr/0012-*.md`, `CHANGELOG.md`.
+
+**Breaking changes.** None. The declarative constructor and every public import path are unchanged;
+the change is additive (new methods on `Agent`).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A — `from korchestrator import Agent` (and the `services`/`agents` paths) all
+resolve to the one class.
+
+**Testing status.** 11 new unit tests (all three import paths are one class; declarative construction
++ validation wrapping; clock-required/`bind`/chaining; `to_node`; `is_complete`; base-`think` raises;
+a custom `WordCountAgent` runs against a frozen snapshot; snapshot immutability). `agents/base.py`
+100% covered; façade + public-surface suites still pass (2 expected P4.9 xfails). `ruff`/`format`/
+`mypy --strict` clean (59 files); import-linter 4/4 kept; doctest passes.
+
+**Known limitations / future improvements.** The declarative agent's default reasoning (the worker)
+is not yet attached, so a bare declarative `Agent` cannot run until P4.9 wires it — the next design
+decision is how the DSPy worker (P4.6) attaches as that default while the Tier-1 one-liner still runs
+on a base install (no `[dspy]`) and raises `MissingExtraError` only when real reasoning is invoked.
+
+---
+
 ## 2026-07-22 · [P4] Normalize pregel formatting to current ruff — v0.1.0
 
 **Type:** chore · **Phase:** P4 · **Author:** Claude (agent)
