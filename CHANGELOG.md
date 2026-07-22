@@ -67,9 +67,57 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   parks it (status `governance_paused`, no compute) until `resume` or `cancel`, bounded by a 24-hour
   deadline after which it is `timed_out`. Delivered via `IDurableRuntime.signal`. (`edit_resume`
   arrives with the HITL façade in a later phase; the local runtime is synchronous and has no HITL.)
+- The deterministic offline `MockLM` gateway (`korchestrator.providers.MockLM`) — the default
+  `IModelGateway`. The same messages always yield the same completion; it supports scripted
+  per-model responses and records a call log. No network, no randomness, no credentials — it is what
+  makes the full agent path testable in CI, and it is the zero-config default.
+- The networked default `IModelGateway`, `korchestrator.providers.OpenAIGateway` — a thin client for
+  any OpenAI-compatible chat-completions endpoint. All configuration (endpoint, credentials, timeout)
+  is injected (the gateway reads no environment), `httpx` is lazily imported and lives behind the
+  `[remote]` extra (the base install stays `pydantic`-only), and every vendor failure is wrapped as a
+  `KorchError`: a timeout → `TimeoutError`, 401/403 → `AuthError`, 429 → `RateLimitError`, anything
+  else → `ProviderError` — always preserving `__cause__`. Prompts and credentials are never logged.
+- `korchestrator.providers.get_lm(model_name, *, settings=..., api_key=..., base_url=...)` — the
+  gateway factory: returns the offline `MockLM` when `settings.mock_llm` (the zero-config default),
+  otherwise a configured `OpenAIGateway`; a real gateway without injected credentials raises an
+  actionable `ConfigurationError`.
+- The default local ARI providers (`korchestrator.providers`): `LocalIdentityProvider` — an
+  unsecured, single-tenant `IIdentityProvider` that resolves an agent to a deterministic synthetic
+  DID and enforces its bound tenant; and `LocalSandbox` — a subprocess-isolating `IExecutionSandbox`
+  that runs a registered tool command in a child process under a hard, kill-on-expiry timeout and
+  returns a normalised `ToolResult`. Both are zero-infrastructure development fallbacks: each logs a
+  warning on construction and is rejected by the production-boot gate under a durable deployment
+  (spec 08 §5); enterprise deployments supply KIAM/KACP and OpenSandbox. The sandbox tool registry
+  is empty until the Agent Utility Bridge (P6) populates it.
+
+- `korchestrator.agents.WorkerAgent` — the default reasoning agent (requires the `[dspy]` extra;
+  ADR 0013). It compiles its `Signature` into a `dspy.Predict` at call time and runs it under the
+  **injected** `IModelGateway`: a `dspy.LM` subclass routes DSPy's model calls to
+  `IModelGateway.complete` (so heterogeneous per-agent models and the offline MockLM both work), and a
+  lenient chat adapter falls back to the first output field when a reply is not field-marked (so a
+  deterministic MockLM echo still parses). The blocking DSPy call runs in a worker thread
+  (`asyncio.to_thread`); a base install raises an actionable `MissingExtraError` when reasoning runs.
+  `Agent.bind` now also accepts an optional `gateway` the composition root injects.
+- Lazy DSPy **signatures** (`korchestrator.agents`): a `Signature` base with `InputField` /
+  `OutputField` markers that declare a reasoning contract **without importing `dspy`**, plus the
+  built-in `WorkerSignature` and `ArchitectSignature`. `Signature.to_dspy()` materialises a real
+  `dspy.Signature` on demand — the only point that requires the `[dspy]` extra, raising an actionable
+  `MissingExtraError` when it is absent. So `import korchestrator.agents` stays `pydantic`-only and
+  the cognitive layer is authored offline; the worker compiles the signature at call time.
+- The unified `Agent` base (`korchestrator.agents.Agent`, re-exported as `korchestrator.Agent` and
+  `korchestrator.services.Agent`): one class that is both the declarative Tier-2 builder
+  (`Agent(id="lead", role="review-lead")`, unchanged) and the subclassable Tier-3 base with the
+  frozen-snapshot behavioural surface — `async think(state) -> StateUpdate`, `is_complete(state)`,
+  `bind(clock=...)`, `clock` (`clock.now()`), and `to_node()`. `think` receives an immutable
+  `AgentState` and returns a `StateUpdate` delta; the base implementation raises until a subclass
+  overrides it or the façade supplies the default reasoning agent. See ADR 0012.
 
 ### Changed
 
+- **`Agent` is now defined in `korchestrator.agents`** (its canonical home) and re-exported from
+  `korchestrator.services` and the top level — all three import paths resolve to the same class
+  (ADR 0012). The Tier-2 declarative constructor is unchanged, so this is additive and non-breaking;
+  the new behavioural methods make custom agents (subclass + `think`) possible.
 - **Breaking (0.x).** `IDurableRuntime` is reshaped from a single `run(state)` method to
   `now()` / `start(state)` / `wait(run_id)` / `signal(run_id, name, payload)` (spec 06 §6), so it can
   express durable start-then-rejoin and carry HITL control signals. The graph is injected into the

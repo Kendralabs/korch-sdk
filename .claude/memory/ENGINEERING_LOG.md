@@ -10,6 +10,396 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.6] DSPy WorkerAgent under MockLM — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent) · **ADR:** 0013
+
+**What.** `agents/worker.py`: `WorkerAgent(Agent)`, the default reasoning agent. `think()` runs the
+blocking DSPy call in a worker thread (`asyncio.to_thread`) and folds the reply into a `StateUpdate`;
+`_reason()` compiles the agent's `Signature` to `dspy.Predict` and runs it under a per-call
+`dspy.context`. Two lazily-built adapters bridge DSPy to the SDK: a `dspy.LM` subclass that routes
+DSPy's model calls to the injected `IModelGateway.complete` (not litellm), and a lenient
+`ChatAdapter` that, when a reply is not field-marked, puts the raw completion in the first output
+field (bools default `False`). `Agent.bind` gains an optional `gateway`. Exported as
+`korchestrator.agents.WorkerAgent`.
+
+**Why.** This is the single reasoning path (ADR 0013): declarative and custom agents reason through
+DSPy, but the SDK's contracts require the model to come through the `IModelGateway` port (portability,
+MockLM offline testing, heterogeneous per-agent models) and require determinism under MockLM. DSPy
+normally talks to litellm and expects field-marked output; the LM subclass and lenient adapter make
+it obey the port and tolerate MockLM's deterministic echo.
+
+**Design decisions.** (1) The `dspy.LM` and `ChatAdapter` subclasses are **built inside functions**
+after `load_dspy()` — they cannot be module-level classes (that would need a top-level `dspy` import,
+B5). (2) The async→sync bridge: `think` is async, `_reason` is sync in a thread, and the LM adapter
+calls the async `gateway.complete` via `asyncio.run` in that thread — real superstep parallelism, and
+the DSPy call stays on an activity boundary, never workflow scope. (3) `_reason` checks the gateway
+**before** importing dspy, so a missing gateway is a fast `ConfigurationError` even on a base install.
+(4) The gateway is bound (`bind(gateway=...)`) rather than constructed in, mirroring the clock — the
+composition root injects both. (5) `cache=False`, `num_retries=0` on the LM so behaviour is
+predictable and our `ProviderError` wrapping is not masked by DSPy retries. (6) Model selection uses
+`AgentConfig.model` or a neutral `korch-default` placeholder (no hardcoded vendor model; MockLM
+ignores it) until routing (P5) supplies one. (7) "TypedPredictor + ReAct" (spec 11) is realised as
+`dspy.Predict` over a typed signature; tool-driven `dspy.ReAct` lands with the AUB (P6), since ReAct
+without tools is degenerate.
+
+**Architecture changes.** `agents/` gains the worker; `dspy` stays lazy (verified: `import
+korchestrator.agents` pulls in no `dspy`). `Agent.bind` amended additively to accept a gateway.
+Import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/agents/worker.py` (new), `agents/__init__.py`,
+`agents/base.py` (bind gains `gateway`), `tests/unit/agents/test_worker.py` (new), `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; `Agent.bind` gains an optional keyword arg; top-level
+`__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 8 unit tests: worker is an `Agent`; missing gateway → `ConfigurationError`;
+reasoning without dspy → `MissingExtraError` (sys.modules patch); **deterministic** under MockLM
+(same content twice — spec 06 §127 intent); a field-marked reply parses and halts (`is_final`);
+heterogeneous per-agent models honoured (MockLM records each); an unstructured reply falls back
+without halting; a failing gateway → `ProviderError` with `__cause__`. `worker.py` 94% covered;
+`ruff`/`format`/`mypy --strict` clean (61 files); import-linter 4/4 kept; isolation gate `OK`; agents
+import verified dspy-free.
+
+**Known limitations / future improvements.** (1) Under MockLM the answer is the model's echo of
+DSPy's formatted prompt and `is_final` is `False` (the lenient fallback), so a single-agent MockLM run
+terminates via the `max_supersteps` bound rather than an explicit halt — fine for determinism/smoke,
+and real models or scripted replies drive `halt` properly. (2) Tool-driven `dspy.ReAct` (bounded ≤3)
+is deferred to P6 (no tools until the AUB). (3) `asyncio.run` per LM call is simple but re-creates a
+loop each call; revisit if profiling shows it matters. Next: P4.7 `ArchitectAgent` (intent+difficulty
+→ `ExecutionPlan`, mock-plan fallback), then P4.8 taxonomy and P4.9 façade wiring (first end-to-end
+run) where the worker becomes the default reasoning agent and the Tier-1/Tier-2 doctests un-xfail.
+
+---
+
+## 2026-07-22 · [P4.5] Lazy DSPy signatures — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** `agents/signatures.py`: a `Signature` base users subclass to declare a reasoning contract
+with `InputField`/`OutputField` markers and a docstring instruction — **all without importing
+`dspy`**. `Signature.to_dspy()` materialises a real `dspy.Signature` on demand via
+`dspy.make_signature(...)`, resolving annotations to real types first (PEP 563 stores them as
+strings). `load_dspy()` is the lazy-import guard raising `MissingExtraError`. Ships the built-in
+`WorkerSignature` (role/objective/context → answer/is_final) and `ArchitectSignature`
+(objective/intent/difficulty → roles/rationale). Exported from `korchestrator.agents`.
+
+**Why.** The cognitive layer must be authored and imported on a `pydantic`-only base install, yet
+DSPy signatures are normally module-level classes subclassing `dspy.Signature` — which would force a
+top-level `dspy` import (golden rule B5). Declaring signatures dspy-free and compiling them lazily is
+what lets the base install import cleanly and raise `MissingExtraError` only when reasoning actually
+runs (spec 05 §57, spec 11 P4 validation).
+
+**Design decisions.** (1) A dspy-free declarative `Signature` — fields are lightweight `_FieldSpec`
+markers, materialised to `dspy.InputField`/`OutputField` only in `to_dspy()`. Verified against the
+installed dspy: `import korchestrator.agents` pulls in no `dspy`. (2) `to_dspy()` validates fields
+**before** importing dspy, so a malformed signature fails fast (and offline) with `ValidationError`.
+(3) Annotations are resolved with `get_type_hints` because `from __future__ import annotations` stores
+them as strings, which `dspy.make_signature` rejects. (4) `InputField`/`OutputField` keep DSPy's
+PascalCase names (noqa N802) and return `Any` so `x: str = InputField()` type-checks — mirroring
+`dspy`'s own API. (5) `MissingExtraError` is tested deterministically by patching
+`sys.modules["dspy"]=None`, so the test holds whether or not the extra is installed.
+
+**Architecture changes.** `agents/` gains the signatures module; `dspy` is imported only inside
+`load_dspy()` (never at module top), satisfying the confinement. Import-linter 4/4 kept.
+`korchestrator.agents.__all__` grows by five names (`Signature`, `InputField`, `OutputField`,
+`WorkerSignature`, `ArchitectSignature`) — a subpackage surface; the top-level `korchestrator.__all__`
+is unchanged. Added a scoped `filterwarnings` ignore for dspy's import-time DeprecationWarnings so a
+third-party warning cannot fail our `warnings-are-errors` suite; our own code's warnings still error.
+
+**Files/modules affected.** `src/korchestrator/agents/signatures.py` (new), `agents/__init__.py`,
+`tests/unit/agents/test_signatures.py` (new), `pyproject.toml` (filterwarnings), `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; top-level `__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 8 unit tests (dspy-free declaration + field order; subclass inheritance and
+override precedence; built-in signatures' fields; `load_dspy`/`to_dspy` → `MissingExtraError` when
+absent; fieldless → `ValidationError`; and — with dspy present — `to_dspy` produces a real
+`dspy.Signature` with the right fields and instruction). `signatures.py` 99% covered; `ruff`/`format`/
+`mypy --strict` clean (60 files); import-linter 4/4 kept; isolation gate `OK`; doctest passes;
+`import korchestrator.agents` verified dspy-free.
+
+**Known limitations / future improvements.** (1) The `[dspy]` extra pins `dspy-ai>=2.5,<3`, but
+`dspy-ai` now redirects to the `dspy` package, which installs as `3.2.1` — the `<3` bound does not
+constrain the real module. The extras matrix should move to `dspy>=2.5` (a spec-02 §8 change worth an
+ADR/follow-up); the code targets the stable `make_signature`/`InputField`/`OutputField` API that spans
+these versions. (2) "Compiled" here means declared, not DSPy-optimised — teleprompter/optimizer
+compilation against training data is out of scope for P4. Next: P4.6 `WorkerAgent` consumes these
+signatures via `TypedPredictor` + a bounded ReAct loop, run under MockLM so the full agent path stays
+offline and deterministic.
+
+---
+
+## 2026-07-22 · [P4.4] Unified Agent base — declarative + subclassable — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent) · **ADR:** 0012
+
+**What.** `agents/base.py`: the single `Agent` class. It keeps the P1.5 declarative constructor
+(`Agent(id, role, model, …)`, pydantic→`ValidationError` wrapping) and adds the frozen-snapshot
+behavioural surface — `async think(state) -> StateUpdate` (base raises `NotImplementedError`;
+subclasses override), `is_complete(state) -> bool` (default `False`), `bind(*, clock) -> Self`,
+`clock` (a `_BoundClock` exposing `now()`), and `to_node() -> Node`. Re-exported from
+`korchestrator.agents`, `korchestrator.services` (a one-line re-export), and the top level — all three
+paths are the *same* object. `services/swarm.py` now imports `Agent` from `korchestrator.agents`.
+
+**Why.** Spec 04 (Tier 2) shows a declarative `Agent(id, role)`; spec 07 §4 (Tier 3) shows a
+subclassable `korchestrator.agents.Agent` with `think`. Taken literally that is two different classes
+named `Agent` — a footgun. The product owner chose to **unify** them (ADR 0012): one concept, one
+name, both usage styles.
+
+**Design decisions.** (1) Canonical home is `agents/` (behaviour belongs in the cognitive layer);
+`services/agent.py` re-exports it, preserving spec 04 §7's `from korchestrator.services import Agent`
+path — so the public surface and golden snapshot are unchanged (additive, non-breaking). (2) The
+frozen-snapshot rule is enforced structurally: `AgentState` is a frozen model, so `think` physically
+cannot mutate it; a test locks this. (3) The clock is injected, not read: `bind(clock=…)` takes the
+kernel's `Callable[[], datetime]` and `_BoundClock` adapts it to the `self.clock.now()` agents call,
+so agent timestamps stay replay-safe (no `datetime.now()`). (4) Base `think` raises
+`NotImplementedError` — a declarative agent has no reasoning until the façade wires the default worker
+(P4.9); custom (overridden) agents run now. Consistent with P1's `run()`-raises pattern. (5) The
+P1.5 role-based constructor is kept verbatim rather than spec 07's `persona=` example, since spec 04's
+signature is the frozen public one; custom agents pass `role=`.
+
+**Architecture changes.** `agents/` gains its first real class, importing `core` (`Node`), `models`,
+`exceptions` — all inward, no `dspy`. `services` → `agents` re-export is legal inward layering.
+Import-linter 4/4 kept; `korchestrator.__all__` unchanged.
+
+**Files/modules affected.** `src/korchestrator/agents/base.py` (new),
+`src/korchestrator/agents/__init__.py`, `src/korchestrator/services/agent.py` (now a re-export),
+`src/korchestrator/services/swarm.py` (import source), `tests/unit/agents/test_base.py` (new),
+`docs/adr/0012-*.md`, `CHANGELOG.md`.
+
+**Breaking changes.** None. The declarative constructor and every public import path are unchanged;
+the change is additive (new methods on `Agent`).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A — `from korchestrator import Agent` (and the `services`/`agents` paths) all
+resolve to the one class.
+
+**Testing status.** 11 new unit tests (all three import paths are one class; declarative construction
++ validation wrapping; clock-required/`bind`/chaining; `to_node`; `is_complete`; base-`think` raises;
+a custom `WordCountAgent` runs against a frozen snapshot; snapshot immutability). `agents/base.py`
+100% covered; façade + public-surface suites still pass (2 expected P4.9 xfails). `ruff`/`format`/
+`mypy --strict` clean (59 files); import-linter 4/4 kept; doctest passes.
+
+**Known limitations / future improvements.** The declarative agent's default reasoning (the worker)
+is not yet attached, so a bare declarative `Agent` cannot run until P4.9 wires it — the next design
+decision is how the DSPy worker (P4.6) attaches as that default while the Tier-1 one-liner still runs
+on a base install (no `[dspy]`) and raises `MissingExtraError` only when real reasoning is invoked.
+
+---
+
+## 2026-07-22 · [P4] Normalize pregel formatting to current ruff — v0.1.0
+
+**Type:** chore · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** Reformatted one generator expression in `core/pregel.py` (`select_active`) from three lines
+to one, purely to satisfy the current `ruff format`. No logic change.
+
+**Why.** The `ruff` pin is unbounded (`ruff>=0.5`), so CI installs the latest ruff, which now collapses
+that expression where an older ruff spread it. The file was committed under the older formatter, so
+`ruff format --check` on any new PR would fail on it — an unrelated blocker. Normalizing it keeps the
+branch's format gate green.
+
+**Design decisions.** Kept as its own single-purpose commit rather than folded into P4.3, per the
+git-and-review rule against mixing unrelated cleanup. The root cause (an unbounded formatter pin that
+lets style drift over time) is noted for a dedicated tooling change — pinning `ruff`/`mypy`/`pytest`
+to exact versions belongs in a separate chore, not this one.
+
+**Architecture changes.** None. **Files/modules affected.** `src/korchestrator/core/pregel.py`.
+
+**Breaking changes.** None. **Feature version / revision.** `0.1.0`. **Migration notes.** N/A.
+
+**Testing status.** `mypy --strict` clean; `tests/unit/core/test_pregel.py` 14/14 pass; whole tree
+`ruff format --check` clean.
+
+**Known limitations / future improvements.** Pin the lint/type/test toolchain to exact versions (ops
+rule: dependencies pinned) so formatter drift cannot silently break the format gate again.
+
+---
+
+## 2026-07-22 · [P4.3] Networked OpenAI gateway + get_lm factory — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** `providers/gateway_openai.py`: `OpenAIGateway`, the networked default `IModelGateway` for
+any OpenAI-compatible chat-completions endpoint. `complete()` maps `Message`s to OpenAI chat roles,
+POSTs `/chat/completions`, and returns the assistant reply as a `Message`; `available_models()` lists
+`/models` as `ModelCard`s. `providers/factory.py`: `get_lm(model_name, *, settings, api_key,
+base_url, timeout_seconds)`, returning `MockLM` when `settings.mock_llm` else a configured
+`OpenAIGateway`. Both re-exported from `korchestrator.providers`. 25 tests: `respx`-mocked HTTP for
+every path (completion mapping, header/credential, max_tokens, and each error → its wrapped
+`KorchError`), plus the factory branches.
+
+**Why.** `OpenAIGateway` is the real-inference default behind the `IModelGateway` port (spec 03 §5),
+the counterpart to MockLM; `get_lm` is the selection point the façade uses to pick mock vs real. P4.3
+delivers the first code that touches a real dependency, so its error-wrapping discipline (spec 08
+§2.2) is load-bearing.
+
+**Design decisions.** (1) **Config fully injected** — `api_key` and `base_url` are required
+constructor args with no hardcoded endpoint (golden rule 3), and the gateway reads no environment
+(spec 07 §5); P8 will source these from `Settings` in `config/`. (2) **`httpx` is lazy and confined**
+— imported inside `complete()`/`available_models()`, behind the `[remote]` extra; verified that
+`import korchestrator.providers` pulls in no `httpx`, so the base install stays `pydantic`-only.
+(3) **Every vendor exception is wrapped** with `raise ... from exc`: timeout→`TimeoutError`,
+401/403→`AuthError`, 429→`RateLimitError`, non-JSON/unexpected-shape/other→`ProviderError`; no
+`httpx` type crosses the boundary. (4) A fresh `AsyncClient` per call (no shared client lifecycle) —
+simplest correct; connection pooling is a noted future improvement. (5) `available_models` fills the
+capability fields `/models` does not report with documented placeholder constants, never fabricated
+as real figures. (6) `get_lm` is **internal** (not added to `korchestrator.__all__`), so the public
+snapshot is unchanged. (7) Returned `Message.valid_time` is a placeholder the agent layer re-stamps
+from the injected clock — the gateway performs no wall-clock read (it is outside workflow scope, so
+this is discipline rather than requirement).
+
+**Architecture changes.** `providers/` gains its networked adapter and a factory; both import only
+`interfaces`/`models`/`config`/`exceptions` + stdlib, with `httpx` lazy. Import-linter 3/3 kept.
+`respx` (already declared in `[dev]`) is now used for HTTP contract tests.
+
+**Files/modules affected.** `src/korchestrator/providers/gateway_openai.py`,
+`src/korchestrator/providers/factory.py`, `providers/__init__.py`,
+`tests/unit/providers/test_gateway_openai.py`, `tests/unit/providers/test_factory.py`, `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; `korchestrator.__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 45 provider tests pass (25 new); `ruff`/`format`/`mypy --strict` clean on 58
+source files; import-linter 3/3 kept; isolation gate `OK`; provider doctests pass; base-install
+import verified httpx-free. Provider package coverage 99% (gateway_openai 98%, factory 100%). The
+gateway's wrap path asserts the full spec 08 §2.2 shape (KorchError subclass + non-empty `code` +
+`__cause__`).
+
+**Known limitations / future improvements.** (1) The cross-cutting `tests/unit/test_error_wrapping.py`
+that spec 08 §2.2 mandates over *every* public entry point is deferred to its owning phase (P8); the
+gateway path is already locked here. (2) A fresh `AsyncClient` per call — add pooling if profiling
+shows it matters. (3) `available_models` capability metadata is placeholder until a routing catalogue
+(P5) or enterprise gateway supplies real figures. (4) `get_lm` sources credentials from explicit args
+until P8 adds gateway fields to `Settings`. Still open for P4.5/P4.6: how the DSPy worker/architect
+coexist with MockLM so the Tier-1 one-liner runs on a base install (no `[dspy]`) while the cognitive
+layer raises `MissingExtraError` when its real reasoning is used — the next design decision.
+
+---
+
+## 2026-07-22 · [P4.2] Default local ARI providers — identity + sandbox — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** Implemented the two zero-infrastructure default ARI providers. `providers/identity_local.py`:
+`LocalIdentityProvider`, an unsecured single-tenant `IIdentityProvider` that authenticates any
+non-empty agent within its one bound tenant and returns a deterministic synthetic DID
+(`did:korch:local:<tenant>:<agent>`), refusing cross-tenant requests with `AuthError`.
+`providers/sandbox_local.py`: `LocalSandbox`, a subprocess-isolating `IExecutionSandbox` that maps
+each registered tool to an argv command, runs it in a child process, delivers the invocation `args`
+as one JSON document on stdin, bounds it with a hard kill-on-expiry timeout, and returns the child's
+stdout as a normalised `ToolResult` (JSON-parsed when possible, else raw text). Both re-exported from
+`korchestrator.providers`. 14 unit tests cover port conformance, the insecure-construction warning,
+determinism, tenant enforcement, and — for the sandbox — success, non-JSON output, unknown tool,
+non-zero exit, and the timeout path.
+
+**Why.** These are the default implementations behind two of the three ARI ports (spec 03 §5), so a
+fresh install runs with no identity infrastructure and no external sandbox. They pair with MockLM
+(P4.1) to complete the local, offline provider set the agent layer (P4.4+) and façade (P4.9) wire in.
+
+**Design decisions.** (1) Both are explicit development fallbacks per the security rule: each logs a
+`WARNING` on construction and is documented as rejected by the production-boot gate under a durable
+deployment (spec 08 §5) — the gate itself lands with the config finalisation in P8. (2) `LocalSandbox`
+is genuinely subprocess-based (spec 03 §5 says "subprocess"), which makes the timeout real (the child
+is killed) and keeps a hung/crashing tool off the caller's process; it deliberately does **not** yet
+enforce CPU/memory/network limits — that hardening is OpenSandbox/enterprise. (3) The tool→argv
+registry is injected and empty by default; the AUB (P6) populates it, so no speculative tool wiring
+now. (4) Wall-clock (`time.monotonic`) is used only for `duration_ms` — legal here because providers
+are outside workflow scope (determinism rule applies to the kernel, not adapters). (5) Tool failures
+(unknown tool, non-zero exit, spawn error, timeout) are returned as `ok=False` `ToolResult`s, never
+raised, so a caller/barrier cannot be crashed by tool behaviour; existing error codes are reused
+(`TOOL_NOT_FOUND`, `KORCH_TIMEOUT`, `KORCH_PROVIDER_FAILED`) — no new code added to the frozen set.
+
+**Architecture changes.** `providers/` gains two more adapters importing only `exceptions` / `models`
+/ `constants` + stdlib (no optional dependency, no sibling imports). Import-linter: 3 contracts kept,
+0 broken. First use of the namespaced `logging.getLogger("korchestrator")` logger in `src/`.
+
+**Files/modules affected.** `src/korchestrator/providers/identity_local.py`,
+`src/korchestrator/providers/sandbox_local.py`, `providers/__init__.py`,
+`tests/unit/providers/test_identity_local.py`, `tests/unit/providers/test_sandbox_local.py`,
+`CHANGELOG.md`.
+
+**Breaking changes.** None (new surface).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 14 new unit tests pass (22 provider tests total); `ruff`, `ruff format`,
+`mypy --strict` clean on 56 source files; import-linter 3/3 kept; isolation gate `OK`. Provider
+doctests pass. Full-suite coverage run recorded in the PR.
+
+**Known limitations / future improvements.** (1) No production-boot rejection yet — the gate that
+refuses these providers under a durable deployment is P8; until then, safety rests on the construction
+warning and the local runtime default. (2) `LocalSandbox` enforces isolation and timeout but no
+resource (CPU/memory/network/filesystem) limits — deferred to OpenSandbox. (3) The sandbox tool
+registry is empty until the AUB bridge (P6) registers connectors. Still open for P4.5/P4.6: how the
+DSPy worker/architect coexist with MockLM so the Tier-1 one-liner runs on a base install (no `[dspy]`)
+while the cognitive layer raises `MissingExtraError` when its real reasoning is used.
+
+---
+
+## 2026-07-22 · [P4.1] Deterministic MockLM gateway — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** Implemented `providers/mock_lm.py`: `MockLM`, a deterministic offline `IModelGateway` (the
+default gateway), plus the `MockCall` record for its call log. `complete()` returns a deterministic
+assistant `Message` — a scripted response for the model if registered, else a configured default,
+else an echo of the last message; it records every call. `available_models()` returns a single mock
+`ModelCard`. Re-exported from `korchestrator.providers`. Tests lock structural `IModelGateway`
+conformance, determinism, scripted/default/echo responses, the call log, and `available_models`.
+
+**Why.** MockLM is the default gateway and the load-bearing enabler of offline, deterministic testing
+of the whole agent path (spec 03 §4, spec 09 §3-§4). It is the zero-config default (spec 08 §1.1) and
+what the Tier-1 one-liner uses on a base install.
+
+**Design decisions.** Fully deterministic and **no randomness** — the `seed` parameter is accepted
+for parity with real gateways but never introduces randomness (workflow-path callers must stay
+replay-safe). No network, no optional dependency: `providers/mock_lm.py` imports only `models` +
+stdlib, so it runs on the pydantic-only base install. Completions carry a fixed placeholder
+`valid_time`; the agent layer stamps the real time from the injected clock when it builds its
+`StateUpdate`. The call log is exposed as a read-only `calls` tuple so tests assert on behaviour, not
+on internal state.
+
+**Architecture changes.** `providers/` gains its first adapter, importing `models` only (legal;
+`interfaces` conformance is structural via the `IModelGateway` Protocol). No optional dependency.
+Import contracts 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/providers/mock_lm.py`, `providers/__init__.py`,
+`tests/unit/providers/test_mock_lm.py`.
+
+**Breaking changes.** None (new surface).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 7 unit tests + 1 doctest pass; `ruff`, `ruff format`, `mypy --strict` clean on 54
+source files. Structural `IModelGateway` conformance and determinism confirmed.
+
+**Known limitations / future improvements.** The local ARI providers (identity/sandbox, P4.2), the
+real OpenAI-compatible gateway + `get_lm` (P4.3), and the DSPy cognitive layer (agents, taxonomy,
+P4.4-P4.8) and the Tier 1+2 façade wiring (P4.9) are next. An open design question to resolve against
+the specs before P4.5/P4.6: how the DSPy worker/architect coexist with MockLM so the Tier-1 one-liner
+runs on a base install (no `[dspy]`) while the cognitive layer raises `MissingExtraError` when its
+real reasoning is used — likely a MockLM/simple path that does not invoke DSPy.
+
+---
+
 ## 2026-07-22 · [P3.6] Lock runtime equivalence, replay, crash recovery, roll-over — v0.1.0
 
 **Type:** test · **Phase:** P3 · **Author:** Claude (agent)
