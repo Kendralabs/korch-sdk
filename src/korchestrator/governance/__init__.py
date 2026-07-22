@@ -4,4 +4,14 @@ Allowed imports (beyond stdlib + pydantic): interfaces, models, config, exceptio
 Scores trust, evaluates policy, and raises HITL pause/resume decisions.
 """
 
-__all__: list[str] = []
+from __future__ import annotations
+
+from korchestrator.governance.telemetry import ControlTowerTelemetry
+from korchestrator.governance.trust import GovernanceCheck, check_governance, derive_telemetry
+
+__all__ = [
+    "ControlTowerTelemetry",
+    "GovernanceCheck",
+    "check_governance",
+    "derive_telemetry",
+]

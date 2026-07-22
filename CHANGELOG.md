@@ -15,6 +15,13 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Trust scoring (Phase 7): the kernel barrier now folds each active agent's
+  `StateUpdate.trust_delta` into `AgentState.trust_score` every superstep, clamped to `[0.0, 1.0]`
+  — pure and order-independent, so the score is deterministic and replay-safe. `korchestrator.
+  governance` gains `ControlTowerTelemetry` (a per-superstep governance snapshot),
+  `derive_telemetry()`, and `check_governance()` — the governance-facing read of the score plus its
+  telemetry. Threshold comparison, `hitl_threshold`/`GOVERNANCE_TRUST_THRESHOLD`, the policy engine,
+  and the audit log land in the next Phase 7 commit; the runtime pause signal after that.
 - Shield redactor (Phase 7): `korchestrator.security.Shield` — the single consolidated PII/secret
   redactor. `redact(text)`/`redact_value(json)` mask emails, secrets (JWT, AWS/`sk-`/Slack tokens,
   Bearer), IBANs, SSNs, Luhn-validated card numbers (PAN), and E.164 phone numbers to

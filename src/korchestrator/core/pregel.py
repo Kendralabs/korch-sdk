@@ -200,6 +200,7 @@ class PregelRunner:
 
         new_context = self._reduce_context(state, updates)
         new_inbox, answer_messages = self._route_messages(state, updates, superstep)
+        new_trust_score = self._fold_trust(state.trust_score, updates)
 
         newly_halted = {update.agent_id for update in updates if update.halt}
         halted_agents = tuple(sorted(set(state.halted_agents) | newly_halted))
@@ -214,9 +215,25 @@ class PregelRunner:
                 "halted": all_active_halted,
                 "halted_agents": halted_agents,
                 "status": RunStatus.RUNNING,
+                "trust_score": new_trust_score,
                 "transaction_time": transaction_time,
             }
         )
+
+    @staticmethod
+    def _fold_trust(current: float, updates: Sequence[StateUpdate]) -> float:
+        """Fold this superstep's ``trust_delta`` values into the running trust score (spec 05 §3.1).
+
+        Summation is associative and commutative, so ``asyncio.gather``'s completion order and
+        Temporal's replay interleaving can never change the result — the same discipline the
+        channel reducers hold themselves to (spec 06 §3), even though ``trust_score`` is a scalar
+        field on ``AgentState`` rather than a context channel. Clamped to the model's own
+        ``[0.0, 1.0]`` bound so a run of large negative deltas floors at zero instead of raising.
+        Governance's threshold/intervention policy (P7.3/P7.4) reads this score; it does not
+        compute it.
+        """
+        total = current + sum(update.trust_delta for update in updates)
+        return max(0.0, min(1.0, total))
 
     def _reduce_context(
         self, state: AgentState, updates: list[StateUpdate]
