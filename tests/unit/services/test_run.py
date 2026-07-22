@@ -130,3 +130,27 @@ def test_agent_model_map_reaches_the_gateway() -> None:
     ).add(Agent(id="w", role="analyst"))
     swarm.run()
     assert "gpt-4o" in {call.model for call in gateway.calls}
+
+
+# --- middleware / hooks (P6.8) ------------------------------------------------------------------
+
+
+def test_hooks_fire_around_supersteps_and_a_raising_hook_is_isolated() -> None:
+    # No dspy needed: WordCountAgent supplies its own reasoning. A raising middleware must not fail
+    # the run, and the superstep event hook must still fire (spec 07 §9).
+    from korchestrator.services import Middleware
+
+    events_seen: list[str] = []
+
+    class Boom(Middleware):
+        async def before_superstep(self, state: object) -> None:
+            raise RuntimeError("hook exploded")
+
+    swarm = Swarm(objective="Count the words in this objective", middleware=[Boom()]).add(
+        WordCountAgent(id="counter", role="counter")
+    )
+    swarm.on("superstep", lambda event: events_seen.append(event.name))
+    result = swarm.run()
+    assert result.status is RunStatus.COMPLETED  # the raising middleware was isolated
+    assert result.final_answer == "6 words"
+    assert "superstep" in events_seen  # the event hook still fired

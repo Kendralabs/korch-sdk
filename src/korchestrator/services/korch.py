@@ -9,6 +9,9 @@ Reasoning requires the ``[dspy]`` extra (ADR 0013); MockLM keeps it offline and 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
+
+from typing_extensions import Self
 
 from korchestrator.agents import ArchitectAgent
 from korchestrator.config import Settings
@@ -20,6 +23,7 @@ from korchestrator.interfaces import (
 )
 from korchestrator.models.result import RunResult
 from korchestrator.services import _composition as comp
+from korchestrator.services.hooks import EventHandler, Middleware
 
 __all__ = ["Korch"]
 
@@ -37,6 +41,7 @@ class Korch:
         runtime: The durable runtime to inject; resolved from config when omitted.
         router: The model router to inject; resolved from config when omitted.
         repository: The graph repository to inject; resolved from config when omitted.
+        middleware: Middleware fired around each superstep, in registration order.
 
     Example:
         >>> from korchestrator import Korch
@@ -52,6 +57,7 @@ class Korch:
         runtime: IDurableRuntime | None = None,
         router: BaseRouter | None = None,
         repository: GraphRepository | None = None,
+        middleware: Sequence[Middleware] = (),
     ) -> None:
         """Store the (optionally injected) collaborators; resolution happens on first use."""
         self._settings = settings
@@ -59,6 +65,13 @@ class Korch:
         self._runtime = runtime
         self._router = router
         self._repository = repository
+        self._middleware = tuple(middleware)
+        self._handlers: list[tuple[str, EventHandler]] = []
+
+    def on(self, event: str, handler: EventHandler) -> Self:
+        """Register ``handler`` for ``event`` (e.g. ``"superstep"``); returns ``self``."""
+        self._handlers.append((event, handler))
+        return self
 
     def run(self, objective: str, *, max_supersteps: int = 10) -> RunResult:
         """Run a swarm against ``objective`` and return the terminal :class:`RunResult`.
@@ -114,6 +127,7 @@ class Korch:
                 clock=clock,
                 objective=objective,
                 max_supersteps=plan.max_supersteps,
+                observer=comp.build_observer(self._middleware, self._handlers),
             )
 
         return asyncio.run(_flow())

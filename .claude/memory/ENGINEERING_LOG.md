@@ -10,6 +10,71 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P6.5/P6.7/P6.8] A2A messaging, event streaming, middleware/hooks — v0.1.0 · closes P6
+
+**Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
+
+**What.** Three pieces plus the runtime wiring that closes Phase 6.
+- **a2a/** (P6.5): `directed_message` (a message addressed to one recipient, delivered only along a
+  real edge) and `HandoffTransformer` (turns one agent's output into a `kind="handoff"`, `REQUEST`
+  message for another agent, optionally prefixing a summary).
+- **events/** (P6.7): `Event`, `EventPublisher` (fan-out to bounded per-subscriber queues; a lagging
+  subscriber drops events, never blocking the run), `Subscription` (async iterator + `get`/`close`),
+  and `format_sse` (the SDK emits; the caller serves HTTP).
+- **services/hooks.py** (P6.8): `Middleware` (before/after_superstep, before/after_tool) and
+  `HookRegistry` (`register_middleware`, `on(event, handler)`), which implements the kernel's new
+  `SuperstepObserver`. Ordering + error isolation per spec 07 §9: before_* in registration order,
+  after_* reversed, middleware before event hooks, and every hook/middleware failure caught+logged so
+  a hook can never fail a run.
+- **Wiring**: `PregelRunner` gained an optional `observer` (fired around each superstep; `None` by
+  default so determinism is untouched and Temporal workflow scope never runs it); threaded through
+  `LocalRuntime` → `resolve_runtime` → `run_graph`. `Korch`/`Swarm` accept `middleware=[...]` and
+  expose `.on(event, handler)`; a `HookRegistry` is built only when something is registered.
+
+**Why.** P6.5/P6.7/P6.8 — inter-agent handoffs, an observable event stream, and the extension
+framework, so adding a hook needs no core edit and observers see every superstep.
+
+**Design decisions.** (1) The hook seam is an **injected `SuperstepObserver` protocol defined in
+core** (framework-free); services implements it — DIP, no upward import, and the observer only fires
+in the in-process loop, never Temporal workflow scope (determinism preserved; `observer=None` keeps
+the existing path byte-identical). (2) Error isolation via `functools.partial` thunks so a sync
+handler that raises is caught inside `_safe` too. (3) The `before_superstep` `GovernanceHaltError`
+veto → pause is **deferred to P7** (governance); for now all failures are isolated so runs always
+complete. (4) `before_tool`/`after_tool` exist on `Middleware` but are dispatched once the agent
+tool-loop lands. (5) Events fan out to bounded queues — a slow consumer drops events rather than
+stalling the run.
+
+**Architecture changes.** `a2a/`, `events/` populated; `services/hooks.py` added. `core/pregel.py`
+gained `SuperstepObserver` + an optional observer call in `run()`. import-linter 4/4 kept; `a2a` and
+`events` are feature-independent. `Middleware`/`HookRegistry` exported from `korchestrator.services`.
+
+**Files/modules affected.** `a2a/{__init__,handoff}.py`, `events/{__init__,publisher}.py`,
+`services/hooks.py` (new); `core/pregel.py`, `runtime/local_runtime.py`, `runtime/__init__.py`,
+`services/_composition.py`, `services/korch.py`, `services/swarm.py`, `services/__init__.py`
+(observer wiring); `tests/unit/{a2a,events}/*`, `tests/unit/services/test_hooks.py`, and a run-level
+isolation test in `tests/unit/services/test_run.py`.
+
+**Breaking changes.** None. `PregelRunner`/`LocalRuntime`/`resolve_runtime`/`run_graph` gained a
+keyword-only `observer` (default `None`); `Korch`/`Swarm` gained keyword-only `middleware` + `.on()`.
+`Middleware`/`HookRegistry` added to `services.__all__` (additions).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (87 files); a2a/events/hooks
+suites + a run-level test pass; the full determinism suite still passes unchanged (observer default
+`None`); import-linter 4/4. Covered: handoff/directed message; pub-sub fan-out, lagging drop, SSE
+frame; hook ordering (before order / after reverse / middleware-before-hooks / handler order); a
+raising middleware and a raising handler are isolated; async handlers awaited; publisher mirroring;
+and end-to-end — a raising middleware does not fail a run and the `superstep` event still fires.
+
+**Known limitations / future improvements.** GovernanceHaltError veto → pause is P7. Temporal hook
+dispatch (activity scope) is deferred. `before_tool`/`after_tool` await the agent tool-loop. Phase 6
+is complete.
+
+---
+
 ## 2026-07-22 · [P6.6] Context compiler + Minimum Viable Context extraction — v0.1.0
 
 **Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
