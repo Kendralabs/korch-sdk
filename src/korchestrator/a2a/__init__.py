@@ -4,4 +4,6 @@ Allowed imports (beyond stdlib + pydantic): models, exceptions. Transforms agent
 handoffs into typed directed messages.
 """
 
-__all__: list[str] = []
+from korchestrator.a2a.handoff import HandoffTransformer, directed_message
+
+__all__ = ["HandoffTransformer", "directed_message"]

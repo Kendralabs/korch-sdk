@@ -8,6 +8,7 @@ and drives it through the configured runtime. Reasoning requires the ``[dspy]`` 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 
 from typing_extensions import Self
 
@@ -21,6 +22,7 @@ from korchestrator.interfaces import (
 )
 from korchestrator.models.result import RunResult
 from korchestrator.services import _composition as comp
+from korchestrator.services.hooks import EventHandler, Middleware
 
 __all__ = ["Swarm"]
 
@@ -39,6 +41,7 @@ class Swarm:
         runtime: The durable runtime to inject; resolved from config when omitted.
         router: The model router to inject; resolved from config when omitted.
         repository: The graph repository to inject; resolved from config when omitted.
+        middleware: Middleware fired around each superstep, in registration order.
 
     Example:
         >>> from korchestrator import Agent, Swarm
@@ -61,6 +64,7 @@ class Swarm:
         runtime: IDurableRuntime | None = None,
         router: BaseRouter | None = None,
         repository: GraphRepository | None = None,
+        middleware: Sequence[Middleware] = (),
     ) -> None:
         """Start an empty swarm for ``objective``; store optionally injected collaborators."""
         self._objective = objective
@@ -69,12 +73,19 @@ class Swarm:
         self._runtime = runtime
         self._router = router
         self._repository = repository
+        self._middleware = tuple(middleware)
+        self._handlers: list[tuple[str, EventHandler]] = []
         self._agents: dict[str, Agent] = {}
         self._edges: list[tuple[str, str]] = []
 
     def add(self, agent: Agent) -> Self:
         """Add an agent to the swarm and return ``self`` for chaining."""
         self._agents[agent.id] = agent
+        return self
+
+    def on(self, event: str, handler: EventHandler) -> Self:
+        """Register ``handler`` for ``event`` (e.g. ``"superstep"``); returns ``self``."""
+        self._handlers.append((event, handler))
         return self
 
     def edges(self, edges: list[tuple[str, str]]) -> Self:
@@ -130,6 +141,7 @@ class Swarm:
                 clock=clock,
                 objective=self._objective,
                 max_supersteps=max_supersteps,
+                observer=comp.build_observer(self._middleware, self._handlers),
             )
 
         return asyncio.run(_flow())

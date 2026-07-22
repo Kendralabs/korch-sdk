@@ -1,7 +1,20 @@
 """Integration layer (L4).
 
-Allowed imports (beyond stdlib + pydantic): interfaces, models, config, exceptions; mcp lazy
-([mcp] extra). Speaks MCP as a client and registers discovered tools into the AUB registry.
+Allowed imports (beyond stdlib + pydantic): interfaces, models, constants, exceptions, logging;
+[mcp] extra (lazy) for the real transport. The MCP client discovers a server's tools and exposes
+them as AUB connectors; the composition root registers them. Feature-independent from ``tools`` —
+both meet at the ``Connector`` contract in ``interfaces``.
 """
 
-__all__: list[str] = []
+from korchestrator.mcp.client import MCPClient, SessionFactory
+from korchestrator.mcp.config import MCPServerConfig
+from korchestrator.mcp.session import MCPCallResult, MCPSession, MCPToolSpec
+
+__all__ = [
+    "MCPCallResult",
+    "MCPClient",
+    "MCPServerConfig",
+    "MCPSession",
+    "MCPToolSpec",
+    "SessionFactory",
+]

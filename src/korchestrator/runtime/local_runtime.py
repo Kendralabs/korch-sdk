@@ -12,7 +12,7 @@ from datetime import datetime
 
 from korchestrator.core.channels import ChannelSchema
 from korchestrator.core.graph import AgentGraph
-from korchestrator.core.pregel import Clock, PregelRunner
+from korchestrator.core.pregel import Clock, PregelRunner, SuperstepObserver
 from korchestrator.exceptions import ValidationError
 from korchestrator.models.result import RunResult
 from korchestrator.models.state import AgentState
@@ -58,11 +58,13 @@ class LocalRuntime:
         *,
         clock: Clock,
         channels: ChannelSchema | None = None,
+        observer: SuperstepObserver | None = None,
     ) -> None:
-        """Store the injected graph, clock, and channel schema."""
+        """Store the injected graph, clock, channel schema, and optional superstep observer."""
         self._graph = graph
         self._clock = clock
         self._channels = channels
+        self._observer = observer
         self._results: dict[str, RunResult] = {}
 
     def now(self) -> datetime:
@@ -80,6 +82,7 @@ class LocalRuntime:
             clock=self._clock,
             channels=self._channels,
             max_supersteps=max_supersteps,
+            observer=self._observer,
         )
         self._results[state.run_id] = await runner.run(state)
         return state.run_id

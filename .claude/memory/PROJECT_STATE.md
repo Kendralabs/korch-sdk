@@ -12,10 +12,10 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P5 — Model routing — **complete** (P5.1–P5.6) on branch `feat/p5-model-routing` (off `develop`). Per-agent model selection is wired into every run. |
-| **Last completed milestone** | **P5.6 — routing wired into execution.** `get_router(settings)`/`resolve_router(settings, router=)` build a per-agent model router behind one `BaseRouter`: explicit (+fallback) is the zero-config default with no extra; algorithmic (weighted quality/cost/latency) and semantic (embedding similarity, `[routing]`) are the ranking strategies; `UserFunctionRouter` and injection (`Korch(router=)`) plug custom routers in with no package edit (ADR 0014). The composition root routes a model per default-worker agent at graph-build time (pure, replay-safe). |
-| **Blocking** | Nothing. P6 (integration & observability — tools/MCP/A2A/context/streaming) is next. |
-| **Pushed / merged** | `develop` (P0–P4) is pushed to `origin`. P5.1–P5.6 are committed on `feat/p5-model-routing`; the completed phase merges to `develop` next (awaiting user authorization). |
+| **Active phase** | P6 — Integration & observability — **complete** (P6.1–P6.8) on branch `feat/p6-integration-observability` (off `develop`). Tools/AUB, MCP, context, A2A, events, and the hook framework all landed. |
+| **Last completed milestone** | **P6.8 — the extension framework, wired.** The AUB bridge (`invoke_tool` + `ConnectorRegistry` + built-in connectors), the MCP client, the context compiler (MVC), A2A handoffs, an event stream, and `Middleware`/`HookRegistry` — hooks fire around each superstep on the local runtime via an injected `SuperstepObserver` with the spec 07 §9 ordering and error isolation (a raising hook can't fail a run). Registration is by injection/registry (ADR 0015). |
+| **Blocking** | Nothing. P7 (governance, security/Shield redaction, bitemporal Context Graph) is next. |
+| **Pushed / merged** | `develop` (P0–P5) is pushed to `origin` (autonomous phase progression). P6.1–P6.8 are committed on `feat/p6-integration-observability`; the completed phase merges to `develop` next. |
 
 Every local gate is green: ruff, ruff-format, `mypy --strict` (73 source files), `pytest` (dspy +
 non-dspy paths; **368 passed**, 94.55% cov, 9 Temporal excluded), import-linter (**4 contracts
@@ -33,8 +33,8 @@ the base install stays `pydantic`-only.
 | P3 | Runtime adapters (local + Temporal) | **Complete** (merged to `develop`) |
 | P4 | Cognitive layer (agents, signatures, taxonomy) | **Complete** (P4.1–P4.9; first end-to-end run) |
 | P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
-| P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | Not started — next |
-| P7 | Governance, security & context graph | Not started |
+| P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
+| P7 | Governance, security & context graph | Not started — next |
 | P8 | Cross-cutting foundations | Not started |
 | P9 | Remote client (Python only — TS deferred) | Not started |
 | P10 | Testing, benchmarks & quality gates | Not started |
@@ -60,7 +60,12 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `agents/` | Cognitive (L2) | **tested** (unified `Agent`; lazy DSPy `Signature`s; `WorkerAgent` + `ArchitectAgent` over a shared gateway bridge; 97% cov) | P4 |
 | `taxonomy/` | Cognitive (L2) | **tested** (`TaxonomyClassifier` + agent descriptors; 100% cov) | P4 |
 | `routing/` | Cognitive (L2) | **tested** (explicit+fallback default, algorithmic, semantic `[routing]`, composite, user-function behind one `BaseRouter`; `get_router`/`resolve_router`; model-card catalogue; wired into execution) | P5 |
-| `context/` · `persistence/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P6–P9 |
+| `tools/` | Integration (L4) | **tested** (AUB `invoke_tool` + `ConnectorRegistry` + `Connector` contract; schema/timeout/rate-limit/access gate/redaction seam; filesystem + mock-search connectors; ADR 0015) | P6 |
+| `mcp/` | Integration (L4) | **tested** (`MCPClient.discover` → `Connector`s; stdio/sse descriptor; fake-session testable; real transport `[mcp]`) | P6 |
+| `context/` | Context (L3) | **tested** (`ContextCompiler` MVC extraction, off the hot loop, graceful summariser degradation) | P6 |
+| `a2a/` | Integration (L4) | **tested** (`directed_message`, `HandoffTransformer`) | P6 |
+| `events/` | Events | **tested** (`EventPublisher`/`Subscription`/`format_sse`; emits, does not serve HTTP) | P6 |
+| `persistence/` · `governance/` · `security/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P7–P9 |
 
 ## 4. Public surface
 
@@ -96,6 +101,7 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Unified `Agent` | One class — declarative **and** subclassable; re-exported from `agents`/`services`/top level | 0012 |
 | Cognitive layer needs `[dspy]` | One reasoning path (DSPy `WorkerAgent`); base install imports clean, `MissingExtraError` on run; target dspy 3.x (`dspy>=2.6,<4`) | 0013 |
 | Custom router registration | By injection (`Korch(router=)`/`resolve_router`); `ROUTING_STRATEGY` selects built-ins only; entry-point discovery deferred | 0014 |
+| Tool/connector registration | On a `ConnectorRegistry` + `Korch(connectors=)` + entry points; no process-global `register_*` (B8) | 0015 |
 
 ## 6. Known gaps and open items
 

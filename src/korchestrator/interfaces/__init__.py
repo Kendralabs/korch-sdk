@@ -5,7 +5,7 @@ structural protocols that every replaceable collaborator implements. A port exis
 there is more than one real implementation.
 """
 
-from korchestrator.interfaces.connector import AUBConnector
+from korchestrator.interfaces.connector import AUBConnector, Connector
 from korchestrator.interfaces.identity import IIdentityProvider
 from korchestrator.interfaces.model_gateway import IModelGateway
 from korchestrator.interfaces.repository import GraphRepository, TenantStore
@@ -16,6 +16,7 @@ from korchestrator.interfaces.sandbox import IExecutionSandbox
 __all__ = [
     "AUBConnector",
     "BaseRouter",
+    "Connector",
     "GraphRepository",
     "IDurableRuntime",
     "IExecutionSandbox",
