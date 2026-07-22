@@ -32,7 +32,9 @@ def resolve_runtime(
     ``"local"`` is the zero-infrastructure default; ``"temporal"`` needs the ``[temporal]`` extra.
 
     Args:
-        settings: The resolved settings; ``korch_runtime`` selects the adapter.
+        settings: The resolved settings; ``korch_runtime`` selects the adapter, and
+            ``governance_trust_threshold`` becomes the Temporal runtime's HITL fallback (spec 06
+            §7) — this stays the one place that value is read from ``Settings`` (B6).
         graph: The validated agent graph the runtime will run.
         clock: The injected, replay-safe clock.
         channels: The channel-to-reducer bindings. Defaults to all-``LastValue``.
@@ -71,4 +73,9 @@ def resolve_runtime(
             "Install it with: pip install 'korchestrator[temporal]'",
             code="KORCH_MISSING_EXTRA",
         ) from exc
-    return TemporalRuntime(graph, clock=clock, channels=channels)
+    return TemporalRuntime(
+        graph,
+        clock=clock,
+        channels=channels,
+        global_threshold=settings.governance_trust_threshold,
+    )

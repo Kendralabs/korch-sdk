@@ -8,7 +8,7 @@ and drives it through the configured runtime. Reasoning requires the ``[dspy]`` 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from typing_extensions import Self
 
@@ -23,6 +23,7 @@ from korchestrator.interfaces import (
 from korchestrator.models.result import RunResult
 from korchestrator.services import _composition as comp
 from korchestrator.services.hooks import EventHandler, Middleware
+from korchestrator.types import JSONValue
 
 __all__ = ["Swarm"]
 
@@ -145,3 +146,81 @@ class Swarm:
             )
 
         return asyncio.run(_flow())
+
+    def pause(self, run_id: str) -> None:
+        """Signal ``run_id`` to pause for human review (durable HITL, spec 06 §7).
+
+        A paused run consumes no compute while it awaits ``resume``, ``edit_resume``, or
+        ``cancel``, bounded by a 24h deadline after which it times out. Governance also triggers
+        this automatically when trust drops below the configured threshold — this method is for an
+        operator-initiated pause.
+
+        Raises:
+            NotImplementedError: On the local runtime, which is synchronous and has no in-flight
+                run to pause. Use ``KORCH_RUNTIME=temporal`` for durable HITL.
+            MissingExtraError: If the Temporal runtime is selected without the ``[temporal]`` extra.
+        """
+        self._signal(run_id, "pause")
+
+    def resume(self, run_id: str) -> None:
+        """Lift a pause and let ``run_id`` continue from its checkpointed state.
+
+        Raises:
+            NotImplementedError: On the local runtime.
+            MissingExtraError: If the Temporal runtime is selected without the ``[temporal]`` extra.
+        """
+        self._signal(run_id, "resume")
+
+    def cancel(self, run_id: str) -> None:
+        """Cancel ``run_id``; it terminates with ``RunStatus.CANCELLED``.
+
+        Raises:
+            NotImplementedError: On the local runtime.
+            MissingExtraError: If the Temporal runtime is selected without the ``[temporal]`` extra.
+        """
+        self._signal(run_id, "cancel")
+
+    def edit_resume(
+        self,
+        run_id: str,
+        *,
+        updates: Mapping[str, JSONValue] | None = None,
+        trust_delta: float = 0.0,
+    ) -> None:
+        """Apply an operator's context/trust edit to a paused run, then resume it.
+
+        Goes through the same reducer discipline the barrier itself uses (last-value merge for
+        ``updates``, a clamped fold for ``trust_delta``) — an edit is as replayable and auditable
+        as an agent's own update.
+
+        Args:
+            run_id: The paused run to edit and resume.
+            updates: Context-channel values to merge into the paused state.
+            trust_delta: Folded into ``trust_score``, clamped to ``[0.0, 1.0]``.
+
+        Raises:
+            NotImplementedError: On the local runtime.
+            MissingExtraError: If the Temporal runtime is selected without the ``[temporal]`` extra.
+        """
+        self._signal(run_id, "edit_resume", updates=updates, trust_delta=trust_delta)
+
+    def _signal(
+        self,
+        run_id: str,
+        name: str,
+        *,
+        updates: Mapping[str, JSONValue] | None = None,
+        trust_delta: float = 0.0,
+    ) -> None:
+        """Resolve settings and deliver one durable control signal."""
+        settings = self._settings or Settings.from_env()
+        asyncio.run(
+            comp.send_control_signal(
+                settings,
+                run_id,
+                name,
+                runtime=self._runtime,
+                updates=updates,
+                trust_delta=trust_delta,
+            )
+        )

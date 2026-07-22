@@ -12,16 +12,17 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P7 — Governance, security & context graph — **in progress** (P7.1–P7.3 done) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
-| **Last completed milestone** | **P7.3 — policy engine + audit log.** `governance/evaluate_policy` compares a superstep's trust score against an agent's own `hitl_threshold`, falling back to the new `Settings.governance_trust_threshold` (`GOVERNANCE_TRUST_THRESHOLD`, default `0.5`), and returns a `GovernanceDecision` (`ALLOW`/`INTERVENE`). `AuditLog`/`AuditEntry` give an append-only, in-memory record of decisions and their telemetry. Nothing calls these during a real run yet — that wiring, plus the runtime pause signal, is P7.4. |
-| **Blocking** | Nothing. Next: P7.4 (HITL controls — intervention → runtime pause signal; `pause`/`resume`/`cancel`/`edit_resume` on the façade), P7.5 (in-memory `GraphRepository`), P7.6 (bitemporal `ContextGraphClient`). |
-| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has P7.1 (Shield), P7.2 (trust scoring), and P7.3 (policy + audit) committed locally, not yet pushed — pushes/merges to `develop` when Phase 7 completes. |
+| **Active phase** | P7 — Governance, security & context graph — **in progress** (P7.1–P7.4 done) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
+| **Last completed milestone** | **P7.4 — HITL controls.** `PregelMaster` (Temporal) auto-pauses itself when a superstep's `trust_score` breaches any active node's effective HITL threshold — the same mechanism an operator's `pause` signal uses. A new `edit_resume` signal applies an operator's context/trust edit and resumes; a `status` query reports `governance_paused` without blocking. `Korch`/`Swarm` gained `pause`/`resume`/`cancel`/`edit_resume` façade methods. **Residual risk:** `pytest -m temporal` cannot currently run in this dev environment (a pre-existing, unrelated `beartype`/site-packages conflict — confirmed via `git stash` to predate P7.4); the HITL logic was verified correct via an unsandboxed diagnostic harness instead. See the P7.4 engineering-log entry. |
+| **Blocking** | The `[temporal]` test gate above, for full CI confidence (not blocking further Phase 7 work). Next: P7.5 (in-memory `GraphRepository`), P7.6 (bitemporal `ContextGraphClient`). |
+| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has P7.1 (Shield), P7.2 (trust scoring), P7.3 (policy + audit), and P7.4 (HITL controls) committed locally, not yet pushed — pushes/merges to `develop` when Phase 7 completes. |
 
-Every local gate is green: ruff, ruff-format, `mypy --strict` (92 source files), `pytest` (dspy +
-non-dspy paths; **485 passed**, 95.46% cov, 9 Temporal excluded), import-linter (**4 contracts
-kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
-single-sourcing. `import korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free;
-the base install stays `pydantic`-only.
+Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
+ruff-format, `mypy --strict` (92 source files), `pytest` (dspy + non-dspy paths; **498 passed**,
+94.49% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+confinement), the isolation gate, env-confinement, and version single-sourcing. `import
+korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
+`pydantic`-only.
 
 ## 2. Phase progress
 

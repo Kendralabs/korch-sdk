@@ -10,6 +10,122 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P7.4] HITL controls — governance auto-pause, edit_resume, façade signals — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Wires governance's threshold decision into the runtime's actual pause mechanism, and
+exposes HITL on the façade. `runtime/temporal_runtime.py`: `PregelMaster` now checks, after every
+superstep, whether the resulting `trust_score` breaches any active node's effective HITL threshold
+(`_should_intervene`/`_effective_threshold`, pure) — if so it sets the same internal flag an
+operator's `pause` signal sets, so governance intervention and an operator pause share one
+mechanism (`governance_paused`, 24h deadline, `resume`/`edit_resume`/`cancel`). A new `edit_resume`
+signal carries an `EditResumePayload` (context `updates` + `trust_delta`, JSON-encoded) that the
+workflow applies — last-value context merge, the same clamped trust fold the barrier uses — then
+resumes. A new `status` query (`@workflow.query`) reports the run's current `RunStatus` without
+blocking, since `TemporalRuntime.wait()` blocks until the workflow's *terminal* return, not a
+mid-run pause. `TemporalRuntime` can now be constructed signal-only (`graph=None`) since delivering
+a control signal needs only a client and a `run_id`, not the graph; `start()` raises
+`ConfigurationError` on a signal-only instance. `resolve_runtime()` now threads
+`settings.governance_trust_threshold` into `TemporalRuntime` (the HITL fallback), and `start()`
+builds each node's `hitl_thresholds` from the graph's `AgentConfig`s (the graph, with its live
+callables, never crosses the workflow boundary, so this has to happen client-side). `services/
+_composition.py` gains `send_control_signal()` — delivers `pause`/`resume`/`cancel`/`edit_resume`
+via an injected runtime, or a fresh graph-less `TemporalRuntime`; raises the local runtime's
+existing `NotImplementedError` when `korch_runtime="local"`. `Korch`/`Swarm` gain
+`pause`/`resume`/`cancel`/`edit_resume(*, updates, trust_delta)` methods delegating to it.
+
+**Why.** P7.4 — "Intervention → runtime pause signal; `pause`/`resume`/`cancel`/`edit_resume` on the
+façade." This is the piece that makes P7.2's trust score and P7.3's policy threshold actually *do*
+something: a run now genuinely auto-pauses below threshold and resumes on signal (spec 06 §7, the
+stated Phase 7 acceptance criterion).
+
+**Design decisions.** (1) **The threshold check is pure arithmetic inside `runtime/`, not a
+`governance/` import** — `runtime` and `governance` are sibling feature modules (B2, no sideways
+imports; confirmed by `.importlinter`'s `features-are-independent` contract, which lists both).
+`_should_intervene` duplicates one line of `governance.evaluate_policy`'s comparison logic; the
+alternative (importing `governance` from `runtime`) would violate the architecture, so this mirrors
+P7.2's precedent of keeping kernel/runtime bookkeeping self-contained arithmetic. (2) **Any active
+agent's own threshold breach pauses the whole run** — `trust_score` is one run-wide value, not
+per-agent (P1's frozen `AgentState` shape), so "an agent's trust score is below hitl_threshold"
+(spec 06 §7) is read as the most conservative interpretation: the strictest active agent's bar
+governs. (3) `EditResumePayload` is **deliberately narrower than a full `StateUpdate`** — context
+updates and `trust_delta` only, no messages. Message routing needs the graph's edges, which never
+cross the Temporal workflow boundary (only serialisable data does); an operator editing context/
+trust needs neither the graph nor message semantics. (4) The **`status` query** is a new, small
+addition beyond the literal task list — without it, testing (and any real caller) has no reliable
+way to know a run has reached `governance_paused` before signalling `resume`/`edit_resume`, since
+`wait()` only returns on a truly terminal state. A non-blocking Temporal query is the idiomatic
+fix; it doesn't touch `IDurableRuntime`'s frozen protocol (it's Temporal-specific, used directly via
+the raw workflow handle). (5) **`TemporalRuntime(graph=None, ...)`** avoids requiring a full
+`AgentGraph` just to deliver a signal to an already-running workflow — `signal()` and `wait()` never
+touch `self._graph`; only `start()` does, and now raises a clear `ConfigurationError` without one.
+
+**Architecture changes.** `runtime/temporal_runtime.py` grows `EditResumePayload`,
+`_effective_threshold`, `_should_intervene`, `PregelMaster.status`/`.edit_resume`, and
+`TemporalRuntime`'s optional graph + `global_threshold`; no new imports beyond what P7.2/P7.3 already
+established (still `core`, `interfaces`, `models`, `config`, `exceptions`, `logging`, lazy
+`temporalio`). `runtime/__init__.py`'s `resolve_runtime` reads one more `Settings` field — legal,
+it already reads `korch_runtime` (the one place a config value becomes a concrete runtime). `services/
+_composition.py` gains `send_control_signal`; `Korch`/`Swarm` gain four methods each. Import-linter
+4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/runtime/temporal_runtime.py`,
+`src/korchestrator/runtime/__init__.py`, `src/korchestrator/services/{_composition,korch,swarm}.py`;
+`tests/integration/test_temporal_runtime.py` (new HITL/auto-pause/edit_resume/signal-only tests);
+`tests/unit/services/test_hitl.py` (new — façade + `send_control_signal` unit tests against a fake
+runtime, no `[temporal]` extra needed); `CHANGELOG.md`.
+
+**Breaking changes.** None. `TemporalRuntime.__init__`'s `graph` parameter widens from `AgentGraph`
+to `AgentGraph | None` (widening an accepted type — non-breaking per the compatibility table); it
+gains a keyword-only `global_threshold` with a default. `PregelMaster` gains a query and a signal
+(additive). `Korch`/`Swarm` gain four new methods each (additive). Top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (92 source files);
+import-linter 4/4 kept; isolation gate, env-confinement, and version-validate all `OK`. Non-Temporal
+suite: **498 passed**, 94.49% coverage (≥80 floor); `tests/unit/services/test_hitl.py` (13 tests)
+covers façade delegation, JSON payload encoding, the local-runtime `NotImplementedError` path, and
+the missing-extra/no-client paths — all without needing `[temporal]`.
+**`pytest -m temporal` did not run successfully in this environment** — `build_worker`'s sandboxed
+workflow validation fails with `RuntimeError: Failed validating workflow korch_pregel_master`
+(root cause: `ImportError: cannot import name 'claw_state' from partially initialized module
+'beartype.claw._clawstate'`). Confirmed via `git stash` that this reproduces identically against
+the unmodified, previously-merged P3 code — it is **not a regression from P7.4**, but a pre-existing
+conflict between Temporal's sandboxed workflow runner and `beartype` (pulled into this machine's
+user-level `site-packages` by unrelated globally-installed packages — `fastmcp-slim`/`mcp`/
+`py-key-value-aio` — not a `korchestrator` dependency). To verify the actual HITL logic despite
+this, I ran all four new scenarios (auto-pause→timeout, auto-pause→resume→completes,
+auto-pause→edit_resume→completes with correct context+trust merge, signal-only graph-less cancel)
+through a throwaway script using Temporal's `UnsandboxedWorkflowRunner` instead of `build_worker`
+— all four passed, confirming the logic is correct; the script was not committed (diagnostic only,
+never touches production `build_worker`, which keeps the sandboxed runner). The committed
+integration tests mirror those exact scenarios and should pass in a clean CI environment without
+this site-packages conflict. One additional test-only finding: `TemporalRuntime.wait()`'s
+freshly-refetched `client.get_workflow_handle_for(...)` pattern fails to retrieve a completion
+event specifically after a *long* time-skip (`WorkflowEnvironment.start_time_skipping()`'s 24h HITL
+timeout) — confirmed this is a test-server-only quirk (short waits and the *original* `start_workflow`
+handle both work fine); `test_low_trust_auto_pauses_and_times_out` therefore uses the raw handle,
+matching the existing `test_temporal_pause_without_resume_times_out` convention, with a comment
+explaining why.
+
+**Known limitations / future improvements.** (1) The `pytest -m temporal` gate is blocked in *this*
+dev environment by the pre-existing beartype/site-packages conflict above — a residual risk until
+either the environment is cleaned up (an isolated venv without the unrelated global packages) or CI
+confirms it clean. (2) `TemporalRuntime.wait()`'s fresh-handle-after-a-real-long-timeout limitation
+(found while testing this phase) is undocumented elsewhere and unfixed — it did not block P7.4
+(worked around in the one affected test) but is worth a follow-up if `wait()` is ever called from a
+separate process after a real multi-hour pause. (3) No production Temporal `Client.connect()`
+helper exists yet (`KORCH_ENGINE_*` env vars from spec 08 §1.3 are unwired) — a pre-existing gap,
+not introduced here; `send_control_signal`'s graph-less `TemporalRuntime` still needs an injected
+`client` to do anything real. (4) `edit_resume` is scoped to context/trust only, not full
+`StateUpdate` messages — documented as intentional (§ design decisions).
+
+---
+
 ## 2026-07-23 · [P7.3] Policy engine + audit log — v0.1.0
 
 **Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
