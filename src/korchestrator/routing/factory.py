@@ -17,9 +17,38 @@ from korchestrator.routing.composite import CompositeRouter
 from korchestrator.routing.explicit import ExplicitRouter, FallbackRouter
 from korchestrator.routing.semantic import Embedder, SemanticRouter, make_embedder
 
-__all__ = ["get_router"]
+__all__ = ["get_router", "resolve_router"]
 
 _FALLBACK = "fallback"
+
+
+def resolve_router(
+    settings: Settings, *, router: BaseRouter | None = None, embedder: Embedder | None = None
+) -> BaseRouter:
+    """Return the injected router, or build one from ``settings`` — the composition entrypoint.
+
+    An explicitly injected ``router`` (e.g. ``Korch(router=my_router)``) wins, so a custom
+    :class:`~korchestrator.interfaces.BaseRouter` plugs in with no package edit. Otherwise the
+    strategy is built from ``settings`` via :func:`get_router`.
+
+    Args:
+        settings: Configuration selecting the strategy when no router is injected.
+        router: An explicit router to use as-is.
+        embedder: An embedding backend forwarded to :func:`get_router` for the semantic strategy.
+
+    Returns:
+        The router to use for this run.
+
+    Example:
+        >>> from korchestrator.config import Settings
+        >>> from korchestrator.routing import resolve_router
+        >>> hasattr(resolve_router(Settings()), "select_model")
+        True
+    """
+    if router is not None:
+        return router
+    return get_router(settings, embedder=embedder)
+
 
 # The strategy chain each ROUTING_STRATEGY expands to (composite uses ROUTING_PRIORITY_ORDER). An
 # explicitly pinned model is always honoured first, then the named strategy, then the fallback tail.

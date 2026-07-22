@@ -113,7 +113,17 @@ class Swarm:
         agents = tuple(self._agents.values())
 
         async def _flow() -> RunResult:
-            graph = comp.graph_from_agents(agents, self._edges, clock=clock, gateway=gateway)
+            semantics = comp.classify(self._objective)
+            router, candidates = comp.resolve_routing(settings, self._router)
+            graph = await comp.graph_from_agents(
+                agents,
+                self._edges,
+                clock=clock,
+                gateway=gateway,
+                router=router,
+                task=semantics,
+                candidates=candidates,
+            )
             return await comp.run_graph(
                 graph,
                 settings=settings,

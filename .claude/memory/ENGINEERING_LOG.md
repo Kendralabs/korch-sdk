@@ -10,6 +10,64 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P5.5/P5.6] User-function router + resolve_router wiring — v0.1.0 · closes P5
+
+**Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)
+
+**What.** Completed Phase 5 by adding the user-supplied router and wiring routing into execution.
+`UserFunctionRouter` (in `routing/composite.py`) adapts a `(RoutingContext) -> RoutingResult`
+callable — sync or async — into a `BaseRouter`, validating the return type. `resolve_router(settings,
+*, router=None, embedder=None)` (in `routing/factory.py`) is the composition entrypoint: an injected
+router wins, else it builds from settings. The composition root (`services/_composition.py`) now
+routes a model per agent at graph-build time: `classify` (deterministic taxonomy → `TaskSemantics`),
+`resolve_routing` (router + candidate `ModelCard`s), and the now-async `graph_from_configs`/
+`graph_from_agents` call `router.select_model` for each default-worker agent (honouring a pinned
+`AgentConfig.model` via `RoutingContext.explicit_model`) and pass the chosen model into the
+`WorkerAgent`. Custom agents (own `think`) supply their own reasoning and are not routed. Both
+façades (`Korch.run`, `Swarm.run`) resolve the router (injected or configured) and classify the
+objective before building the graph.
+
+**Why.** P5.5/P5.6 — the last routing pieces: a code-level custom router with no subclassing, and
+routing that actually influences a run. Routing runs at composition (never workflow scope), so a
+model choice is deterministic and replay-safe.
+
+**Design decisions.** (1) Routing is resolved **at the composition root, before the run** — model
+selection is pure w.r.t. `RoutingContext` and happens outside workflow scope, so determinism and the
+replay contract hold (determinism.md). (2) A custom router plugs in **by injection** (`Korch(router=)`
+/ `Swarm(router=)`); the `korchestrator.routers` entry-point discovery from spec 07 §5 is **deferred**
+(no second consumer yet — abstraction test) — see **ADR 0014**. (3) Custom agents are not routed:
+they own their reasoning and model, so overriding it would be wrong; only default workers get a routed
+model. (4) The graph builders became async to call `select_model`; only the two façades called them,
+so the change is internal.
+
+**Architecture changes.** `services/_composition.py` (the one wiring site) now imports `routing`,
+`taxonomy`, and the routing models — legal at the façade. No inner layer gained a dependency;
+import-linter 4/4 kept.
+
+**Files/modules affected.** `routing/composite.py` (`UserFunctionRouter`), `routing/factory.py`
+(`resolve_router`), `routing/__init__.py` (exports); `services/_composition.py`, `services/korch.py`,
+`services/swarm.py` (wiring); `tests/unit/routing/test_user_function.py`,
+`tests/unit/services/test_run.py` (routing-wiring tests); `docs/adr/0014-*.md`.
+
+**Breaking changes.** None. Internal helper signatures changed (`graph_from_*` now async + routing
+params); no public surface change — top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (12 files); import-linter 4/4;
+full non-temporal suite **368 passed**, coverage **94.55%** (≥80 floor). New: a `UserFunctionRouter`
+pinned model reaches the gateway end-to-end; `AGENT_MODEL_MAP` routes the named model to the gateway;
+`resolve_router` returns the injected router; sync and async user functions both adapt. (The 9
+Temporal tests need a Temporal server and are excluded, as in P4.)
+
+**Known limitations / future improvements.** Entry-point router discovery deferred (ADR 0014).
+`SemanticRouter`'s real embedder path (`sentence-transformers`) is only exercised with the `[routing]`
+extra installed, never in CI. `MODELCARD_URL` deferred. Phase 5 is complete.
+
+---
+
 ## 2026-07-22 · [P5.3/P5.4] Algorithmic + semantic routing strategies — v0.1.0
 
 **Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)

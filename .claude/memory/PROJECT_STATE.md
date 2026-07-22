@@ -12,15 +12,16 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P4 — Cognitive layer — **functionally complete** (P4.1–P4.9) on branch `feat/p4-cognitive-layer` (off `develop`). The **first end-to-end run works** across both tiers. |
-| **Last completed milestone** | **P4.9 — the first end-to-end run.** `Korch().run(objective)` (taxonomy → Architect plan → kernel → runtime) and `Swarm().run()` (declared topology) both execute to a `RunResult` with a populated `final_answer`, deterministically under MockLM. A custom agent runs the whole path on a pydantic-only base install; reasoning agents require `[dspy]` (ADR 0013). |
-| **Blocking** | Nothing. P5 (model routing behind `BaseRouter`) is next. |
-| **Pushed / merged** | `develop` (P0–P3 + P4.1–P4.6) is pushed to `origin`. P4.7–P4.9 are committed on the feature branch; the completed phase merges to `develop` next. |
+| **Active phase** | P5 — Model routing — **complete** (P5.1–P5.6) on branch `feat/p5-model-routing` (off `develop`). Per-agent model selection is wired into every run. |
+| **Last completed milestone** | **P5.6 — routing wired into execution.** `get_router(settings)`/`resolve_router(settings, router=)` build a per-agent model router behind one `BaseRouter`: explicit (+fallback) is the zero-config default with no extra; algorithmic (weighted quality/cost/latency) and semantic (embedding similarity, `[routing]`) are the ranking strategies; `UserFunctionRouter` and injection (`Korch(router=)`) plug custom routers in with no package edit (ADR 0014). The composition root routes a model per default-worker agent at graph-build time (pure, replay-safe). |
+| **Blocking** | Nothing. P6 (integration & observability — tools/MCP/A2A/context/streaming) is next. |
+| **Pushed / merged** | `develop` (P0–P4) is pushed to `origin`. P5.1–P5.6 are committed on `feat/p5-model-routing`; the completed phase merges to `develop` next (awaiting user authorization). |
 
-Every local gate is green: ruff, ruff-format, `mypy --strict` (66 source files), `pytest` (dspy +
-non-dspy paths), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx confinement), the
-isolation gate, env-confinement, and version single-sourcing. `import korchestrator.agents` is
-verified `dspy`-free; the base install stays `pydantic`-only.
+Every local gate is green: ruff, ruff-format, `mypy --strict` (73 source files), `pytest` (dspy +
+non-dspy paths; **368 passed**, 94.55% cov, 9 Temporal excluded), import-linter (**4 contracts
+kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
+single-sourcing. `import korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free;
+the base install stays `pydantic`-only.
 
 ## 2. Phase progress
 
@@ -31,8 +32,8 @@ verified `dspy`-free; the base install stays `pydantic`-only.
 | P2 | Core execution kernel (Pregel) | **Complete** (merged to `develop`) |
 | P3 | Runtime adapters (local + Temporal) | **Complete** (merged to `develop`) |
 | P4 | Cognitive layer (agents, signatures, taxonomy) | **Complete** (P4.1–P4.9; first end-to-end run) |
-| P5 | Model routing | Not started — next |
-| P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | Not started |
+| P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
+| P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | Not started — next |
 | P7 | Governance, security & context graph | Not started |
 | P8 | Cross-cutting foundations | Not started |
 | P9 | Remote client (Python only — TS deferred) | Not started |
@@ -58,7 +59,8 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `providers/` | Adapter | **tested** (MockLM; local identity + subprocess sandbox; OpenAI gateway + `get_lm`; 99% cov) | P4 |
 | `agents/` | Cognitive (L2) | **tested** (unified `Agent`; lazy DSPy `Signature`s; `WorkerAgent` + `ArchitectAgent` over a shared gateway bridge; 97% cov) | P4 |
 | `taxonomy/` | Cognitive (L2) | **tested** (`TaxonomyClassifier` + agent descriptors; 100% cov) | P4 |
-| `routing/` · `context/` · `persistence/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P5–P9 |
+| `routing/` | Cognitive (L2) | **tested** (explicit+fallback default, algorithmic, semantic `[routing]`, composite, user-function behind one `BaseRouter`; `get_router`/`resolve_router`; model-card catalogue; wired into execution) | P5 |
+| `context/` · `persistence/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P6–P9 |
 
 ## 4. Public surface
 
@@ -93,6 +95,7 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | `httpx` confinement | Owned by `clients/` + `providers/gateway_openai.py` (lazy, `[remote]`); machine-enforced (direct-import) | 0011 |
 | Unified `Agent` | One class — declarative **and** subclassable; re-exported from `agents`/`services`/top level | 0012 |
 | Cognitive layer needs `[dspy]` | One reasoning path (DSPy `WorkerAgent`); base install imports clean, `MissingExtraError` on run; target dspy 3.x (`dspy>=2.6,<4`) | 0013 |
+| Custom router registration | By injection (`Korch(router=)`/`resolve_router`); `ROUTING_STRATEGY` selects built-ins only; entry-point discovery deferred | 0014 |
 
 ## 6. Known gaps and open items
 
@@ -102,7 +105,7 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Coverage floor enforced | Global 80% is wired (`fail_under=80`) and green (100% at this size); `core/`+`models/` 95% checked in CI. Ratchet from P2 as behaviour lands. | P2+ |
 | `import-linter` contracts configured | `.importlinter` with 3 contracts (framework-free, layers, feature-independence); `lint-imports` reports 3 kept, 0 broken. `include_external_packages=True` added (import-linter requirement, omitted from spec §9 snippet). | ✔ P0 |
 | Manifest corrections during P0 | `--xfail-strict` → `xfail_strict=true` (spec named a nonexistent pytest flag); `import-linter` added to `[dev]`. Both recorded in the engineering log. | ✔ P0 |
-| `ConfigurationError` vs `ValidationError` overlap | Both nominally cover "invalid configuration"; spec 08 §1.2 says `configure()` raises `ValidationError`, so `ConfigurationError` has no call site yet and is not in `__all__`. Resolve via ADR (retire it, or specify which failures use which) **before `configure()` lands**. Raised by the P1 API review. | P8 |
+| `ConfigurationError` vs `ValidationError` overlap | Both nominally cover "invalid configuration". `ConfigurationError` now has call sites (env-parse failures, bad model-card source/file in P5), but is still not in top-level `__all__`; spec 08 §1.2 says `configure()` raises `ValidationError`. Resolve via ADR (specify which failures use which, and whether `ConfigurationError` joins `__all__`) **before `configure()` lands**. Raised by the P1 API review. | P8 |
 | `ToolError` default code is specific | `ToolError.default_code = TOOL_NOT_FOUND` — a raiser that omits `code=` gets a misleading "not found". No raiser exists until the tool bridge (P6); revisit then (generic default or required `code`). Raised by the P1 API review. | P6 |
 | Benchmark baseline not established | Committed baseline lands in P10. | P10 |
 | TS parity matrix | Ships as documentation in P9 with every method marked `TS: planned`. | P9 |
