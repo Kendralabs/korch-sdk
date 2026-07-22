@@ -15,6 +15,12 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Model routing (Phase 5), wired into execution: `resolve_router(settings, router=…)` and a
+  `UserFunctionRouter` that adapts a `(RoutingContext) -> RoutingResult` callable (sync or async).
+  A custom `BaseRouter` plugs in by injection — `Korch(router=…)` / `Swarm(router=…)` — with no
+  package edit (entry-point discovery deferred, see ADR 0014). `Korch.run`/`Swarm.run` now select a
+  model per default-worker agent at composition time (deterministic, replay-safe), honouring a model
+  pinned on the agent and `AGENT_MODEL_MAP`.
 - Model routing (Phase 5), ranking strategies: `AlgorithmicRouter` (weighted quality/cost/latency
   ranking over `ROUTING_WEIGHTS`, with capability filtering and cost estimation) and `SemanticRouter`
   (embedding-similarity selection against `ModelCard` descriptions, with a TTL-cached embedding

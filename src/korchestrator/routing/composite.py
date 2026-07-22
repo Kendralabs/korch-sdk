@@ -9,17 +9,21 @@ that actually decided.
 
 from __future__ import annotations
 
+import inspect
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 
 from korchestrator.constants import error_codes as codes
 from korchestrator.exceptions import ConfigurationError, RoutingError
 from korchestrator.interfaces import BaseRouter
 from korchestrator.models.routing import RoutingContext, RoutingResult
 
-__all__ = ["CompositeRouter"]
+__all__ = ["CompositeRouter", "UserFunctionRouter"]
 
 _logger = logging.getLogger("korchestrator.routing")
+
+# A user routing function: sync or async, context in, decision out.
+RouterFunction = Callable[[RoutingContext], "RoutingResult | Awaitable[RoutingResult]"]
 
 
 class CompositeRouter:
@@ -70,3 +74,47 @@ class CompositeRouter:
             "to the chain, pin a model, or widen the candidate set.",
             code=codes.ROUTING_NO_CANDIDATES,
         )
+
+
+class UserFunctionRouter:
+    """Adapt a user-supplied callable into a :class:`~korchestrator.interfaces.BaseRouter`.
+
+    The function receives the :class:`RoutingContext` and returns a :class:`RoutingResult`; it may
+    be synchronous or a coroutine function. This is the lightest way to plug custom routing in
+    without subclassing — ``Korch(router=UserFunctionRouter(my_fn))``. Keep it pure with respect to
+    its input so routing stays replay-safe (spec 07 §5).
+
+    Args:
+        function: The routing callable, ``(RoutingContext) -> RoutingResult`` (sync or async).
+
+    Example:
+        >>> import asyncio
+        >>> from korchestrator.models.routing import RoutingContext, RoutingResult, TaskSemantics
+        >>> from korchestrator.routing.composite import UserFunctionRouter
+        >>> def cheapest(context):
+        ...     return RoutingResult(
+        ...         model_name="mini", strategy="user_function", score=1.0, reason="always mini"
+        ...     )
+        >>> ctx = RoutingContext(
+        ...     agent_id="w", task=TaskSemantics(intent="general", difficulty="trivial")
+        ... )
+        >>> asyncio.run(UserFunctionRouter(cheapest).select_model(ctx)).model_name
+        'mini'
+    """
+
+    def __init__(self, function: RouterFunction) -> None:
+        """Store the user's routing callable."""
+        self._function = function
+
+    async def select_model(self, context: RoutingContext) -> RoutingResult:
+        """Invoke the callable (awaiting it if async) and validate the result type."""
+        outcome = self._function(context)
+        result = await outcome if inspect.isawaitable(outcome) else outcome
+        if not isinstance(result, RoutingResult):
+            raise RoutingError(
+                "A user routing function must return a RoutingResult, but it returned "
+                f"{type(result).__name__}. Return RoutingResult(model_name=..., strategy=..., "
+                "score=..., reason=...).",
+                code=codes.KORCH_ROUTING_FAILED,
+            )
+        return result
