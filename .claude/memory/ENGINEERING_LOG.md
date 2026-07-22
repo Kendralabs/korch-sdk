@@ -10,6 +10,58 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P6.4] MCP client — discover server tools as AUB connectors — v0.1.0
+
+**Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
+
+**What.** Added the `mcp/` client. `MCPServerConfig` (stdio/sse descriptor, validated). `MCPSession`
+(transport-agnostic protocol: `list_tools`/`call_tool`/`aclose`) with `MCPToolSpec`/`MCPCallResult`.
+`MCPClient.discover(config)` connects via an injected session factory (or the real `[mcp]` transport)
+and returns the server's tools as `Connector` objects; the composition root registers them in the
+shared AUB registry, so agents cannot tell an MCP tool from a native one and progressive disclosure
+is just the bridge's mount gate. A connection/discovery failure logs a `WARNING` and contributes no
+connectors (its tools resolve to `TOOL_NOT_FOUND`); a missing `[mcp]` extra raises `MissingExtraError`.
+The real stdio/sse transport is a lazily-imported `AsyncExitStack`-managed session (`[mcp]` only,
+never CI-covered).
+
+**Why.** P6.4 — MCP servers plug in by descriptor, not code (spec 07 §7). One registry holds native
+and MCP tools alike, so adding an MCP server needs no core edit.
+
+**Design decisions.** (1) **`Connector` moved to `interfaces/`.** MCP tools must become connectors,
+but `tools` and `mcp` are feature-independent siblings (import-linter forbids `mcp → tools`). So the
+`Connector` contract (name/description/schema/execute, a superset of `AUBConnector`) now lives in
+`interfaces/`; `tools` and `mcp` both implement it, meeting at the contract — `tools/connectors/base`
+re-exports it for the documented path. (2) `MCPClient.discover` **returns** connectors; the
+composition root registers them — so `mcp` never imports `tools`. (3) The `MCPSession` seam makes the
+discovery/registration mechanics fully testable with a fake session offline; the real `mcp` transport
+stays behind the extra. (4) Discovery failures are non-fatal by design (spec 07 §7).
+
+**Architecture changes.** `mcp/` (L4) populated; imports interfaces/models/constants/exceptions/
+logging only (+ lazy `mcp`). `Connector` added to `interfaces.__all__` (additive). import-linter 4/4
+kept — `mcp` and `tools` remain independent.
+
+**Files/modules affected.** `src/korchestrator/mcp/{__init__,config,session,client}.py` (new);
+`interfaces/connector.py` + `interfaces/__init__.py` (`Connector`); `tools/connectors/base.py` +
+`tools/registry.py` (import `Connector` from interfaces); `tests/unit/mcp/*`,
+`tests/unit/interfaces/test_protocols.py` (new/updated).
+
+**Breaking changes.** None. `Connector` added to `interfaces.__all__` (addition); the `tools.Connector`
+import path is unchanged (re-export).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean; MCP + tools + interfaces
+suites pass (44) + 2 mcp doctests; import-linter 4/4. Covered: an MCP tool discovered → registered →
+invoked through the bridge; MCP error → `ok=False`; discovery failure skipped (empty); missing extra
+propagates; sessions closed on `aclose`; config transport validation.
+
+**Known limitations / future improvements.** The real stdio/sse transport is `[mcp]`-only and not
+CI-covered. `Korch(mcp_servers=...)` façade wiring lands with the other composition wiring (P6.8).
+
+---
+
 ## 2026-07-22 · [P6.1–P6.3] AUB tool bridge, connector registry, built-in connectors — v0.1.0
 
 **Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
