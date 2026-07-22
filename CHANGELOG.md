@@ -90,8 +90,20 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   (spec 08 §5); enterprise deployments supply KIAM/KACP and OpenSandbox. The sandbox tool registry
   is empty until the Agent Utility Bridge (P6) populates it.
 
+- The unified `Agent` base (`korchestrator.agents.Agent`, re-exported as `korchestrator.Agent` and
+  `korchestrator.services.Agent`): one class that is both the declarative Tier-2 builder
+  (`Agent(id="lead", role="review-lead")`, unchanged) and the subclassable Tier-3 base with the
+  frozen-snapshot behavioural surface — `async think(state) -> StateUpdate`, `is_complete(state)`,
+  `bind(clock=...)`, `clock` (`clock.now()`), and `to_node()`. `think` receives an immutable
+  `AgentState` and returns a `StateUpdate` delta; the base implementation raises until a subclass
+  overrides it or the façade supplies the default reasoning agent. See ADR 0012.
+
 ### Changed
 
+- **`Agent` is now defined in `korchestrator.agents`** (its canonical home) and re-exported from
+  `korchestrator.services` and the top level — all three import paths resolve to the same class
+  (ADR 0012). The Tier-2 declarative constructor is unchanged, so this is additive and non-breaking;
+  the new behavioural methods make custom agents (subclass + `think`) possible.
 - **Breaking (0.x).** `IDurableRuntime` is reshaped from a single `run(state)` method to
   `now()` / `start(state)` / `wait(run_id)` / `signal(run_id, name, payload)` (spec 06 §6), so it can
   express durable start-then-rejoin and carry HITL control signals. The graph is injected into the
