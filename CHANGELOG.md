@@ -71,6 +71,16 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   `IModelGateway`. The same messages always yield the same completion; it supports scripted
   per-model responses and records a call log. No network, no randomness, no credentials — it is what
   makes the full agent path testable in CI, and it is the zero-config default.
+- The networked default `IModelGateway`, `korchestrator.providers.OpenAIGateway` — a thin client for
+  any OpenAI-compatible chat-completions endpoint. All configuration (endpoint, credentials, timeout)
+  is injected (the gateway reads no environment), `httpx` is lazily imported and lives behind the
+  `[remote]` extra (the base install stays `pydantic`-only), and every vendor failure is wrapped as a
+  `KorchError`: a timeout → `TimeoutError`, 401/403 → `AuthError`, 429 → `RateLimitError`, anything
+  else → `ProviderError` — always preserving `__cause__`. Prompts and credentials are never logged.
+- `korchestrator.providers.get_lm(model_name, *, settings=..., api_key=..., base_url=...)` — the
+  gateway factory: returns the offline `MockLM` when `settings.mock_llm` (the zero-config default),
+  otherwise a configured `OpenAIGateway`; a real gateway without injected credentials raises an
+  actionable `ConfigurationError`.
 - The default local ARI providers (`korchestrator.providers`): `LocalIdentityProvider` — an
   unsecured, single-tenant `IIdentityProvider` that resolves an agent to a deterministic synthetic
   DID and enforces its bound tenant; and `LocalSandbox` — a subprocess-isolating `IExecutionSandbox`
