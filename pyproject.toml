@@ -26,7 +26,9 @@ classifiers = [
 dependencies = ["pydantic>=2.7,<3"]
 
 [project.optional-dependencies]
-dspy = ["dspy-ai>=2.5,<3"]
+# The `dspy-ai` distribution now redirects to the modern `dspy` package (3.x); target it directly
+# so the pin actually constrains the installed module. See ADR 0013.
+dspy = ["dspy>=2.6,<4"]
 temporal = ["temporalio>=1.7,<2"]
 routing = ["sentence-transformers>=3.0,<4", "numpy>=1.26"]
 mcp = ["mcp>=1.2,<2"]
