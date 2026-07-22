@@ -10,6 +10,226 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P6.5/P6.7/P6.8] A2A messaging, event streaming, middleware/hooks — v0.1.0 · closes P6
+
+**Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
+
+**What.** Three pieces plus the runtime wiring that closes Phase 6.
+- **a2a/** (P6.5): `directed_message` (a message addressed to one recipient, delivered only along a
+  real edge) and `HandoffTransformer` (turns one agent's output into a `kind="handoff"`, `REQUEST`
+  message for another agent, optionally prefixing a summary).
+- **events/** (P6.7): `Event`, `EventPublisher` (fan-out to bounded per-subscriber queues; a lagging
+  subscriber drops events, never blocking the run), `Subscription` (async iterator + `get`/`close`),
+  and `format_sse` (the SDK emits; the caller serves HTTP).
+- **services/hooks.py** (P6.8): `Middleware` (before/after_superstep, before/after_tool) and
+  `HookRegistry` (`register_middleware`, `on(event, handler)`), which implements the kernel's new
+  `SuperstepObserver`. Ordering + error isolation per spec 07 §9: before_* in registration order,
+  after_* reversed, middleware before event hooks, and every hook/middleware failure caught+logged so
+  a hook can never fail a run.
+- **Wiring**: `PregelRunner` gained an optional `observer` (fired around each superstep; `None` by
+  default so determinism is untouched and Temporal workflow scope never runs it); threaded through
+  `LocalRuntime` → `resolve_runtime` → `run_graph`. `Korch`/`Swarm` accept `middleware=[...]` and
+  expose `.on(event, handler)`; a `HookRegistry` is built only when something is registered.
+
+**Why.** P6.5/P6.7/P6.8 — inter-agent handoffs, an observable event stream, and the extension
+framework, so adding a hook needs no core edit and observers see every superstep.
+
+**Design decisions.** (1) The hook seam is an **injected `SuperstepObserver` protocol defined in
+core** (framework-free); services implements it — DIP, no upward import, and the observer only fires
+in the in-process loop, never Temporal workflow scope (determinism preserved; `observer=None` keeps
+the existing path byte-identical). (2) Error isolation via `functools.partial` thunks so a sync
+handler that raises is caught inside `_safe` too. (3) The `before_superstep` `GovernanceHaltError`
+veto → pause is **deferred to P7** (governance); for now all failures are isolated so runs always
+complete. (4) `before_tool`/`after_tool` exist on `Middleware` but are dispatched once the agent
+tool-loop lands. (5) Events fan out to bounded queues — a slow consumer drops events rather than
+stalling the run.
+
+**Architecture changes.** `a2a/`, `events/` populated; `services/hooks.py` added. `core/pregel.py`
+gained `SuperstepObserver` + an optional observer call in `run()`. import-linter 4/4 kept; `a2a` and
+`events` are feature-independent. `Middleware`/`HookRegistry` exported from `korchestrator.services`.
+
+**Files/modules affected.** `a2a/{__init__,handoff}.py`, `events/{__init__,publisher}.py`,
+`services/hooks.py` (new); `core/pregel.py`, `runtime/local_runtime.py`, `runtime/__init__.py`,
+`services/_composition.py`, `services/korch.py`, `services/swarm.py`, `services/__init__.py`
+(observer wiring); `tests/unit/{a2a,events}/*`, `tests/unit/services/test_hooks.py`, and a run-level
+isolation test in `tests/unit/services/test_run.py`.
+
+**Breaking changes.** None. `PregelRunner`/`LocalRuntime`/`resolve_runtime`/`run_graph` gained a
+keyword-only `observer` (default `None`); `Korch`/`Swarm` gained keyword-only `middleware` + `.on()`.
+`Middleware`/`HookRegistry` added to `services.__all__` (additions).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (87 files); a2a/events/hooks
+suites + a run-level test pass; the full determinism suite still passes unchanged (observer default
+`None`); import-linter 4/4. Covered: handoff/directed message; pub-sub fan-out, lagging drop, SSE
+frame; hook ordering (before order / after reverse / middleware-before-hooks / handler order); a
+raising middleware and a raising handler are isolated; async handlers awaited; publisher mirroring;
+and end-to-end — a raising middleware does not fail a run and the `superstep` event still fires.
+
+**Known limitations / future improvements.** GovernanceHaltError veto → pause is P7. Temporal hook
+dispatch (activity scope) is deferred. `before_tool`/`after_tool` await the agent tool-loop. Phase 6
+is complete.
+
+---
+
+## 2026-07-22 · [P6.6] Context compiler + Minimum Viable Context extraction — v0.1.0
+
+**Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
+
+**What.** Added `context/`. `ContextCompiler.compile(state)` builds a budget-bounded
+`CompiledContext` from an `AgentState` snapshot: it always keeps the objective, ranks messages by
+kind (answers/handoffs first) then recency, greedily packs them under a character budget
+(`max_chars`) and count cap (`max_messages`), and prunes the rest. An optional `Summarizer` seam
+folds the pruned tail into a short note; with no summariser (or on its failure) it degrades to a
+count. `CompiledContext` reports `original_count`/`included_count`/`pruned_count`/`truncated`/
+`summarized` so the reduction is measurable.
+
+**Why.** P6.6 — keep the model prompt small and relevant. MVC extraction measurably reduces context
+size (acceptance) and runs off the hot loop against a frozen snapshot.
+
+**Design decisions.** (1) Runs **off the hot loop**: an agent calls it against an immutable snapshot;
+it never mutates state and, without a summariser, is pure and deterministic. (2) A character budget
+is a dependency-free token proxy — deterministic and good enough for MVC; a real tokenizer can slot
+in later. (3) **Graceful degradation**: a missing or throwing summariser never breaks compilation —
+it falls back to a count note (spec 07/P6.6 "degrades gracefully"). (4) Priority (answer > handoff >
+tool > thought) preserves substantive contributions when the budget bites; output is re-ordered
+chronologically for a coherent prompt.
+
+**Architecture changes.** `context/` (L3) populated; imports models/exceptions only (+ stdlib).
+import-linter 4/4 kept; feature-independent from tools/mcp.
+
+**Files/modules affected.** `src/korchestrator/context/{__init__,compiler}.py` (new);
+`tests/unit/context/test_compiler.py` (new).
+
+**Breaking changes.** None. New `korchestrator.context` surface; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean; 7 tests + 1 doctest pass;
+import-linter 4/4. Covered: objective kept, MVC reduces size under budget, answers survive pruning,
+chronological ordering, summariser folds the tail, broken summariser degrades, determinism.
+
+**Known limitations / future improvements.** Character budget is a token proxy (real tokenizer later).
+The compiler is not yet auto-invoked inside the worker prompt build — wiring it into `think` is a
+later refinement; today it is a standalone, testable component.
+
+---
+
+## 2026-07-22 · [P6.4] MCP client — discover server tools as AUB connectors — v0.1.0
+
+**Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
+
+**What.** Added the `mcp/` client. `MCPServerConfig` (stdio/sse descriptor, validated). `MCPSession`
+(transport-agnostic protocol: `list_tools`/`call_tool`/`aclose`) with `MCPToolSpec`/`MCPCallResult`.
+`MCPClient.discover(config)` connects via an injected session factory (or the real `[mcp]` transport)
+and returns the server's tools as `Connector` objects; the composition root registers them in the
+shared AUB registry, so agents cannot tell an MCP tool from a native one and progressive disclosure
+is just the bridge's mount gate. A connection/discovery failure logs a `WARNING` and contributes no
+connectors (its tools resolve to `TOOL_NOT_FOUND`); a missing `[mcp]` extra raises `MissingExtraError`.
+The real stdio/sse transport is a lazily-imported `AsyncExitStack`-managed session (`[mcp]` only,
+never CI-covered).
+
+**Why.** P6.4 — MCP servers plug in by descriptor, not code (spec 07 §7). One registry holds native
+and MCP tools alike, so adding an MCP server needs no core edit.
+
+**Design decisions.** (1) **`Connector` moved to `interfaces/`.** MCP tools must become connectors,
+but `tools` and `mcp` are feature-independent siblings (import-linter forbids `mcp → tools`). So the
+`Connector` contract (name/description/schema/execute, a superset of `AUBConnector`) now lives in
+`interfaces/`; `tools` and `mcp` both implement it, meeting at the contract — `tools/connectors/base`
+re-exports it for the documented path. (2) `MCPClient.discover` **returns** connectors; the
+composition root registers them — so `mcp` never imports `tools`. (3) The `MCPSession` seam makes the
+discovery/registration mechanics fully testable with a fake session offline; the real `mcp` transport
+stays behind the extra. (4) Discovery failures are non-fatal by design (spec 07 §7).
+
+**Architecture changes.** `mcp/` (L4) populated; imports interfaces/models/constants/exceptions/
+logging only (+ lazy `mcp`). `Connector` added to `interfaces.__all__` (additive). import-linter 4/4
+kept — `mcp` and `tools` remain independent.
+
+**Files/modules affected.** `src/korchestrator/mcp/{__init__,config,session,client}.py` (new);
+`interfaces/connector.py` + `interfaces/__init__.py` (`Connector`); `tools/connectors/base.py` +
+`tools/registry.py` (import `Connector` from interfaces); `tests/unit/mcp/*`,
+`tests/unit/interfaces/test_protocols.py` (new/updated).
+
+**Breaking changes.** None. `Connector` added to `interfaces.__all__` (addition); the `tools.Connector`
+import path is unchanged (re-export).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean; MCP + tools + interfaces
+suites pass (44) + 2 mcp doctests; import-linter 4/4. Covered: an MCP tool discovered → registered →
+invoked through the bridge; MCP error → `ok=False`; discovery failure skipped (empty); missing extra
+propagates; sessions closed on `aclose`; config transport validation.
+
+**Known limitations / future improvements.** The real stdio/sse transport is `[mcp]`-only and not
+CI-covered. `Korch(mcp_servers=...)` façade wiring lands with the other composition wiring (P6.8).
+
+---
+
+## 2026-07-22 · [P6.1–P6.3] AUB tool bridge, connector registry, built-in connectors — v0.1.0
+
+**Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
+
+**What.** Stood up the Agent Utility Bridge in `tools/`. `registry.py` — `ConnectorRegistry`
+(register a `Connector`, wrap a bare async function via `register_tool`, resolve by tool name,
+entry-point `.discover()` over `korchestrator.connectors` that skips failing/duplicate plugins).
+`connectors/base.py` — the `Connector` structural protocol (name/description/JSON-Schema/execute), a
+superset of the P1 `AUBConnector`. `bridge.py` — `invoke_tool`, the single path every call takes:
+access gate (mounted tools → `TOOL_ACCESS_DENIED`), rate limit, JSON-Schema argument validation,
+timeout, an optional Shield redaction seam (P7), duration stamping, and structured logging; expected
+failures return `ToolResult(ok=False, error_code=...)`, an unexpected connector raise becomes
+`ToolError(TOOL_EXECUTION_FAILED)`. `_schema.py` — a dependency-free JSON-Schema object-subset
+validator. `_ratelimit.py` — `TokenBucketRateLimiter` (injected time source). `connectors/` —
+`FilesystemConnector` (root-confined, traversal denied) and `MockSearchConnector` (deterministic
+offline fallback). Added the `TOOL_EXECUTION_FAILED` error code. `tools/__init__` re-exports
+`AUBConnector` as the documented import path (spec 07 §6).
+
+**Why.** P6.1–P6.3 — the tool layer agents call. One bridge enforces validation/timeout/rate-limit/
+access/redaction uniformly, so a connector is trivial and a custom tool plugs in with no core edit
+(DoD). Built-in connectors give an offline, testable filesystem + search out of the box.
+
+**Design decisions.** (1) Registration is on a `ConnectorRegistry` instance + `Korch(connectors=)`,
+not a process-global `register_*` (B8) — **ADR 0015**. (2) The bridge, not the connector, owns
+validation/timeout/rate-limit/redaction (spec 07 §6): connectors never validate their own inputs.
+(3) A minimal JSON-Schema validator (object subset) avoids a `jsonschema` dependency in the base
+install; `bool` is correctly rejected as a JSON integer/number. (4) Redaction is an injected
+`Redactor` seam defaulting to none — P7's Shield fills it, so `tools/` needs no dependency on the
+unbuilt `security/` redactor. (5) The filesystem connector resolves paths against its root and denies
+traversal (`is_relative_to`) — the security rule at a trust boundary. (6) Real web search needs an
+HTTP client (`[remote]`); the built-in is a deterministic mock fallback, offline for CI.
+
+**Architecture changes.** `tools/` (L4 integration) populated; imports only interfaces/models/
+constants/types/exceptions/logging (+ stdlib) — inward only. import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/tools/{__init__,registry,bridge,_schema,_ratelimit}.py`,
+`tools/connectors/{__init__,base,filesystem,search}.py` (new); `constants/error_codes.py`
+(`TOOL_EXECUTION_FAILED`); `tests/unit/tools/*` and `tests/unit/constants/test_error_codes.py` (new/
+updated); `docs/adr/0015-*.md`.
+
+**Breaking changes.** None. New error code is additive (frozen codes allow additions). New
+`korchestrator.tools` surface; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (11 files); 30 tools tests +
+6 doctests pass; import-linter 4/4; error-code snapshot updated. Covered: happy path, not-found,
+unmounted-denied, schema reject, timeout, rate limit, connector `ok=False` passthrough, unexpected →
+`ToolError`, redaction, duration stamping, traversal denial, deterministic mock search, entry-point
+discovery skipping a bad plugin.
+
+**Known limitations / future improvements.** Redaction seam is a no-op until P7 Shield. OTel spans are
+structured logs for now (real spans in P8 telemetry). MCP-backed connectors land next (P6.4).
+
+---
+
 ## 2026-07-22 · [P5.5/P5.6] User-function router + resolve_router wiring — v0.1.0 · closes P5
 
 **Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)

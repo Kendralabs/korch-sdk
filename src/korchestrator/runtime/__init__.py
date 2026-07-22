@@ -10,7 +10,7 @@ from __future__ import annotations
 from korchestrator.config import Settings
 from korchestrator.core.channels import ChannelSchema
 from korchestrator.core.graph import AgentGraph
-from korchestrator.core.pregel import Clock
+from korchestrator.core.pregel import Clock, SuperstepObserver
 from korchestrator.exceptions import MissingExtraError
 from korchestrator.interfaces.runtime import IDurableRuntime
 from korchestrator.runtime.local_runtime import LocalRuntime
@@ -24,6 +24,7 @@ def resolve_runtime(
     *,
     clock: Clock,
     channels: ChannelSchema | None = None,
+    observer: SuperstepObserver | None = None,
 ) -> IDurableRuntime:
     """Select and construct the durable runtime from ``settings.korch_runtime``.
 
@@ -35,6 +36,8 @@ def resolve_runtime(
         graph: The validated agent graph the runtime will run.
         clock: The injected, replay-safe clock.
         channels: The channel-to-reducer bindings. Defaults to all-``LastValue``.
+        observer: Optional superstep observer (middleware/event hooks). Honoured by the local
+            runtime; Temporal hook dispatch runs in activities and is deferred to a later phase.
 
     Returns:
         A constructed :class:`~korchestrator.interfaces.IDurableRuntime`.
@@ -56,7 +59,7 @@ def resolve_runtime(
         True
     """
     if settings.korch_runtime == "local":
-        return LocalRuntime(graph, clock=clock, channels=channels)
+        return LocalRuntime(graph, clock=clock, channels=channels, observer=observer)
     # settings.korch_runtime is Literal["local", "temporal"]; the remaining case is "temporal".
     # temporal_runtime.py is imported lazily here — its module-top `import temporalio` means eager
     # import would break the base install; a missing [temporal] extra surfaces as ImportError.

@@ -15,6 +15,31 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Extension framework (Phase 6): agent-to-agent messaging (`korchestrator.a2a` — `directed_message`,
+  `HandoffTransformer`); transport-agnostic event streaming (`korchestrator.events` — `Event`,
+  `EventPublisher`, `Subscription`, `format_sse`; the SDK emits, it does not serve HTTP); and
+  middleware/hooks (`korchestrator.services.Middleware`/`HookRegistry`) with the spec 07 §9 ordering
+  and error isolation — a hook can never fail a run. `Korch`/`Swarm` accept `middleware=…` and expose
+  `.on(event, handler)`; hooks fire around each superstep on the local runtime via an injected
+  `SuperstepObserver` (default off, so determinism is unaffected).
+- Context compiler (Phase 6): `korchestrator.context` with `ContextCompiler.compile()` and
+  `CompiledContext` — Minimum Viable Context extraction that keeps the objective and the substantive
+  messages (answers/handoffs) first, packs the recent remainder under a character budget, and prunes
+  the rest. An optional `Summarizer` seam folds the pruned tail; it degrades gracefully to a count.
+  Runs off the hot loop and is deterministic without a summariser.
+- MCP client (Phase 6): `korchestrator.mcp` with `MCPServerConfig` (stdio/sse descriptor) and
+  `MCPClient.discover()`, which connects to an MCP server and returns its tools as `Connector`s for
+  the shared AUB registry — so agents can't tell an MCP tool from a native one. Discovery failures
+  are non-fatal; the real transport needs the `[mcp]` extra. The `Connector` contract moved to
+  `korchestrator.interfaces` (added to its `__all__`) so `tools` and `mcp` share it without importing
+  each other; the `korchestrator.tools` import path is unchanged.
+- Agent Utility Bridge (Phase 6): `korchestrator.tools` with `ConnectorRegistry` (register a
+  `Connector`, wrap a function via `register_tool`, entry-point `discover()`), the `Connector`
+  contract, and `invoke_tool` — the single path enforcing the mount access gate, rate limiting,
+  JSON-Schema argument validation, timeout, an optional redaction seam, and duration/telemetry.
+  Built-in `FilesystemConnector` (root-confined, traversal-denied) and `MockSearchConnector`
+  (deterministic offline). New `TOOL_EXECUTION_FAILED` error code. Registration is via the registry
+  and `Korch(connectors=…)`, not a process global (ADR 0015).
 - Model routing (Phase 5), wired into execution: `resolve_router(settings, router=…)` and a
   `UserFunctionRouter` that adapts a `(RoutingContext) -> RoutingResult` callable (sync or async).
   A custom `BaseRouter` plugs in by injection — `Korch(router=…)` / `Swarm(router=…)` — with no

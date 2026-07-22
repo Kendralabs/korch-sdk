@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Sequence
 from datetime import datetime
+from typing import Protocol, runtime_checkable
 
 from korchestrator.core.channels import ChannelSchema
 from korchestrator.core.graph import AgentGraph
@@ -20,13 +21,32 @@ from korchestrator.models.result import RunResult
 from korchestrator.models.state import AgentState, Message, RunStatus, StateUpdate
 from korchestrator.types import JSONValue
 
-__all__ = ["Clock", "PregelRunner", "build_result", "select_active"]
+__all__ = ["Clock", "PregelRunner", "SuperstepObserver", "build_result", "select_active"]
 
 # The injected, replay-safe clock. Under Temporal this is ``workflow.now()``; locally, a monotone
 # injected clock. Workflow-path code MUST use this, never ``datetime.now()`` (spec 06 §5).
 Clock = Callable[[], datetime]
 
 DEFAULT_MAX_SUPERSTEPS = 10
+
+
+@runtime_checkable
+class SuperstepObserver(Protocol):
+    """Observe superstep boundaries without influencing the barrier (spec 07 §9).
+
+    The runtime may inject an observer so middleware and event hooks can fire around each superstep.
+    It is called only by the in-process run loop, never in Temporal workflow scope, so it cannot
+    affect the replay contract. Implementations MUST NOT raise (they isolate their own errors) and
+    MUST NOT mutate ``state`` — the barrier result is already computed when they run.
+    """
+
+    async def before_superstep(self, state: AgentState) -> None:
+        """Called with the state about to be computed, before the compute phase."""
+        ...
+
+    async def after_superstep(self, state: AgentState) -> None:
+        """Called with the state produced by the barrier, after reducers and routing."""
+        ...
 
 
 def select_active(node_ids: Sequence[str], state: AgentState) -> tuple[str, ...]:
@@ -113,12 +133,14 @@ class PregelRunner:
         clock: Clock,
         channels: ChannelSchema | None = None,
         max_supersteps: int = DEFAULT_MAX_SUPERSTEPS,
+        observer: SuperstepObserver | None = None,
     ) -> None:
-        """Store the injected graph, clock, channel schema, and halt bound."""
+        """Store the injected graph, clock, channel schema, halt bound, and optional observer."""
         self._graph = graph
         self._clock = clock
         self._channels = channels if channels is not None else ChannelSchema()
         self._max_supersteps = max_supersteps
+        self._observer = observer
 
     # --- activation -----------------------------------------------------------------------------
 
@@ -273,7 +295,11 @@ class PregelRunner:
             if current.superstep >= self._max_supersteps:
                 error_code = "MAX_SUPERSTEPS_REACHED"
                 break
+            if self._observer is not None:
+                await self._observer.before_superstep(current)
             current = await self.run_superstep(current)
+            if self._observer is not None:
+                await self._observer.after_superstep(current)
             if current.halted:
                 break
 
