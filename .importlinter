@@ -49,7 +49,11 @@ name = httpx only in clients and providers (ADR 0011)
 type = forbidden
 # httpx belongs to the [remote] extra and is owned by exactly two HTTP-facing modules:
 # clients/ (the remote KorchestratorClient) and providers/gateway_openai.py (the model gateway).
-# A stray httpx import in any other layer fails here rather than relying on prose (ADR 0011).
+# A stray *direct* httpx import in any other layer fails here rather than relying on prose (ADR
+# 0011). allow_indirect_imports keeps the composition root free to import providers (which owns the
+# lazy gateway) without being charged for httpx transitively — the base install stays httpx-free
+# because gateway_openai imports httpx inside its methods, not at module top.
+allow_indirect_imports = True
 source_modules =
     korchestrator.agents
     korchestrator.core

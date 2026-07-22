@@ -90,6 +90,25 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   (spec 08 §5); enterprise deployments supply KIAM/KACP and OpenSandbox. The sandbox tool registry
   is empty until the Agent Utility Bridge (P6) populates it.
 
+- **First end-to-end run.** `Korch.run(objective)` and `Swarm.run()` are wired to the kernel: the
+  façade classifies the objective (taxonomy), has the Architect plan a team (Tier 1) or takes the
+  declared topology (Tier 2), binds each agent's clock and gateway, builds a validated kernel graph,
+  and drives it through the configured runtime to a `RunResult` with a populated `final_answer`. The
+  Tier-1 one-liner and Tier-2 typed-swarm examples from the public API now run (their tests are no
+  longer `xfail`). Reasoning agents require `[dspy]`; a custom agent (own `think`) runs the whole path
+  on a pydantic-only base install. A worker's contribution is emitted as an `answer` message so it
+  accumulates into `final_answer`.
+- The deterministic **taxonomy** (`korchestrator.taxonomy`): `TaxonomyClassifier.classify(objective)`
+  maps an objective to a typed `TaskSemantics` (intent, difficulty, implied capability, token
+  estimates) using keyword/length heuristics — no model call, no extra, fully reproducible. Plus the
+  built-in agent-descriptor catalogue (`default_descriptors()`, `descriptors_for_intent(intent)`) that
+  the Architect and router use to match intents to agents.
+- `korchestrator.agents.ArchitectAgent` — the Architect meta-agent (requires `[dspy]`). Given an
+  objective (and its classified intent/difficulty) it reasons a small team of agent roles and returns
+  a validated `ExecutionPlan`. On any reasoning failure — a provider error, or a reply that yields no
+  valid agent role (as a MockLM echo does) — it returns a deterministic single-agent **mock plan**, so
+  a swarm always gets a runnable plan; `MissingExtraError` still propagates (it does not trigger the
+  fallback). The DSPy↔gateway bridge is now shared by the worker and architect.
 - `korchestrator.agents.WorkerAgent` — the default reasoning agent (requires the `[dspy]` extra;
   ADR 0013). It compiles its `Signature` into a `dspy.Predict` at call time and runs it under the
   **injected** `IModelGateway`: a `dspy.LM` subclass routes DSPy's model calls to

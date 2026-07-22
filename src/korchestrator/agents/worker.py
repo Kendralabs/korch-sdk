@@ -18,9 +18,8 @@ real, and it is confined to that activity boundary — never workflow scope (``d
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from typing import Any
 
+from korchestrator.agents._reasoning import PLACEHOLDER_MODEL, predict_under_gateway
 from korchestrator.agents.base import Agent
 from korchestrator.agents.signatures import Signature, WorkerSignature, load_dspy
 from korchestrator.exceptions import ConfigurationError, ProviderError
@@ -28,14 +27,6 @@ from korchestrator.interfaces import IModelGateway
 from korchestrator.models.state import AgentState, Message, MessageRole, StateUpdate
 
 __all__ = ["WorkerAgent"]
-
-# Placeholder model used only when neither the agent config nor routing (P5) names one. MockLM
-# ignores it; a real gateway requires a real model, i.e. set AgentConfig.model until routing lands.
-_PLACEHOLDER_MODEL = "korch-default"
-
-# Fixed timestamp for the transient messages handed to the gateway; the gateway ignores valid_time
-# and this keeps reasoning from advancing the injected clock (which stamps the real StateUpdate).
-_PROMPT_TIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 # Bound on the rendered conversation context handed to the model.
 _MAX_CONTEXT_MESSAGES = 20
@@ -113,10 +104,13 @@ class WorkerAgent(Agent):
         """
         answer, is_final = await asyncio.to_thread(self._reason, state)
         now = self.clock.now()
+        # A worker's contribution is its answer, so it accumulates into the run's final_answer; a
+        # terminal ``is_final`` additionally halts the node. (Intermediate ReAct thoughts — P6 — will
+        # be emitted separately as ``kind="thought"``.)
         message = Message(
             id=f"{state.run_id}:{state.superstep}:{self.id}:0",
             role=MessageRole.ASSISTANT,
-            kind="answer" if is_final else "thought",
+            kind="answer",
             sender=self.id,
             content=answer,
             superstep=state.superstep,
@@ -127,16 +121,17 @@ class WorkerAgent(Agent):
     def _reason(self, state: AgentState) -> tuple[str, bool]:
         """Compile the signature and run it under the gateway (synchronous; called via a thread)."""
         gateway = self._require_gateway()
+        # load_dspy is outside the try so MissingExtraError propagates past the wrap (ADR 0013).
         dspy = load_dspy()
-        model = self.config.model or _PLACEHOLDER_MODEL
-        compiled = self._signature.to_dspy()
-        lm = _build_gateway_lm(dspy, gateway, model)
-        adapter = _build_lenient_adapter(dspy)
-        predictor = dspy.Predict(compiled)
-        inputs = self._build_inputs(state)
+        model = self.config.model or PLACEHOLDER_MODEL
         try:
-            with dspy.context(lm=lm, adapter=adapter):
-                result = predictor(**inputs)
+            result = predict_under_gateway(
+                dspy,
+                self._signature,
+                gateway=gateway,
+                model=model,
+                inputs=self._build_inputs(state),
+            )
         except Exception as exc:
             raise ProviderError(
                 f"Worker {self.id!r} reasoning failed: {exc}. Check the model gateway and the "
@@ -180,77 +175,3 @@ def _render_context(state: AgentState) -> str:
     if not recent:
         return "(no prior messages)"
     return "\n".join(f"{message.sender}: {message.content}" for message in recent)
-
-
-def _build_gateway_lm(dspy: Any, gateway: IModelGateway, model: str) -> Any:
-    """Build a ``dspy.LM`` that routes DSPy's calls to ``gateway`` instead of litellm."""
-
-    class _GatewayLM(dspy.LM):  # type: ignore[misc]  # dspy (optional extra) is typed Any
-        def __init__(self) -> None:
-            super().__init__(model=f"korch/{model}", cache=False, num_retries=0)
-
-        def __call__(
-            self,
-            prompt: str | None = None,
-            messages: list[dict[str, Any]] | None = None,
-            **kwargs: Any,
-        ) -> list[str]:
-            reply = asyncio.run(gateway.complete(_to_messages(prompt, messages), model=model))
-            return [reply.content]
-
-    lm: Any = _GatewayLM()
-    return lm
-
-
-def _build_lenient_adapter(dspy: Any) -> Any:
-    """Build a chat adapter that tolerates a non-field-marked reply (e.g. a MockLM echo)."""
-
-    class _LenientChatAdapter(dspy.ChatAdapter):  # type: ignore[misc]  # dspy is typed Any
-        def parse(self, signature: Any, completion: str) -> dict[str, Any]:
-            try:
-                return super().parse(signature, completion)  # type: ignore[no-any-return]
-            except Exception:
-                return _fallback_fields(signature, completion)
-
-    adapter: Any = _LenientChatAdapter()
-    return adapter
-
-
-def _fallback_fields(signature: Any, completion: str) -> dict[str, Any]:
-    """Assign a plain completion to the first output field; default the rest by type."""
-    result: dict[str, Any] = {}
-    for index, (name, field) in enumerate(signature.output_fields.items()):
-        if field.annotation is bool:
-            result[name] = False
-        elif index == 0:
-            result[name] = completion.strip()
-        else:
-            result[name] = ""
-    return result
-
-
-def _to_messages(prompt: str | None, messages: list[dict[str, Any]] | None) -> list[Message]:
-    """Convert DSPy's chat messages (or a bare prompt) into gateway :class:`Message`s."""
-    raw = messages if messages is not None else [{"role": "user", "content": prompt or ""}]
-    converted: list[Message] = []
-    for index, item in enumerate(raw):
-        role = str(item.get("role", "user"))
-        converted.append(
-            Message(
-                id=f"dspy:{index}",
-                role=_ROLE_MAP.get(role, MessageRole.USER),
-                sender=role,
-                content=str(item.get("content", "")),
-                superstep=0,
-                valid_time=_PROMPT_TIME,
-            )
-        )
-    return converted
-
-
-_ROLE_MAP = {
-    "system": MessageRole.SYSTEM,
-    "user": MessageRole.USER,
-    "assistant": MessageRole.ASSISTANT,
-    "tool": MessageRole.TOOL,
-}

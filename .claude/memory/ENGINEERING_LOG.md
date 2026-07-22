@@ -10,6 +10,191 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.9] Façade wiring — the first end-to-end run — v0.1.0
+
+**Type:** feature · **Phase:** P4 (critical-path milestone) · **Author:** Claude (agent)
+
+**What.** Wired `Korch.run` and `Swarm.run` to the kernel via a new composition-root helper
+`services/_composition.py`. `Korch.run(objective)`: validate → `TaxonomyClassifier.classify` →
+`ArchitectAgent.plan` → build an `AgentGraph` of default `WorkerAgent`s from the plan → `run_graph`
+(mint run id, `resolve_runtime`, `start`/`wait`) → `RunResult`. `Swarm.run()`: build the graph from
+the declared agents/edges (a declarative agent → default `WorkerAgent`; a custom/overridden agent →
+used directly) → `run_graph`. Both wrap the async flow in a single `asyncio.run`. Removed the P1
+`NotImplementedError` stubs and un-xfail'd the Tier-1/Tier-2 examples in `test_public_surface.py`.
+Also: the `WorkerAgent` now emits its contribution as a `kind="answer"` message (so it accumulates
+into `final_answer`), keeping `halt=is_final`.
+
+**Why.** This is the payoff milestone — the first time `Korch().run(...)` and `Swarm().run()` actually
+execute (spec 04 Tiers 1-2, spec 12 "first end-to-end run"). Everything P4.1-P4.8 built (providers,
+agents, signatures, worker, architect, taxonomy, kernel, runtime) meets here.
+
+**Design decisions.** (1) `services/_composition.py` is the one wiring site (spec 03 §5): it owns the
+wall-clock and run-id minting (`uuid4`) — legal in the composition root, injected inward so the kernel
+stays deterministic and reads no wall clock. (2) A declarative agent is detected by
+`type(agent).think is Agent.think` and run by the default `WorkerAgent`; an agent that overrides
+`think` (custom, or a `WorkerAgent`) is bound and used directly (ADR 0012/0013) — so a **custom agent
+runs the whole path with no `[dspy]`** (spec 11 §137), while reasoning agents raise `MissingExtraError`
+without the extra. (3) Worker messages are `kind="answer"` because a worker's output *is* its
+contribution to `final_answer`; a lone worker (no edges) terminates in one superstep via the
+no-active-node condition, and a swarm terminates naturally as inboxes drain (verified: Tier-2 runs 2
+supersteps with all three agents contributing). (4) `Korch.run` uses the Architect for automatic
+planning; under MockLM the plan is deterministic (echo → parsed roles or the single-agent mock plan),
+so the run is reproducible. (5) The façade is sync (`def run`) and wraps one `asyncio.run`; the DSPy
+LM's own `asyncio.run` runs inside a `to_thread` worker thread, so the loops never nest in one thread.
+
+**Architecture changes.** New `services/_composition.py`. `services/` now legitimately imports the
+feature/cognitive modules it composes (agents, taxonomy, providers, runtime) — allowed only for the
+façade (spec 05 §56). Refined the ADR-0011 httpx contract to `allow_indirect_imports = True`: the
+composition root may import `providers` (which owns the lazily-imported gateway) without being charged
+for `httpx` transitively; the base install stays httpx-free at runtime because gateway_openai imports
+`httpx` inside its methods. Import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/services/_composition.py` (new),
+`services/korch.py`, `services/swarm.py` (run implemented), `agents/worker.py` (answer kind),
+`tests/unit/services/test_run.py` (new), `tests/unit/services/test_facade.py` (dropped the
+`NotImplementedError` stubs), `tests/unit/test_public_surface.py` (un-xfail'd Tier 1/2),
+`tests/unit/agents/test_worker.py` (kind assertion), `.importlinter`, `CHANGELOG.md`.
+
+**Breaking changes.** None to the public surface (`__all__` unchanged; `Korch.run`/`Swarm.run`
+signatures unchanged). Behavioural: they now execute instead of raising `NotImplementedError` — the
+intended completion of the P1 stubs.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** New `test_run.py` (6): short objective → `ValidationError` (Korch + Swarm); Korch
+reasoning without dspy → `MissingExtraError`; **a custom-agent swarm runs end-to-end with no `[dspy]`**
+and is deterministic (`"6 words"`); Korch/Swarm reasoning under MockLM complete with a `final_answer`;
+Swarm honours the declared topology (all three reviewers contribute, lead after the others). Tier-1/
+Tier-2 public-API examples now pass (xfail removed). `ruff`/`format`/`mypy --strict` clean (66 files);
+import-linter 4/4 kept; isolation gate `OK`.
+
+**Known limitations / future improvements.** (1) Under MockLM the answers are echoes of the DSPy
+prompt (a deterministic mock, not real reasoning); real gateways produce real answers. (2) `Korch.run`
+always plans via the Architect — under MockLM that can yield several nonsense-but-valid agents; a
+future flag could bypass planning for a trivial objective. (3) Persistence/router/HITL collaborators
+are accepted by the façade but not yet consulted (P5/P7). (4) Byte-identical determinism (spec 06
+§127) is proven at the kernel/runtime level with a fixed clock; `Korch.run` uses a wall-clock and
+`uuid4` run id, so its timestamps/run-id vary by design. **Phase 4 is functionally complete**: the
+first end-to-end run works across both tiers.
+
+---
+
+## 2026-07-22 · [P4.8] Deterministic taxonomy — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** `taxonomy/classifier.py`: `TaxonomyClassifier.classify(objective) -> TaskSemantics` — a
+stateless, dependency-free classifier that maps an objective to intent (keyword vocabulary in priority
+order, else `general`), difficulty (length + complex-signal heuristic → trivial/moderate/complex), the
+implied required capability, and rough token estimates. `taxonomy/descriptors.py`: the built-in
+`AgentDescriptor` catalogue with `default_descriptors()` and `descriptors_for_intent(intent)` (never
+empty — falls back to the generalist). Exported from `korchestrator.taxonomy`.
+
+**Why.** The Architect (P4.7) and router (P5) need intent/difficulty and a map from intents to agent
+kinds. Spec 05 §31 gives `taxonomy/` **no** extra, so this is heuristic and offline — deterministic,
+which the whole determinism story depends on (a model-based classifier would be nondeterministic and
+need a gateway/extra; semantic classification is a P5 routing strategy behind `[routing]`).
+
+**Design decisions.** (1) Pure heuristics, no model call — reproducible and instant. (2) Intent is
+first-keyword-match over an ordered vocabulary so the mapping is predictable; unknown → `general`.
+(3) Difficulty: `complex` on multi-part/cross-cutting signals or >40 words; `trivial` only for very
+short objectives (≤4 words) so ordinary tasks stay `moderate`; else `moderate`. (4) The classifier is
+a small class ("the taxonomy classifier", spec 11 §public-surface); the descriptor catalogue is plain
+data with two accessor functions. (5) `AgentDescriptor` is flagged `0.x`-unstable (spec 05 §4), so the
+catalogue can evolve via the changelog.
+
+**Architecture changes.** `taxonomy/` populated, importing only `models` (+ stdlib) — no extra, no
+sibling imports. Import-linter 4/4 kept. `korchestrator.taxonomy.__all__` gains three names; top-level
+`__all__` unchanged.
+
+**Files/modules affected.** `src/korchestrator/taxonomy/classifier.py` (new),
+`src/korchestrator/taxonomy/descriptors.py` (new), `taxonomy/__init__.py`,
+`tests/unit/taxonomy/test_taxonomy.py` (new), `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; top-level `__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 13 unit tests (intent across the vocabulary incl. `general`; determinism + typed
+`TaskSemantics` + capabilities/token estimate; difficulty trivial/moderate/complex; descriptor
+catalogue non-empty with unique ids and the generalist; `descriptors_for_intent` match + generalist
+fallback). `taxonomy/` **100%** covered; `ruff`/`format`/`mypy --strict` clean (65 files);
+import-linter 4/4 kept; isolation gate `OK`; doctest passes.
+
+**Known limitations / future improvements.** (1) Keyword/length heuristics are intentionally simple;
+a semantic (embedding) classifier is a P5 routing strategy behind `[routing]`. (2) `required_capabilities`
+carries a single implied capability; richer multi-capability inference can follow. Next: P4.9 façade
+wiring — `Korch.run`/`Swarm.run` against the kernel with the WorkerAgent as the default reasoning
+agent (the taxonomy + architect feed automatic planning), and the first end-to-end run.
+
+---
+
+## 2026-07-22 · [P4.7] Architect meta-agent + shared reasoning bridge — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** `agents/architect.py`: `ArchitectAgent`, the meta-agent that turns an objective (+
+intent/difficulty) into a validated `ExecutionPlan`. `plan()` validates the objective, reasons on a
+worker thread (`ArchitectSignature` → `roles`/`rationale`), parses the roles into unique, slug-id'd
+`AgentConfig`s, and builds the plan; on any reasoning failure — including a MockLM echo that yields no
+valid role — it returns a deterministic single generalist-agent **mock plan**, while `MissingExtraError`
+propagates past the fallback (ADR 0013). Also extracted the DSPy↔gateway bridge (the `dspy.LM`
+subclass, lenient adapter, message conversion, and the `predict_under_gateway` call) from
+`worker.py` into a shared internal `agents/_reasoning.py`, now used by both the worker and the
+architect.
+
+**Why.** The architect is how a swarm gets its topology from a bare objective (spec 05 §36), and it
+must never leave the caller without a runnable plan — hence the mock-plan fallback. The bridge
+extraction removes the duplication the architect would otherwise create (one canonical
+DSPy-integration implementation, per CLAUDE.md §engineering).
+
+**Design decisions.** (1) `ArchitectAgent` is a standalone meta-agent, **not** an `Agent` subclass —
+it emits a plan, not a superstep `StateUpdate`. (2) The mock-plan fallback fires on reasoning
+failures (provider error, or zero valid roles parsed), but **not** on `MissingExtraError` — the
+`try/except` re-raises it, so a base install still fails loudly (ADR 0013). (3) Under MockLM the
+lenient echo usually slugs into some valid-but-nonsense roles, so the fallback is exercised by a
+failing gateway / empty roles rather than by MockLM; the pure parsing (`_slug`, `_agents_from_roles`
+— dedup, bound to 8, skip invalid) is unit-tested directly without dspy. (4) `predict_under_gateway`
+takes the already-loaded `dspy` module as a parameter so `load_dspy()` stays in each caller **outside**
+its reasoning-failure `try` — preserving the `MissingExtraError` boundary. (5) Difficulty is
+normalised to the `ExecutionPlan` literal; unknown values become `"moderate"`.
+
+**Architecture changes.** New `agents/_reasoning.py` (internal); `worker.py` slimmed to import it.
+`dspy` stays lazy — `import korchestrator.agents` verified dspy-free. Import-linter 4/4 kept.
+`korchestrator.agents.__all__` gains `ArchitectAgent`; top-level `__all__` unchanged.
+
+**Files/modules affected.** `src/korchestrator/agents/architect.py` (new),
+`src/korchestrator/agents/_reasoning.py` (new), `agents/worker.py` (refactored to share the bridge),
+`agents/__init__.py`, `tests/unit/agents/test_architect.py` (new), `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; worker behaviour unchanged — its tests still pass; top-level
+`__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 9 architect tests (pure `_slug`/`_agents_from_roles` parsing — normalise, dedup,
+bound, reject; short-objective → `ValidationError`; missing gateway → `ConfigurationError`; no dspy →
+`MissingExtraError` without falling back; structured reply → multi-agent plan; failing gateway → the
+single-agent mock plan; deterministic under MockLM). Full agents suite 35 tests pass; `agents/` 97%
+covered (architect 95%, `_reasoning` 97%, worker 93%, signatures 99%); the worker refactor regresses
+nothing. `ruff`/`format`/`mypy --strict` clean (63 files); import-linter 4/4 kept; isolation gate
+`OK`; agents import verified dspy-free.
+
+**Known limitations / future improvements.** (1) Intent/difficulty are inputs to `plan()`; the
+taxonomy that computes them is P4.8. (2) Plan `edges`/`tasks` are not yet inferred (single-tier role
+list); dependency decomposition can enrich the `ArchitectSignature` later. (3) Under MockLM the
+architect can emit nonsense-but-valid roles rather than the mock plan — fine for determinism, and real
+models/scripted replies drive real decompositions. Next: P4.8 taxonomy (dspy-free intent/difficulty +
+agent descriptors), then P4.9 façade wiring — the first end-to-end run.
+
+---
+
 ## 2026-07-22 · [P4.6] DSPy WorkerAgent under MockLM — v0.1.0
 
 **Type:** feature · **Phase:** P4 · **Author:** Claude (agent) · **ADR:** 0013
