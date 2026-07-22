@@ -1,10 +1,13 @@
-"""Façade layer (composition root). Imports: korchestrator.config, interfaces, models, services.
+"""Façade layer (composition root). Imports: config, interfaces, models, agents, services.
 
 The typed ``Swarm`` builder (Tier 2): declare an explicit agent topology fluently, then run it.
-Building is functional; execution (``run``) is wired to the kernel in P4.9.
+``run`` binds each agent's clock and gateway, builds the kernel graph from the declared topology,
+and drives it through the configured runtime. Reasoning requires the ``[dspy]`` extra (ADR 0013).
 """
 
 from __future__ import annotations
+
+import asyncio
 
 from typing_extensions import Self
 
@@ -17,6 +20,7 @@ from korchestrator.interfaces import (
     IModelGateway,
 )
 from korchestrator.models.result import RunResult
+from korchestrator.services import _composition as comp
 
 __all__ = ["Swarm"]
 
@@ -84,14 +88,38 @@ class Swarm:
         return len(self._agents)
 
     def run(self, *, max_supersteps: int = 10) -> RunResult:
-        """Run the swarm to a terminal :class:`RunResult`.
+        """Run the swarm's declared topology to a terminal :class:`RunResult`.
+
+        Args:
+            max_supersteps: Hard halt bound. Defaults to 10.
+
+        Returns:
+            The terminal :class:`RunResult`, including ``final_answer``.
 
         Raises:
-            NotImplementedError: Until the kernel is wired in P4.9.
+            ValidationError: If the objective is too short or the topology is invalid (no agents,
+                or an edge referencing an unknown agent).
+            MissingExtraError: If reasoning is used without the ``[dspy]`` extra.
 
         Example:
             >>> from korchestrator import Agent, Swarm
             >>> swarm = Swarm(objective="Summarize the design").add(Agent(id="lead", role="lead"))
             >>> swarm.run(max_supersteps=5)  # doctest: +SKIP
         """
-        raise NotImplementedError("Swarm.run is wired to the kernel in P4.9.")
+        comp.validate_objective(self._objective)
+        settings = self._settings or Settings.from_env()
+        gateway = comp.resolve_gateway(settings, self._model_gateway)
+        clock = comp.wall_clock()
+        agents = tuple(self._agents.values())
+
+        async def _flow() -> RunResult:
+            graph = comp.graph_from_agents(agents, self._edges, clock=clock, gateway=gateway)
+            return await comp.run_graph(
+                graph,
+                settings=settings,
+                clock=clock,
+                objective=self._objective,
+                max_supersteps=max_supersteps,
+            )
+
+        return asyncio.run(_flow())

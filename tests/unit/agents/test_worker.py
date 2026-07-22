@@ -102,5 +102,5 @@ async def test_unstructured_reply_falls_back_without_halting() -> None:
     agent = WorkerAgent(id="w", role="analyst").bind(clock=_clock(), gateway=MockLM())
     update = await agent.think(_state())
     assert update.messages[0].content  # non-empty answer from the echo
-    assert update.halt is False
-    assert update.messages[0].kind == "thought"
+    assert update.halt is False  # is_final defaulted False, so the node does not halt
+    assert update.messages[0].kind == "answer"  # a worker's contribution is always an answer
