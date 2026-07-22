@@ -10,6 +10,62 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P5.3/P5.4] Algorithmic + semantic routing strategies — v0.1.0
+
+**Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)
+
+**What.** Added the two ranking strategies. `routing/algorithmic.py` — `AlgorithmicRouter` ranks
+candidate `ModelCard`s by a weighted blend of quality, cost, and latency (`ROUTING_WEIGHTS`): cost
+and latency are inverted and every dimension is min/max-normalised across the candidate set to
+`[0,1]`, candidates lacking a required capability are filtered out first, and the winner is chosen
+by score with a stable tie-break on model name. It also estimates the run cost from the task's token
+estimates. `routing/semantic.py` — `SemanticRouter` embeds the task and each candidate description
+and picks the most cosine-similar model; embeddings run behind an `Embedder` protocol, are cached
+per description with a configured TTL (`MODELCARD_CACHE_TTL_SECONDS`) via an injected monotonic time
+source, and the real backend (`sentence-transformers`) is imported lazily inside `make_embedder`
+(raising `MissingExtraError` without the `[routing]` extra). `get_router` now registers both
+strategies and takes an optional `embedder` for offline testing/injection.
+
+**Why.** P5.3/P5.4 — cost/capability-aware and description-aware model selection, the strategies
+that use the `ModelCard` catalogue. Semantic routing is the only path that needs an extra, kept
+strictly opt-in so the base install stays dependency-free (spec 11 §158).
+
+**Design decisions.** (1) Cosine similarity is pure Python (stdlib `math`), so the semantic module
+needs neither `numpy` nor `sentence-transformers` at import — only the real `Embedder` does, lazily.
+This keeps the semantic strategy testable offline with a deterministic fake embedder. (2) The
+embedding cache takes an injected `time_source` (defaulting to `time.monotonic`) so TTL expiry is
+tested deterministically without sleeping — legal here because routing runs at composition, never in
+workflow scope (determinism.md). (3) Algorithmic scores are normalised to `[0,1]` and the router is
+pure and order-independent (a flipped candidate order yields the same result), so routing never
+introduces nondeterminism into a superstep. (4) `get_router(..., embedder=fake)` lets semantic
+routing be exercised in CI with no extra; production omits it and `make_embedder` builds the real one.
+
+**Architecture changes.** None. `routing/` still imports only inward + stdlib; `sentence-transformers`
+/`numpy` are confined to the lazy `make_embedder`/`_SentenceTransformerEmbedder` path. import-linter
+4/4 kept (including `core must not import frameworks or optional extras`).
+
+**Files/modules affected.** `src/korchestrator/routing/{algorithmic,semantic}.py` (new);
+`routing/factory.py` and `routing/__init__.py` (register + export the strategies);
+`tests/unit/routing/test_{algorithmic,semantic}.py` (new).
+
+**Breaking changes.** None. `get_router` gained a keyword-only `embedder` parameter (non-breaking).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (7 files); 36 routing tests +
+8 doctests pass. Cost weight picks the cheaper model, quality weight the stronger; capability filter
+drops ineligible candidates; ranking is order-independent; the embedding cache re-embeds only after
+the TTL; the semantic path raises `MissingExtraError` without the extra (verified by patching
+`sys.modules`).
+
+**Known limitations / future improvements.** The default embedding model downloads weights on first
+real use (an adapter-boundary network call, never in CI). Composite user-function router + execution
+wiring land in P5.5/P5.6.
+
+---
+
 ## 2026-07-22 · [P5.2] Explicit routing strategy + factory + model cards — v0.1.0
 
 **Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)

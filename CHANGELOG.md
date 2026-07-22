@@ -15,6 +15,11 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Model routing (Phase 5), ranking strategies: `AlgorithmicRouter` (weighted quality/cost/latency
+  ranking over `ROUTING_WEIGHTS`, with capability filtering and cost estimation) and `SemanticRouter`
+  (embedding-similarity selection against `ModelCard` descriptions, with a TTL-cached embedding
+  singleton). Semantic embeddings require the `[routing]` extra and are imported lazily; the strategy
+  is testable offline via an injected `Embedder`. `get_router()` gained a keyword-only `embedder`.
 - Model routing (Phase 5), explicit strategy: `korchestrator.routing` with `get_router()`, the
   `BaseRouter` supporting protocol (re-exported from `interfaces`), and the explicit + fallback
   strategies behind a `CompositeRouter` chain. The default (`ROUTING_STRATEGY="explicit"`) selects a
