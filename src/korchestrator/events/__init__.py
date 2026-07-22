@@ -1,7 +1,9 @@
 """Integration layer.
 
-Allowed imports (beyond stdlib + pydantic): models, exceptions, logging. Publishes transport-
-agnostic execution events and drives hook dispatch.
+Allowed imports (beyond stdlib + pydantic): models, types, exceptions, logging. Publishes
+transport-agnostic execution events; the SDK emits, it does not serve HTTP.
 """
 
-__all__: list[str] = []
+from korchestrator.events.publisher import Event, EventPublisher, Subscription, format_sse
+
+__all__ = ["Event", "EventPublisher", "Subscription", "format_sse"]

@@ -15,6 +15,13 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Extension framework (Phase 6): agent-to-agent messaging (`korchestrator.a2a` — `directed_message`,
+  `HandoffTransformer`); transport-agnostic event streaming (`korchestrator.events` — `Event`,
+  `EventPublisher`, `Subscription`, `format_sse`; the SDK emits, it does not serve HTTP); and
+  middleware/hooks (`korchestrator.services.Middleware`/`HookRegistry`) with the spec 07 §9 ordering
+  and error isolation — a hook can never fail a run. `Korch`/`Swarm` accept `middleware=…` and expose
+  `.on(event, handler)`; hooks fire around each superstep on the local runtime via an injected
+  `SuperstepObserver` (default off, so determinism is unaffected).
 - Context compiler (Phase 6): `korchestrator.context` with `ContextCompiler.compile()` and
   `CompiledContext` — Minimum Viable Context extraction that keeps the objective and the substantive
   messages (answers/handoffs) first, packs the recent remainder under a character budget, and prunes

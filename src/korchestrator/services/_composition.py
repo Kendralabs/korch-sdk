@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from korchestrator.agents import Agent, WorkerAgent
 from korchestrator.config import Settings
 from korchestrator.core.graph import AgentGraph, Edge, Node
-from korchestrator.core.pregel import Clock
+from korchestrator.core.pregel import Clock, SuperstepObserver
 from korchestrator.exceptions import ValidationError
 from korchestrator.interfaces import BaseRouter, IModelGateway
 from korchestrator.models.agent import AgentConfig
@@ -25,9 +25,28 @@ from korchestrator.models.state import AgentState
 from korchestrator.providers import get_lm
 from korchestrator.routing import load_model_cards, resolve_router
 from korchestrator.runtime import resolve_runtime
+from korchestrator.services.hooks import EventHandler, HookRegistry, Middleware
 from korchestrator.taxonomy import TaxonomyClassifier
 
 _MIN_OBJECTIVE_CHARS = 10
+
+
+def build_observer(
+    middleware: Sequence[Middleware], handlers: Sequence[tuple[str, EventHandler]]
+) -> SuperstepObserver | None:
+    """Build a :class:`HookRegistry` from middleware and handlers, or ``None`` if there are none.
+
+    Returning ``None`` when nothing is registered keeps the zero-overhead path — the runtime skips
+    observer dispatch entirely.
+    """
+    if not middleware and not handlers:
+        return None
+    registry = HookRegistry()
+    for item in middleware:
+        registry.register_middleware(item)
+    for event, handler in handlers:
+        registry.on(event, handler)
+    return registry
 
 
 def wall_clock() -> Clock:
@@ -174,6 +193,7 @@ async def run_graph(
     objective: str,
     max_supersteps: int,
     tenant_id: str = "default",
+    observer: SuperstepObserver | None = None,
 ) -> RunResult:
     """Mint a run, resolve the runtime, and drive ``graph`` to its terminal :class:`RunResult`."""
     state = AgentState(
@@ -182,6 +202,6 @@ async def run_graph(
         tenant_id=tenant_id,
         transaction_time=clock(),
     )
-    runtime = resolve_runtime(settings, graph, clock=clock)
+    runtime = resolve_runtime(settings, graph, clock=clock, observer=observer)
     run_id = await runtime.start(state, max_supersteps=max_supersteps)
     return await runtime.wait(run_id)
