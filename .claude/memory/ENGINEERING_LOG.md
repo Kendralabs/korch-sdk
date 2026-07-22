@@ -10,6 +10,35 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4] Normalize pregel formatting to current ruff — v0.1.0
+
+**Type:** chore · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** Reformatted one generator expression in `core/pregel.py` (`select_active`) from three lines
+to one, purely to satisfy the current `ruff format`. No logic change.
+
+**Why.** The `ruff` pin is unbounded (`ruff>=0.5`), so CI installs the latest ruff, which now collapses
+that expression where an older ruff spread it. The file was committed under the older formatter, so
+`ruff format --check` on any new PR would fail on it — an unrelated blocker. Normalizing it keeps the
+branch's format gate green.
+
+**Design decisions.** Kept as its own single-purpose commit rather than folded into P4.3, per the
+git-and-review rule against mixing unrelated cleanup. The root cause (an unbounded formatter pin that
+lets style drift over time) is noted for a dedicated tooling change — pinning `ruff`/`mypy`/`pytest`
+to exact versions belongs in a separate chore, not this one.
+
+**Architecture changes.** None. **Files/modules affected.** `src/korchestrator/core/pregel.py`.
+
+**Breaking changes.** None. **Feature version / revision.** `0.1.0`. **Migration notes.** N/A.
+
+**Testing status.** `mypy --strict` clean; `tests/unit/core/test_pregel.py` 14/14 pass; whole tree
+`ruff format --check` clean.
+
+**Known limitations / future improvements.** Pin the lint/type/test toolchain to exact versions (ops
+rule: dependencies pinned) so formatter drift cannot silently break the format gate again.
+
+---
+
 ## 2026-07-22 · [P4.3] Networked OpenAI gateway + get_lm factory — v0.1.0
 
 **Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
