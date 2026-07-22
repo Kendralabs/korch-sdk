@@ -58,11 +58,14 @@ def resolve_runtime(
     if settings.korch_runtime == "local":
         return LocalRuntime(graph, clock=clock, channels=channels)
     # settings.korch_runtime is Literal["local", "temporal"]; the remaining case is "temporal".
-    # The Temporal adapter (runtime/temporal_runtime.py) lands in P3.3; until then, and whenever the
-    # [temporal] extra is absent, selecting it raises the standard missing-extra error. P3.3 swaps
-    # this branch for a lazy import + construction of TemporalRuntime.
-    raise MissingExtraError(
-        "The 'temporal' runtime requires the 'temporal' extra. "
-        "Install it with: pip install 'korchestrator[temporal]'",
-        code="KORCH_MISSING_EXTRA",
-    )
+    # temporal_runtime.py is imported lazily here — its module-top `import temporalio` means eager
+    # import would break the base install; a missing [temporal] extra surfaces as ImportError.
+    try:
+        from korchestrator.runtime.temporal_runtime import TemporalRuntime
+    except ImportError as exc:
+        raise MissingExtraError(
+            "The 'temporal' runtime requires the 'temporal' extra. "
+            "Install it with: pip install 'korchestrator[temporal]'",
+            code="KORCH_MISSING_EXTRA",
+        ) from exc
+    return TemporalRuntime(graph, clock=clock, channels=channels)

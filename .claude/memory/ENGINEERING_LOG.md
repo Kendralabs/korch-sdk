@@ -10,6 +10,70 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P3.3/P3.4] Durable Temporal runtime — v0.1.0
+
+**Type:** feature · **Phase:** P3 · **Author:** Claude (agent)
+
+**What.** Implemented `runtime/temporal_runtime.py` (the `[temporal]` extra): the `PregelMaster`
+workflow drives the superstep loop in deterministic workflow scope and invokes one
+`SuperstepActivity` (`SuperstepWorker.run_superstep`) per superstep for the nondeterministic agent
+compute; `build_worker()` registers both; and `TemporalRuntime` is the client-side `IDurableRuntime`
+(`start`/`wait`/`now`; `signal` lands in P3.5). Added a bounded jittered retry policy, activity
+timeouts, and `continue_as_new` roll-over before the 50k-event cap (P3.4). Wired
+`resolve_runtime`'s temporal branch to a lazy import. Extracted `select_active` and `build_result`
+as pure functions in `core/pregel.py` so the workflow reuses the kernel's activation/result logic
+without the graph's live callables. Added `tests/fixtures/graphs.py` and
+`tests/integration/test_temporal_runtime.py` (marked `temporal`).
+
+**Why.** Durable, replay-safe execution on Temporal, selectable by config alone (spec 06 §6.2). The
+kernel's determinism is what makes replay exact.
+
+**Design decisions.** The **workflow/activity split** solves the serialization boundary: the workflow
+holds only serialisable data (the `AgentState` and `node_ids`) and computes activation/halting/result
+from it; the graph's live callables live in the activity's worker. Domain models cross via
+`temporalio.contrib.pydantic`'s data converter. `transaction_time` is stamped from `workflow.now()`
+passed into the activity, keeping the barrier replay-deterministic while agent compute stays in the
+activity. **The full superstep (compute + reduce + route) runs in the activity** rather than splitting
+reduce into workflow scope — the activity completion *is* the barrier (spec 06 §6.2), the reduced
+state is recorded in history, and this keeps the reducers/graph out of the sandbox entirely
+(simpler + verifiable). `temporalio` is imported at **module top of temporal_runtime.py** (the
+`@workflow.defn`/`@activity.defn` decorators require it), which is legal because the module is loaded
+lazily via `resolve_runtime` — `import korchestrator.runtime` never touches temporalio (verified).
+Non-retryable errors: `ValidationError`/`AuthError`/`QuotaExceededError`/`GovernanceHaltError`.
+
+**Verification note (local env pollution).** The `temporal` tests fail under this repo's *polluted*
+local venv because `arize-phoenix`/`langsmith` (present from unrelated packages) activate a
+`beartype.claw` import hook that collides with Temporal's workflow-sandbox reimport. They **pass in a
+clean `[temporal]` venv** (verified: `pytest -m temporal` → 2 passed), which is exactly what the new
+CI `temporal` job provides. The `[dev]` `test` job now runs `-m "not temporal"`; the dedicated
+`temporal` job runs the marked tests in a clean install (spec 09 §6.1). `conftest.py` was made to
+tolerate a missing `hypothesis` so the `[temporal]`/`[remote]` jobs (which don't install it) can load.
+
+**Architecture changes.** `runtime/temporal_runtime.py` is the sole home of `temporalio` (confined,
+module-lazy-loaded). `core/pregel.py` gained two pure exports (`select_active`, `build_result`) shared
+by both runtimes. Import contracts 3 kept, 0 broken; base install pulls in no temporalio.
+
+**Files/modules affected.** `src/korchestrator/runtime/temporal_runtime.py`, `runtime/__init__.py`,
+`src/korchestrator/core/pregel.py`, `tests/integration/test_temporal_runtime.py`,
+`tests/fixtures/graphs.py`, `tests/conftest.py`, `.github/workflows/ci.yml`, `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; `select_active`/`build_result` are new kernel helpers).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Temporal integration tests pass in a clean `[temporal]` venv (swarm-to-completion
+and max-supersteps, on the time-skipping test server); `ruff`, `ruff format`, `mypy --strict` clean on
+53 source files; import contracts 3 kept, 0 broken; `import korchestrator.runtime` pulls in no
+temporalio. The non-temporal suite is green in the main env.
+
+**Known limitations / future improvements.** HITL signals (P3.5) and the replay/equivalence/crash/
+roll-over test matrix (P3.6) are next. Production client wiring (connect to `TEMPORAL_ADDRESS`, run a
+worker) is composed at the façade in P4; the runtime currently takes an injected client.
+
+---
+
 ## 2026-07-22 · [P3.1/P3.2] In-process local runtime + runtime selection — v0.1.0
 
 **Type:** feature · **Phase:** P3 · **Author:** Claude (agent)

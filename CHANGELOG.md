@@ -57,6 +57,12 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   runs a graph to completion with zero infrastructure (the `KORCH_RUNTIME=local` default) — and
   `resolve_runtime(settings, graph, *, clock, ...)`, which selects the runtime from config.
   Selecting `temporal` without the `[temporal]` extra raises an actionable `MissingExtraError`.
+- The durable Temporal runtime (behind `[temporal]`): a single `PregelMaster` workflow driving the
+  superstep loop in deterministic workflow scope, invoking one `SuperstepActivity` per superstep for
+  agent compute, with a bounded jittered retry policy, activity timeouts, and `continue_as_new`
+  roll-over before Temporal's 50k-event cap. `import korchestrator.runtime` pulls in no `temporalio`;
+  it is loaded only when the Temporal runtime is selected. Produces a `RunResult` equivalent to the
+  local runtime's.
 
 ### Changed
 
