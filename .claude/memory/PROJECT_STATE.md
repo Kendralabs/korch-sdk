@@ -4,7 +4,7 @@
 log is chronological history; this file is the current snapshot. Update it whenever a phase advances,
 a module changes status, or the public surface moves — `/log` does both together.
 
-**Last updated:** 2026-07-22 · **Version:** `0.1.0` (unreleased) · **Branch model:** `main` / `develop`
+**Last updated:** 2026-07-23 · **Version:** `0.1.0` (unreleased) · **Branch model:** `main` / `develop`
 
 ---
 
@@ -12,13 +12,13 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P6 — Integration & observability — **complete** (P6.1–P6.8) on branch `feat/p6-integration-observability` (off `develop`). Tools/AUB, MCP, context, A2A, events, and the hook framework all landed. |
-| **Last completed milestone** | **P6.8 — the extension framework, wired.** The AUB bridge (`invoke_tool` + `ConnectorRegistry` + built-in connectors), the MCP client, the context compiler (MVC), A2A handoffs, an event stream, and `Middleware`/`HookRegistry` — hooks fire around each superstep on the local runtime via an injected `SuperstepObserver` with the spec 07 §9 ordering and error isolation (a raising hook can't fail a run). Registration is by injection/registry (ADR 0015). |
-| **Blocking** | Nothing. P7 (governance, security/Shield redaction, bitemporal Context Graph) is next. |
-| **Pushed / merged** | `develop` (P0–P5) is pushed to `origin` (autonomous phase progression). P6.1–P6.8 are committed on `feat/p6-integration-observability`; the completed phase merges to `develop` next. |
+| **Active phase** | P7 — Governance, security & context graph — **in progress** (P7.1–P7.2 done) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
+| **Last completed milestone** | **P7.2 — trust scoring.** The kernel barrier now folds each active agent's `StateUpdate.trust_delta` into `AgentState.trust_score` every superstep (summed, clamped `[0, 1]`, order-independent). `governance/` gained `ControlTowerTelemetry`, `derive_telemetry`, and `check_governance` — a pure, read-only governance view of the score plus its per-superstep telemetry. Threshold comparison and the pause decision are not yet built (P7.3/P7.4). |
+| **Blocking** | Nothing. Next: P7.3 (policy engine, audit log, `hitl_threshold`/`GOVERNANCE_TRUST_THRESHOLD` fallback), then P7.4 (HITL controls — intervention → runtime pause signal), P7.5 (in-memory `GraphRepository`), P7.6 (bitemporal `ContextGraphClient`). |
+| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has P7.1 (Shield) and P7.2 (trust scoring) committed locally, not yet pushed — pushes/merges to `develop` when Phase 7 completes. |
 
-Every local gate is green: ruff, ruff-format, `mypy --strict` (73 source files), `pytest` (dspy +
-non-dspy paths; **368 passed**, 94.55% cov, 9 Temporal excluded), import-linter (**4 contracts
+Every local gate is green: ruff, ruff-format, `mypy --strict` (90 source files), `pytest` (dspy +
+non-dspy paths; **464 passed**, 95.39% cov, 9 Temporal excluded), import-linter (**4 contracts
 kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
 single-sourcing. `import korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free;
 the base install stays `pydantic`-only.
@@ -34,7 +34,7 @@ the base install stays `pydantic`-only.
 | P4 | Cognitive layer (agents, signatures, taxonomy) | **Complete** (P4.1–P4.9; first end-to-end run) |
 | P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
-| P7 | Governance, security & context graph | Not started — next |
+| P7 | Governance, security & context graph | **In progress** (P7.1 Shield done; P7.2 trust scoring done; P7.3–P7.6 next) |
 | P8 | Cross-cutting foundations | Not started |
 | P9 | Remote client (Python only — TS deferred) | Not started |
 | P10 | Testing, benchmarks & quality gates | Not started |
@@ -65,7 +65,9 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `context/` | Context (L3) | **tested** (`ContextCompiler` MVC extraction, off the hot loop, graceful summariser degradation) | P6 |
 | `a2a/` | Integration (L4) | **tested** (`directed_message`, `HandoffTransformer`) | P6 |
 | `events/` | Events | **tested** (`EventPublisher`/`Subscription`/`format_sse`; emits, does not serve HTTP) | P6 |
-| `persistence/` · `governance/` · `security/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P7–P9 |
+| `governance/` | Governance (L5) | **tested** (`ControlTowerTelemetry`, `derive_telemetry`, `check_governance` — trust scoring's read-only observer; policy/threshold/audit land in P7.3) | P7 |
+| `security/` | Leaf utility | **tested** (Shield redactor, P7.1) | P7 |
+| `persistence/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P7–P9 |
 
 ## 4. Public surface
 

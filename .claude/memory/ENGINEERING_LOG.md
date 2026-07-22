@@ -10,6 +10,84 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P7.2] Trust scoring — kernel bookkeeping + governance's telemetry read — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Two pieces. (1) **Kernel** (`core/pregel.py`): the barrier now folds every active agent's
+`StateUpdate.trust_delta` into `AgentState.trust_score` each superstep via a new private
+`PregelRunner._fold_trust` — summed and clamped to `[0.0, 1.0]`, so the score genuinely persists and
+evolves across supersteps instead of sitting at its `1.0` default forever (`trust_delta` was a P1
+model field with no effect until now). (2) **`governance/`**: `ControlTowerTelemetry` (a frozen,
+per-superstep governance snapshot: `run_id`/`tenant_id`/`superstep`/`trust_score`/
+`active_agent_ids`/`valid_time`), `derive_telemetry(state)` (pure — reads the just-completed
+superstep's messages off `AgentState.messages` to find which agents contributed), and
+`check_governance(state)` (bundles the kernel's `trust_score` with its telemetry into a
+`GovernanceCheck`). `korchestrator.governance.__all__` grows from empty to these four names.
+
+**Why.** P7.2 — "`ControlTowerTelemetry`, per-superstep `check_governance`, 0.0-1.0 score persisting
+across supersteps" (spec 12). Governance needs a real, kernel-computed trust score to threshold
+against; P7.3 (policy engine, `hitl_threshold`/`GOVERNANCE_TRUST_THRESHOLD`) and P7.4 (the runtime
+pause signal) build directly on this.
+
+**Design decisions.** (1) **Trust bookkeeping lives in the kernel, not governance** — it is pure
+arithmetic over a field (`trust_delta`) the barrier already receives on every `StateUpdate`, and
+`governance/` may only depend on `interfaces`/`models` inward (architecture-boundaries.md); the
+kernel cannot import `governance` (B1/B2), so the scalar fold had to be core's own bookkeeping,
+exactly as `superstep`/`halted` already are. (2) The fold is **associative and order-independent**
+(summation is commutative) — the same discipline the channel reducers hold themselves to (spec 06
+§3), proved by a Hypothesis property test asserting the result is unaffected by node order and
+stays within bounds. (3) `check_governance`/`derive_telemetry` are **read-only observers** of the
+state the kernel already produced — they never mutate state and never recompute `trust_score`,
+keeping the single-source-of-truth in the barrier. (4) `derive_telemetry` reads `state.superstep - 1`
+(floored at 0) because `AgentState.superstep` has already advanced past the round the barrier just
+computed; `active_agent_ids` is derived from `message.superstep` on the accumulated `state.messages`
+— the only per-superstep breakdown `AgentState` retains, since raw `StateUpdate`s are discarded once
+applied. (5) Threshold comparison and the actual pause decision are deliberately **not** built here —
+`check_governance` only reports; P7.3 owns `hitl_threshold`/`GOVERNANCE_TRUST_THRESHOLD` and the
+policy engine, P7.4 owns wiring an intervention into the runtime's pause signal.
+
+**Architecture changes.** `governance/` populated (L5); imports `models`, stdlib, pydantic only —
+import-linter's `feature modules must not import each other` and `inward-only layering` contracts
+both still kept (4/4). `core/pregel.py` gained one private static method and one new field in its
+`_apply` update dict; no new imports, no boundary change.
+
+**Files/modules affected.** `src/korchestrator/core/pregel.py` (`_fold_trust`, `_apply`);
+`src/korchestrator/governance/{__init__,telemetry,trust}.py` (new);
+`tests/unit/core/test_pregel.py` (trust-delta plumbing in `_update`/`_echo`, six new tests incl. a
+Hypothesis property test); `tests/unit/governance/{test_telemetry,test_trust}.py` (new);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. `trust_score` was already a documented `AgentState` field defaulting to
+`1.0`; it now actually changes, which is the intended completion of a P1 contract, not a new one.
+New `korchestrator.governance` surface; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (90 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Full suite (non-Temporal): **464 passed**, 95.39% coverage (≥80 floor; `core/` 97%, `governance/`
+100%). New: trust score starts at 1.0 and persists with no delta; a single delta lowers it; deltas
+accumulate across two supersteps (a ping-pong graph, since superstep 0 activates every node so a
+single-round sender/receiver pair can't demonstrate cross-superstep accumulation on its own);
+clamping at both 0.0 and 1.0; a Hypothesis property test over 1-4 random deltas asserting the barrier
+folds them identically regardless of node order and stays within bounds; `ControlTowerTelemetry`
+bounds/frozen/default-empty-agents tests; `derive_telemetry` reads the just-completed superstep,
+dedupes/sorts agent ids, and returns `()` on a fresh state; `check_governance` reads the score
+unchanged and is pure/repeatable. 5 doctests pass (`pregel.py` + the 3 new governance callables).
+
+**Known limitations / future improvements.** (1) `active_agent_ids` only lists agents that emitted at
+least one message that superstep — an agent that wrote only a context channel is invisible to
+telemetry, since raw `StateUpdate`s aren't retained past the barrier; acceptable for now, called out
+in the model's docstring. (2) No threshold comparison or intervention decision yet — `check_governance`
+purely observes; P7.3 adds the policy engine and `hitl_threshold`/`GOVERNANCE_TRUST_THRESHOLD`
+fallback, P7.4 wires an intervention into the runtime's pause signal (the `GovernanceHaltError` veto
+path noted as deferred in the P6.8 log entry).
+
+---
+
 ## 2026-07-22 · [P7.1] Shield — the consolidated PII/secret redactor — v0.1.0
 
 **Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
