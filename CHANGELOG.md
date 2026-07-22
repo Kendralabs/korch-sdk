@@ -15,6 +15,15 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- HITL controls (Phase 7): the Temporal runtime's `PregelMaster` workflow now **auto-pauses itself**
+  when a superstep's `trust_score` breaches any active node's effective HITL threshold — the same
+  `governance_paused` mechanism an operator's own `pause` signal uses. A new `edit_resume` signal
+  applies an operator's context/trust edit (last-value merge + the same clamped fold the barrier
+  uses) and resumes; a `status` query lets a caller check for `governance_paused` without blocking.
+  `Korch`/`Swarm` gain `pause(run_id)`/`resume(run_id)`/`cancel(run_id)`/`edit_resume(run_id, ...)` —
+  thin façade methods that deliver a durable control signal, raising `NotImplementedError` on the
+  synchronous local runtime (durable HITL needs `KORCH_RUNTIME=temporal`). `TemporalRuntime` can now
+  be constructed signal-only (`graph=None`) to deliver a control signal without rebuilding the graph.
 - Policy engine + audit log (Phase 7): `korchestrator.governance` gains `evaluate_policy()` —
   compares a superstep's trust score against an agent's own `hitl_threshold` (falling back to the
   new `GOVERNANCE_TRUST_THRESHOLD` setting, default `0.5`) and returns a `GovernanceDecision`
