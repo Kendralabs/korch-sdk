@@ -63,6 +63,10 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   roll-over before Temporal's 50k-event cap. `import korchestrator.runtime` pulls in no `temporalio`;
   it is loaded only when the Temporal runtime is selected. Produces a `RunResult` equivalent to the
   local runtime's.
+- Durable HITL control signals on the Temporal runtime: `cancel` ends a run as `cancelled`; `pause`
+  parks it (status `governance_paused`, no compute) until `resume` or `cancel`, bounded by a 24-hour
+  deadline after which it is `timed_out`. Delivered via `IDurableRuntime.signal`. (`edit_resume`
+  arrives with the HITL façade in a later phase; the local runtime is synchronous and has no HITL.)
 
 ### Changed
 

@@ -101,7 +101,13 @@ class LocalRuntime:
     async def signal(self, run_id: str, name: str, payload: Mapping[str, str]) -> None:
         """Deliver a control signal.
 
+        The local runtime runs synchronously — a run completes inside :meth:`start`, so there is no
+        in-flight run to pause, resume, or cancel. Durable HITL requires the Temporal runtime.
+
         Raises:
-            NotImplementedError: Durable HITL signals for the local runtime land in P3.5.
+            NotImplementedError: Always; use ``KORCH_RUNTIME=temporal`` for durable HITL signals.
         """
-        raise NotImplementedError("Durable HITL signals for the local runtime land in P3.5.")
+        raise NotImplementedError(
+            "The local runtime is synchronous and does not support control signals. "
+            "Use the Temporal runtime (KORCH_RUNTIME=temporal) for durable HITL."
+        )

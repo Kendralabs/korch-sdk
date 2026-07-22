@@ -15,6 +15,7 @@ models cross the boundary via the pydantic data converter.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from datetime import datetime, timedelta
 
@@ -64,6 +65,10 @@ _RETRY_POLICY = RetryPolicy(
 # cap; a test lowers it to exercise the roll-over path.
 _CONTINUE_AS_NEW_HISTORY_LENGTH = 10_000
 
+# A paused run consumes no compute while it awaits a control signal, bounded by this deadline
+# (spec 06 §7); on expiry it transitions to TIMED_OUT. Configurable via TEMPORAL_HITL_TIMEOUT in P8.
+_HITL_TIMEOUT = timedelta(hours=24)
+
 
 class PregelRequest(BaseModel):
     """The serialisable input to the ``PregelMaster`` workflow."""
@@ -98,16 +103,55 @@ class SuperstepWorker:
 
 @workflow.defn(name="korch_pregel_master")
 class PregelMaster:
-    """The durable superstep loop. Deterministic workflow scope — time is ``workflow.now()``."""
+    """The durable superstep loop. Deterministic workflow scope — time is ``workflow.now()``.
+
+    Accepts durable HITL control signals: ``cancel`` ends the run as ``cancelled``; ``pause`` parks
+    it (status ``governance_paused``, consuming no compute) until ``resume`` or ``cancel``, bounded
+    by a 24h deadline after which it is ``timed_out`` (spec 06 §7). ``edit_resume`` — applying an
+    operator update through the reducers — lands with the HITL façade in P7.4.
+    """
+
+    def __init__(self) -> None:
+        """Initialise the mutable control-signal flags."""
+        self._cancelled = False
+        self._paused = False
+
+    @workflow.signal
+    def cancel(self) -> None:
+        """Request cancellation; the loop ends the run as ``cancelled``."""
+        self._cancelled = True
+
+    @workflow.signal
+    def pause(self) -> None:
+        """Request a pause; the loop parks the run until ``resume`` or ``cancel``."""
+        self._paused = True
+
+    @workflow.signal
+    def resume(self) -> None:
+        """Lift a pause; the loop continues from the checkpointed state."""
+        self._paused = False
 
     @workflow.run
     async def run(self, request: PregelRequest) -> RunResult:
-        """Drive supersteps to a terminal :class:`RunResult`, rolling over before the event cap."""
+        """Drive supersteps to a terminal :class:`RunResult`, honouring control signals."""
         state = request.state.model_copy(update={"status": RunStatus.RUNNING})
         started_at = request.started_at or workflow.now()
         error_code: str | None = None
 
         while True:
+            if self._cancelled:
+                return self._terminal(state, started_at, RunStatus.CANCELLED)
+            if self._paused:
+                state = state.model_copy(update={"status": RunStatus.GOVERNANCE_PAUSED})
+                try:
+                    await workflow.wait_condition(
+                        lambda: not self._paused or self._cancelled, timeout=_HITL_TIMEOUT
+                    )
+                except asyncio.TimeoutError:
+                    return self._terminal(state, started_at, RunStatus.TIMED_OUT)
+                # Woke on resume or cancel; loop back — the top handles a pending cancel.
+                state = state.model_copy(update={"status": RunStatus.RUNNING})
+                continue
             if not select_active(request.node_ids, state):
                 break
             if state.superstep >= request.max_supersteps:
@@ -134,6 +178,12 @@ class PregelMaster:
 
         return build_result(
             state, started_at=started_at, completed_at=workflow.now(), error_code=error_code
+        )
+
+    def _terminal(self, state: AgentState, started_at: datetime, status: RunStatus) -> RunResult:
+        """Build a signal-terminated result (``cancelled`` / ``timed_out``)."""
+        return build_result(
+            state, started_at=started_at, completed_at=workflow.now(), status=status
         )
 
 
@@ -221,9 +271,12 @@ class TemporalRuntime:
         return await handle.result()
 
     async def signal(self, run_id: str, name: str, payload: Mapping[str, str]) -> None:
-        """Deliver a control signal to the workflow.
+        """Deliver a durable control signal (``cancel`` / ``pause`` / ``resume``) to the workflow.
 
         Raises:
-            NotImplementedError: Durable HITL signals land in P3.5.
+            NotImplementedError: For ``edit_resume``, which lands with the HITL façade in P7.4.
         """
-        raise NotImplementedError("Durable HITL signals for the Temporal runtime land in P3.5.")
+        if name == "edit_resume":
+            raise NotImplementedError("edit_resume lands with the HITL façade in P7.4.")
+        client = self._require_client()
+        await client.get_workflow_handle(run_id).signal(name)

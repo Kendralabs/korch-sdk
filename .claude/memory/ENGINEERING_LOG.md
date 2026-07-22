@@ -10,6 +10,56 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P3.5] Durable HITL control signals — v0.1.0
+
+**Type:** feature · **Phase:** P3 · **Author:** Claude (agent)
+
+**What.** Added durable HITL control signals to the Temporal runtime. `PregelMaster` now defines
+`cancel`/`pause`/`resume` workflow signals and honours them in the loop: `cancel` ends the run as
+`cancelled`; `pause` parks it (status `governance_paused`) on a `workflow.wait_condition`, consuming
+no compute, until `resume` or `cancel`, bounded by a 24h deadline after which it is `timed_out`.
+`build_result` gained a `status` parameter for the signal-terminated outcomes.
+`TemporalRuntime.signal` delivers `cancel`/`pause`/`resume` to the workflow. Three `temporal`-marked
+tests verify each path on the time-skipping server.
+
+**Why.** Human-in-the-loop control of durable runs (spec 06 §7): an operator can cancel a run or
+pause it for inspection and resume it, without the run consuming compute while parked.
+
+**Design decisions.** **Scope split**: P3.5 delivers the durable signal core (`cancel`/`pause`/
+`resume` + `wait_condition` + the 24h `timed_out` deadline). `edit_resume` — applying an operator
+`StateUpdate` through the reducers (spec 06 §7) — ties to the operator-edit contract of the HITL
+façade and lands in P7.4; the `signal` method raises an actionable `NotImplementedError` for it until
+then. The **local runtime has no HITL**: it runs synchronously (the run completes inside `start`), so
+there is no in-flight run to signal; its `signal` raises an actionable error pointing to the Temporal
+runtime. The pause check reads `self._paused` at the loop top, but the inner post-`wait_condition`
+cancel branch was removed — the loop top handles a pending cancel — to avoid a mypy `warn_unreachable`
+false positive (mypy can't see the async signal-handler mutation). The signal tests use `start_signal`
+so the pause/cancel is delivered atomically with start (deterministic), and time-skipping fast-forwards
+the 24h HITL deadline for the `timed_out` test.
+
+**Architecture changes.** None beyond the runtime; the signal infrastructure is confined to
+`temporal_runtime.py`. Import contracts 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/runtime/temporal_runtime.py`,
+`src/korchestrator/runtime/local_runtime.py`, `src/korchestrator/core/pregel.py` (`build_result`
+`status` param), `tests/integration/test_temporal_runtime.py`, `CHANGELOG.md`.
+
+**Breaking changes.** None (new signal surface; `build_result` gained an optional keyword).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 5 temporal tests pass in a clean `[temporal]` venv (2 execution + 3 signal:
+cancel→`cancelled`, pause→`timed_out` via the 24h skip, pause+resume→`completed`); `ruff`,
+`ruff format`, `mypy --strict` clean on 53 source files.
+
+**Known limitations / future improvements.** `edit_resume` (operator update through the reducers) is
+P7.4. Signal timeout is a fixed 24h; `TEMPORAL_HITL_TIMEOUT` config lands in P8. P3.6 adds the
+replay/equivalence/crash/roll-over test matrix.
+
+---
+
 ## 2026-07-22 · [P3.3/P3.4] Durable Temporal runtime — v0.1.0
 
 **Type:** feature · **Phase:** P3 · **Author:** Claude (agent)
