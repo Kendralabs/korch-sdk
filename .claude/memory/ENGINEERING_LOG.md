@@ -10,6 +10,59 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P3.6] Lock runtime equivalence, replay, crash recovery, roll-over — v0.1.0
+
+**Type:** test · **Phase:** P3 · **Author:** Claude (agent)
+
+**What.** Added `tests/e2e/test_runtime_equivalence.py` (marked `temporal`): the same swarm on the
+local and Temporal runtimes produces an **equivalent `RunResult`** (identical status, final_answer,
+supersteps, trust_score, error_code, and message log, excluding runtime-specific timestamps); a
+**replay** test runs the recorded workflow history through `temporalio.worker.Replayer` and asserts no
+nondeterminism; a **crash-recovery** test starts a run on one worker, lets that worker exit while the
+run is parked, and completes it on a fresh worker; and a **roll-over** test forces several
+`continue_as_new` roll-overs (via a low `PregelRequest.continue_as_new_after`) and asserts the
+`RunResult` is unaffected. Made `PregelRequest.continue_as_new_after` a field so the roll-over
+threshold is testable without touching the sandboxed module constant. Guarded `test_reducers.py` with
+`importorskip("hypothesis")` so `pytest tests -m temporal` collects cleanly in a `[temporal]`-only env.
+
+**Why.** Determinism and durability are the runtime's product guarantees; they must be tested, not
+asserted (spec 06 §8, spec 09 §5.3). The equivalence test is the one that fails if the two adapters
+ever drift.
+
+**Design decisions.** All four run on Temporal's in-process time-skipping test server — no external
+cluster. Equivalence uses the **same `run_id`** for both runtimes so the deterministic message ids
+match, and compares everything except the two clocks' timestamps (spec 06 §8). Crash recovery is
+realised as a **worker restart while paused** (durable state lives in the server, not the worker),
+which together with the replay test (activities are replayed from history, never re-executed) covers
+"resume from the last checkpoint with no duplicated work". Roll-over drives the ping-pong graph past a
+low threshold to `MAX_SUPERSTEPS` across several roll-overs, with `started_at` carried through.
+
+**Architecture changes.** None (tests + one internal `PregelRequest` field). Import contracts 3 kept,
+0 broken.
+
+**Files/modules affected.** `tests/e2e/test_runtime_equivalence.py`,
+`src/korchestrator/runtime/temporal_runtime.py` (`continue_as_new_after` field),
+`tests/unit/core/test_reducers.py` (`importorskip`).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** The full `temporal` suite passes in a clean `[temporal]` venv:
+`pytest tests -m temporal` → **9 passed** (2 execution + 3 signal + 4 equivalence/replay/crash/
+roll-over), 1 skipped (reducer property tests, no hypothesis), 208 deselected. `ruff`, `ruff format`,
+`mypy --strict` clean on 53 source files. **P3 Definition of Done met: both runtimes produce
+equivalent results; replay is green; a forced worker restart resumes without duplicated work; runtime
+is swappable by config alone.**
+
+**Known limitations / future improvements.** `edit_resume` (P7.4) and production client wiring (P4).
+The Temporal suite runs in its own CI job; the `[dev]` matrix runs `-m "not temporal"` (a `beartype`
+import hook from observability extras conflicts with the workflow sandbox).
+
+---
+
 ## 2026-07-22 · [P3.5] Durable HITL control signals — v0.1.0
 
 **Type:** feature · **Phase:** P3 · **Author:** Claude (agent)

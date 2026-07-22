@@ -78,6 +78,9 @@ class PregelRequest(BaseModel):
     state: AgentState
     node_ids: tuple[str, ...]
     max_supersteps: int = DEFAULT_MAX_SUPERSTEPS
+    # Roll over to a fresh workflow run once history reaches this many events. A test lowers it to
+    # exercise the roll-over path deterministically without touching the sandboxed module constant.
+    continue_as_new_after: int = _CONTINUE_AS_NEW_HISTORY_LENGTH
     # Carried across continue-as-new so the reported ``started_at`` spans the whole run.
     started_at: datetime | None = None
 
@@ -157,12 +160,13 @@ class PregelMaster:
             if state.superstep >= request.max_supersteps:
                 error_code = "MAX_SUPERSTEPS_REACHED"
                 break
-            if workflow.info().get_current_history_length() >= _CONTINUE_AS_NEW_HISTORY_LENGTH:
+            if workflow.info().get_current_history_length() >= request.continue_as_new_after:
                 workflow.continue_as_new(
                     PregelRequest(
                         state=state,
                         node_ids=request.node_ids,
                         max_supersteps=request.max_supersteps,
+                        continue_as_new_after=request.continue_as_new_after,
                         started_at=started_at,
                     )
                 )
