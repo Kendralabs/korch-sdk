@@ -17,12 +17,15 @@ from korchestrator.config import Settings
 from korchestrator.core.graph import AgentGraph, Edge, Node
 from korchestrator.core.pregel import Clock
 from korchestrator.exceptions import ValidationError
-from korchestrator.interfaces import IModelGateway
+from korchestrator.interfaces import BaseRouter, IModelGateway
 from korchestrator.models.agent import AgentConfig
 from korchestrator.models.result import RunResult
+from korchestrator.models.routing import ModelCard, RoutingContext, TaskSemantics
 from korchestrator.models.state import AgentState
 from korchestrator.providers import get_lm
+from korchestrator.routing import load_model_cards, resolve_router
 from korchestrator.runtime import resolve_runtime
+from korchestrator.taxonomy import TaxonomyClassifier
 
 _MIN_OBJECTIVE_CHARS = 10
 
@@ -41,6 +44,18 @@ def resolve_gateway(settings: Settings, gateway: IModelGateway | None) -> IModel
     return gateway if gateway is not None else get_lm("korch-default", settings=settings)
 
 
+def classify(objective: str) -> TaskSemantics:
+    """Classify ``objective`` into task semantics for routing (deterministic, offline, no extra)."""
+    return TaxonomyClassifier().classify(objective)
+
+
+def resolve_routing(
+    settings: Settings, router: BaseRouter | None
+) -> tuple[BaseRouter, tuple[ModelCard, ...]]:
+    """Resolve the router (injected or configured) and load the candidate model cards."""
+    return resolve_router(settings, router=router), load_model_cards(settings)
+
+
 def validate_objective(objective: str) -> None:
     """Reject an objective shorter than the kernel's minimum (a fast, offline check)."""
     if len(objective) < _MIN_OBJECTIVE_CHARS:
@@ -50,12 +65,14 @@ def validate_objective(objective: str) -> None:
         )
 
 
-def worker_node_from_config(config: AgentConfig, *, clock: Clock, gateway: IModelGateway) -> Node:
-    """Build a default :class:`WorkerAgent` from ``config`` and materialise it as a bound node."""
+def worker_node_from_config(
+    config: AgentConfig, *, clock: Clock, gateway: IModelGateway, model: str
+) -> Node:
+    """Build a default :class:`WorkerAgent` from ``config`` with the routed ``model``, as a node."""
     worker = WorkerAgent(
         config.id,
         role=config.persona.role,
-        model=config.model,
+        model=model,
         goal=config.persona.goal,
         backstory=config.persona.backstory,
         tools=config.tools,
@@ -66,39 +83,86 @@ def worker_node_from_config(config: AgentConfig, *, clock: Clock, gateway: IMode
     return worker.bind(clock=clock, gateway=gateway).to_node()
 
 
-def agent_node(agent: Agent, *, clock: Clock, gateway: IModelGateway) -> Node:
-    """Materialise an authored ``agent`` as a bound reasoning node.
+async def _route_model(
+    router: BaseRouter,
+    agent_id: str,
+    explicit_model: str | None,
+    *,
+    task: TaskSemantics,
+    candidates: Sequence[ModelCard],
+    tenant_id: str,
+) -> str:
+    """Select the model for one agent through the router (pure w.r.t. context — replay-safe)."""
+    context = RoutingContext(
+        agent_id=agent_id,
+        task=task,
+        candidates=tuple(candidates),
+        explicit_model=explicit_model,
+        tenant_id=tenant_id,
+    )
+    decision = await router.select_model(context)
+    return decision.model_name
 
-    A declaratively-constructed agent (its ``think`` is the base's) is run by the default
-    :class:`WorkerAgent`; an agent that overrides ``think`` (a custom agent, or a ``WorkerAgent``)
-    is bound and used directly (ADR 0012/0013).
-    """
-    if type(agent).think is Agent.think:
-        return worker_node_from_config(agent.config, clock=clock, gateway=gateway)
-    return agent.bind(clock=clock, gateway=gateway).to_node()
 
-
-def graph_from_configs(
+async def graph_from_configs(
     configs: Sequence[AgentConfig],
     edges: Sequence[tuple[str, str]],
     *,
     clock: Clock,
     gateway: IModelGateway,
+    router: BaseRouter,
+    task: TaskSemantics,
+    candidates: Sequence[ModelCard],
+    tenant_id: str = "default",
 ) -> AgentGraph:
-    """Build a validated :class:`AgentGraph` of default workers from an Architect's plan."""
-    nodes = [worker_node_from_config(config, clock=clock, gateway=gateway) for config in configs]
+    """Build a validated :class:`AgentGraph` of default workers from an Architect's plan.
+
+    Each worker's model is selected by the ``router`` at composition time (never workflow scope),
+    honouring any model pinned on the plan's :class:`AgentConfig`.
+    """
+    nodes = []
+    for config in configs:
+        model = await _route_model(
+            router, config.id, config.model, task=task, candidates=candidates, tenant_id=tenant_id
+        )
+        nodes.append(worker_node_from_config(config, clock=clock, gateway=gateway, model=model))
     return AgentGraph(nodes, [Edge(source, target) for source, target in edges])
 
 
-def graph_from_agents(
+async def graph_from_agents(
     agents: Sequence[Agent],
     edges: Sequence[tuple[str, str]],
     *,
     clock: Clock,
     gateway: IModelGateway,
+    router: BaseRouter,
+    task: TaskSemantics,
+    candidates: Sequence[ModelCard],
+    tenant_id: str = "default",
 ) -> AgentGraph:
-    """Build a validated :class:`AgentGraph` from user-authored agents (Tier-2 ``Swarm``)."""
-    nodes = [agent_node(agent, clock=clock, gateway=gateway) for agent in agents]
+    """Build a validated :class:`AgentGraph` from user-authored agents (Tier-2 ``Swarm``).
+
+    A declaratively-constructed agent (its ``think`` is the base's) is run by a default
+    :class:`WorkerAgent` whose model the ``router`` selects; an agent that overrides ``think`` (a
+    custom agent, or a ``WorkerAgent``) supplies its own reasoning and is bound and used directly
+    (ADR 0012/0013), so routing does not override it.
+    """
+    nodes = []
+    for agent in agents:
+        if type(agent).think is Agent.think:
+            model = await _route_model(
+                router,
+                agent.id,
+                agent.config.model,
+                task=task,
+                candidates=candidates,
+                tenant_id=tenant_id,
+            )
+            nodes.append(
+                worker_node_from_config(agent.config, clock=clock, gateway=gateway, model=model)
+            )
+        else:
+            nodes.append(agent.bind(clock=clock, gateway=gateway).to_node())
     return AgentGraph(nodes, [Edge(source, target) for source, target in edges])
 
 

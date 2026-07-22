@@ -15,6 +15,25 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Model routing (Phase 5), wired into execution: `resolve_router(settings, router=…)` and a
+  `UserFunctionRouter` that adapts a `(RoutingContext) -> RoutingResult` callable (sync or async).
+  A custom `BaseRouter` plugs in by injection — `Korch(router=…)` / `Swarm(router=…)` — with no
+  package edit (entry-point discovery deferred, see ADR 0014). `Korch.run`/`Swarm.run` now select a
+  model per default-worker agent at composition time (deterministic, replay-safe), honouring a model
+  pinned on the agent and `AGENT_MODEL_MAP`.
+- Model routing (Phase 5), ranking strategies: `AlgorithmicRouter` (weighted quality/cost/latency
+  ranking over `ROUTING_WEIGHTS`, with capability filtering and cost estimation) and `SemanticRouter`
+  (embedding-similarity selection against `ModelCard` descriptions, with a TTL-cached embedding
+  singleton). Semantic embeddings require the `[routing]` extra and are imported lazily; the strategy
+  is testable offline via an injected `Embedder`. `get_router()` gained a keyword-only `embedder`.
+- Model routing (Phase 5), explicit strategy: `korchestrator.routing` with `get_router()`, the
+  `BaseRouter` supporting protocol (re-exported from `interfaces`), and the explicit + fallback
+  strategies behind a `CompositeRouter` chain. The default (`ROUTING_STRATEGY="explicit"`) selects a
+  per-agent model — a pinned model or an `AGENT_MODEL_MAP` entry — and always resolves via a
+  never-declining fallback tail, on the base install with no extra. A built-in `ModelCard` catalogue
+  (`builtin_model_cards()`) and a file/builtin loader (`load_model_cards()`). New `Settings` fields
+  for routing (`routing_strategy`, `agent_model_map`, `routing_weights`, `routing_priority_order`,
+  `embedding_provider`, `modelcard_*`), with `Settings.from_env` parsing their JSON/CSV forms.
 - Self-contained `korchestrator` package skeleton: every module directory from the module
   catalogue, each with a layer-naming docstring and an explicit `__all__`; `py.typed`;
   and the single-source `version.py` pinned to `0.1.0`.
