@@ -4,7 +4,7 @@
 log is chronological history; this file is the current snapshot. Update it whenever a phase advances,
 a module changes status, or the public surface moves — `/log` does both together.
 
-**Last updated:** 2026-07-21 · **Version:** `0.1.0` (unreleased) · **Branch model:** `main` / `develop`
+**Last updated:** 2026-07-22 · **Version:** `0.1.0` (unreleased) · **Branch model:** `main` / `develop`
 
 ---
 
@@ -12,15 +12,15 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P3 — Runtime adapters — **complete** on branch `feat/p3-runtime-adapters` (off `develop`, with P2 merged; pending push/PR). All 6 tasks + ADR 0010 landed across 4 commits. |
-| **Last completed phase** | P3 — local runtime (default) and durable Temporal adapter, swappable by config: PregelMaster workflow + SuperstepActivity, retry/jitter, continue-as-new, HITL signals (cancel/pause/resume). Cross-runtime equivalence, replay, crash-recovery, and roll-over are test-locked (9 temporal tests, verified on the time-skipping server). |
-| **Blocking** | Nothing. P4 (cognitive layer: MockLM → agents → the first end-to-end run) is next; it is the critical-path milestone (P4.9). |
-| **Code written** | P0 foundation (see below) plus: the `KorchError` tree + error codes; the frozen domain models (`state`/`agent`/`plan`/`routing`/`result`/`tool` + `types.JSONValue`); the ARI ports and supporting protocols; and the frozen public façade (`Korch`/`Swarm`/`Agent`) with the 27-name `__all__` guarded by a golden snapshot. |
+| **Active phase** | P4 — Cognitive layer — **functionally complete** (P4.1–P4.9) on branch `feat/p4-cognitive-layer` (off `develop`). The **first end-to-end run works** across both tiers. |
+| **Last completed milestone** | **P4.9 — the first end-to-end run.** `Korch().run(objective)` (taxonomy → Architect plan → kernel → runtime) and `Swarm().run()` (declared topology) both execute to a `RunResult` with a populated `final_answer`, deterministically under MockLM. A custom agent runs the whole path on a pydantic-only base install; reasoning agents require `[dspy]` (ADR 0013). |
+| **Blocking** | Nothing. P5 (model routing behind `BaseRouter`) is next. |
+| **Pushed / merged** | `develop` (P0–P3 + P4.1–P4.6) is pushed to `origin`. P4.7–P4.9 are committed on the feature branch; the completed phase merges to `develop` next. |
 
-The package now builds standalone (`pip install -e .`, `python -m build`, clean-env wheel install all
-verified), imports as `0.1.0`, and every local gate is green: ruff, ruff-format, `mypy --strict`,
-`pytest` (100% coverage at this size), import-linter (3 contracts kept), the isolation gate,
-env-confinement, and version single-sourcing. `mkdocs build --strict` passes on the stub site.
+Every local gate is green: ruff, ruff-format, `mypy --strict` (66 source files), `pytest` (dspy +
+non-dspy paths), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx confinement), the
+isolation gate, env-confinement, and version single-sourcing. `import korchestrator.agents` is
+verified `dspy`-free; the base install stays `pydantic`-only.
 
 ## 2. Phase progress
 
@@ -28,10 +28,10 @@ env-confinement, and version single-sourcing. `mkdocs build --strict` passes on 
 |---|---|---|
 | P0 | Foundations, scope freeze, scaffolding | **Complete** (branch `chore/p0-foundations`) |
 | P1 | Public API & interface contracts | **Complete** (branch `feat/p1-contracts`) |
-| P2 | Core execution kernel (Pregel) | Not started |
-| P3 | Runtime adapters (local + Temporal) | Not started |
-| P4 | Cognitive layer (agents, signatures, taxonomy) | Not started |
-| P5 | Model routing | Not started |
+| P2 | Core execution kernel (Pregel) | **Complete** (merged to `develop`) |
+| P3 | Runtime adapters (local + Temporal) | **Complete** (merged to `develop`) |
+| P4 | Cognitive layer (agents, signatures, taxonomy) | **Complete** (P4.1–P4.9; first end-to-end run) |
+| P5 | Model routing | Not started — next |
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | Not started |
 | P7 | Governance, security & context graph | Not started |
 | P8 | Cross-cutting foundations | Not started |
@@ -52,10 +52,13 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `constants/` · `exceptions/` | Leaf utility | **tested** (`KorchError` tree + error codes, frozen) | P1 |
 | `types/` · `models/` | Contract | **tested** (`JSONValue` + frozen domain models, frozen) | P1 |
 | `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen) | P1 |
-| `services/` | Façade | **tested** (`Korch`/`Swarm`/`Agent` signatures; `run` → `NotImplementedError` until P4.9) | P1, P4 |
+| `services/` | Façade | **tested** (`Korch.run`/`Swarm.run` wired to the kernel via `_composition`; first end-to-end run) | P1, P4 |
 | `core/` | Kernel (L1) | **tested** (reducers + laws, AgentGraph, ChannelSchema, PregelRunner; determinism-locked; ≥97% cov) | P2 |
 | `runtime/` | Adapter | **tested** (LocalRuntime + resolve_runtime; TemporalRuntime PregelMaster/SuperstepActivity, retry/rollover, HITL signals; equivalence/replay/crash/rollover verified) | P3 |
-| `agents/` · `taxonomy/` · `routing/` · `context/` · `persistence/` · `providers/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P4–P9 |
+| `providers/` | Adapter | **tested** (MockLM; local identity + subprocess sandbox; OpenAI gateway + `get_lm`; 99% cov) | P4 |
+| `agents/` | Cognitive (L2) | **tested** (unified `Agent`; lazy DSPy `Signature`s; `WorkerAgent` + `ArchitectAgent` over a shared gateway bridge; 97% cov) | P4 |
+| `taxonomy/` | Cognitive (L2) | **tested** (`TaxonomyClassifier` + agent descriptors; 100% cov) | P4 |
+| `routing/` · `context/` · `persistence/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P5–P9 |
 
 ## 4. Public surface
 
@@ -86,6 +89,10 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Backend boundary | One-way; the SDK never depends on a service | 0007 |
 | TypeScript client | Specified, **deferred** — not built in P0–P12 | 0008 |
 | Settings dependency | `Settings` on `pydantic.BaseModel`, env read in `config/` — keeps base pydantic-only (not `pydantic-settings`) | 0009 |
+| `IDurableRuntime` shape | `now`/`start`/`wait`/`signal`; graph injected at construction | 0010 |
+| `httpx` confinement | Owned by `clients/` + `providers/gateway_openai.py` (lazy, `[remote]`); machine-enforced (direct-import) | 0011 |
+| Unified `Agent` | One class — declarative **and** subclassable; re-exported from `agents`/`services`/top level | 0012 |
+| Cognitive layer needs `[dspy]` | One reasoning path (DSPy `WorkerAgent`); base install imports clean, `MissingExtraError` on run; target dspy 3.x (`dspy>=2.6,<4`) | 0013 |
 
 ## 6. Known gaps and open items
 
