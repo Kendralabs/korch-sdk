@@ -12,9 +12,9 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P1 — Public API & Interface Contracts — **complete** (on branch `feat/p1-contracts`, off `chore/p0-foundations`; both pending push/PR) |
-| **Last completed phase** | P1 — all six tasks (P1.1–P1.6) landed. Every contract is frozen. |
-| **Blocking** | Nothing. P2 (Pregel kernel) is ready to begin once P0+P1 merge. |
+| **Active phase** | P2 — Pregel kernel — **complete** on branch `feat/p2-pregel-kernel` (off `develop`, pending push/PR). All 7 tasks landed across 5 commits. |
+| **Last completed phase** | P2 — the deterministic BSP kernel: reducers + laws, AgentGraph, ChannelSchema, PregelRunner (activation/barrier/routing/halting), determinism suite. Runs on pydantic alone. |
+| **Blocking** | Nothing. P3 (runtime adapters: local + Temporal) is ready to begin once P2 merges. |
 | **Code written** | P0 foundation (see below) plus: the `KorchError` tree + error codes; the frozen domain models (`state`/`agent`/`plan`/`routing`/`result`/`tool` + `types.JSONValue`); the ARI ports and supporting protocols; and the frozen public façade (`Korch`/`Swarm`/`Agent`) with the 27-name `__all__` guarded by a golden snapshot. |
 
 The package now builds standalone (`pip install -e .`, `python -m build`, clean-env wheel install all
@@ -53,7 +53,8 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `types/` · `models/` | Contract | **tested** (`JSONValue` + frozen domain models, frozen) | P1 |
 | `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen) | P1 |
 | `services/` | Façade | **tested** (`Korch`/`Swarm`/`Agent` signatures; `run` → `NotImplementedError` until P4.9) | P1, P4 |
-| `core/` · `agents/` · `taxonomy/` · `routing/` · `runtime/` · `context/` · `persistence/` · `providers/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P2–P9 |
+| `core/` | Kernel (L1) | **tested** (reducers + laws, AgentGraph, ChannelSchema, PregelRunner; determinism-locked; ≥97% cov) | P2 |
+| `agents/` · `taxonomy/` · `routing/` · `runtime/` · `context/` · `persistence/` · `providers/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P3–P9 |
 
 ## 4. Public surface
 

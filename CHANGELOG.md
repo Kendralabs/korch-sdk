@@ -45,5 +45,13 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   and the frozen, curated top-level public API (`korchestrator.__all__`, 27 names) guarded by a
   golden-file snapshot test. Execution (`Korch.run`/`Swarm.run`) is wired to the kernel in a later
   release; the builder surface is usable now.
+- The framework-free Pregel kernel, embeddable directly via `korchestrator.core` (Tier 3): the four
+  channel reducers (`LastValue`, `Append`, `UniqueAppend`, `MergeDict`) with proven algebraic laws;
+  `AgentGraph`/`Node`/`Edge` with topology validation (cycles and orphans allowed); `ChannelSchema`
+  for binding channels to reducers; and `PregelRunner`, which runs a graph as deterministic Bulk
+  Synchronous Parallel supersteps (activation, barrier reduce, message routing, and halting) against
+  an injected clock. Runs on a `pydantic`-only base install.
+- `AgentState.halted_agents` — a new optional field (default empty) recording which nodes have
+  individually halted, so a halted node is never reactivated. Additive and backward-compatible.
 
 [0.1.0]: https://github.com/kendralabs/korch-sdk/releases/tag/v0.1.0

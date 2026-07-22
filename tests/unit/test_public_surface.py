@@ -63,8 +63,9 @@ def test_tier2_typed_swarm() -> None:
     assert result.final_answer
 
 
-@pytest.mark.xfail(
-    strict=True, reason="PregelRunner/AgentGraph land in core in P2 — owner: sdk-team — P2"
-)
 def test_tier3_kernel_direct_symbols_exist() -> None:
-    from korchestrator.core import AgentGraph, PregelRunner  # noqa: F401
+    # Landed in P2: the kernel is directly embeddable (spec 04 Tier 3).
+    from korchestrator.core import AgentGraph, PregelRunner
+
+    assert callable(PregelRunner)
+    assert callable(AgentGraph)

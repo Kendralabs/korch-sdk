@@ -77,7 +77,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install with no extras
-        run: python -m pip install . pytest pytest-asyncio
+        # hypothesis is a test tool (like pytest), not a package runtime dependency — the kernel
+        # law tests under tests/unit/core need it; the "optional deps absent" check below still
+        # guards the real extras (dspy/temporalio/httpx/mcp/otel).
+        run: python -m pip install . pytest pytest-asyncio hypothesis
       - name: Assert optional dependencies are absent
         run: |
           python - <<'PY'

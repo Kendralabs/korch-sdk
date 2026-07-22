@@ -10,6 +10,204 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-21 · [P2.7] Lock determinism and halting — v0.1.0
+
+**Type:** test · **Phase:** P2 · **Author:** Claude (agent)
+
+**What.** Landed `tests/unit/core/test_determinism.py`: a repeatability test (the same graph + state
++ fresh `FakeClock` produces a **byte-identical** serialised `RunResult` across two runs) and a
+static check that no wall-clock read or randomness appears anywhere in the workflow-path code
+(`core/` and `models/`). Un-xfailed the Tier-3 surface test now that `PregelRunner`/`AgentGraph`
+exist.
+
+**Why.** Determinism is the kernel's product guarantee — it must be a tested feature, not an
+aspiration (spec 06 §5, spec 09 §5). Repeatability asserted on the serialised form catches ordering
+differences object equality would hide.
+
+**Design decisions.** The no-wall-clock check is **AST-based, not grep-based**. The spec's
+determinism grep (`docs/.../determinism.md`) would false-positive on the explanatory docstring in
+`models/state.py`, which mentions `datetime.now()`/`uuid4()` precisely to forbid them. Walking the
+AST for actual `Call` nodes (`datetime.now`, `datetime.utcnow`, `date.today`, `time.time`,
+`time.monotonic`, `uuid.uuid4`, `uuid4`, and any `random.*`/`secrets.*` call) ignores docstrings and
+comments entirely — a more robust realisation of the spec's intent. Both kernel halting conditions
+(all-active-halt → `completed`; `max_supersteps` → `completed` with `MAX_SUPERSTEPS_REACHED`) and
+activation-per-superstep are locked in `test_pregel.py`; the repeatability + static checks live here.
+
+**Architecture changes.** None (tests only).
+
+**Files/modules affected.** `tests/unit/core/test_determinism.py`,
+`tests/unit/test_public_surface.py` (un-xfail Tier 3).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Repeatability green (byte-identical serialised results); the AST check finds no
+wall-clock/randomness in `core/` or `models/`; Tier-3 test now passes (its xfail removed). Full suite
+green; `core/` and `models/` hold the 95% coverage floor; global floor held. **P2 Definition of Done
+met: the kernel runs a superstep with only pydantic installed; determinism and halting are
+test-locked.**
+
+**Known limitations / future improvements.** The Temporal replay test and the cross-runtime
+equivalence test are P3 (they need the runtime adapters). Serde round-trip/version-tag stability is
+P8.5.
+
+---
+
+## 2026-07-21 · [P2.3/P2.5/P2.6] Pregel superstep runner — v0.1.0
+
+**Type:** feature · **Phase:** P2 · **Author:** Claude (agent)
+
+**What.** Implemented the deterministic BSP execution loop. `core/channels.py` (`ChannelSchema`)
+binds each context channel to a reducer (default `LastValue`). `core/pregel.py` (`PregelRunner`)
+runs a graph as supersteps: activation (superstep 0 = all nodes; later = inbox-only; halted nodes
+never reactivate), the concurrent compute phase (`asyncio.gather` against a frozen snapshot), the
+`synchronize` barrier (validates + canonicalises updates by `agent_id`), the reduce step (channel
+reducers), message routing (deterministic id assignment, broadcast/directed delivery, inbox
+assembly, answer accumulation), and halting. Added `AgentState.halted_agents`. Re-exported the kernel
+from `korchestrator.core` (Tier-3 surface). Added the `FakeClock` fixture and a `make_clock` fixture.
+
+**Why.** This is the kernel's heart: `S(t+1) = f(S(t), M(t))` as a pure, replay-exact function
+(spec 06 §1-§4). Everything above it (runtimes, agents, façade) drives this loop.
+
+**Design decisions.** The runner takes an **injected `Clock`** (`Callable[[], datetime]`) for
+`transaction_time` and never reads the wall clock; the graph carries node callables; the runner
+constructs nothing (DIP, spec 03 §5). It does **not** take a `model_gateway` — spec 04's illustrative
+Tier-3 signature shows one, but at the kernel layer the gateway is closed over by the injected compute
+callables (wired in P4), so adding it here would be an unused parameter. **`AgentState.halted_agents`
+was added** (additive, optional, default empty) as the replay-safe home for per-node halt state —
+the alternative (a reserved `__`-prefixed context key) would pollute the user-facing context channel.
+The kernel **assigns each message's `id`/`sender`/`superstep`** (overwriting whatever the agent set)
+so ids are deterministic (`f"{run_id}:{superstep}:{sender}:{index}"`) and senders always match the
+emitter (spec 05 §3.1, spec 08 §7). `final_answer` joins `kind=="answer"` message contents with
+newlines, in message order. The kernel only ever terminates in `completed` (paused/failed/timed-out
+belong to the runtime/governance layers). `MergeDict`-style incremental folding is avoided — the
+barrier collects all deltas per channel then reduces once, so order-independence (not
+incremental-associativity) is the operative guarantee.
+
+**Architecture changes.** `core/` now depends inward on `models` and `exceptions` only (both legal).
+No framework, no optional dependency; the kernel runs on a pydantic-only install. Import contracts 3
+kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/core/{channels,pregel}.py`, `core/__init__.py`,
+`src/korchestrator/models/state.py` (`halted_agents`), `tests/unit/core/test_{pregel,channels}.py`,
+`tests/fixtures/{__init__,fake_clock}.py`, `tests/conftest.py`, `CHANGELOG.md`.
+
+**Breaking changes.** None. `AgentState.halted_agents` is additive/backward-compatible.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Runner/channel tests pass (activation per superstep, all-halt and no-active and
+max-supersteps halting, reducer channel merge, broadcast/directed routing, deterministic message
+ids, answer accumulation, foreign-agent-id rejection, frozen snapshot); `ruff`, `ruff format`,
+`mypy --strict` clean on 51 source files; runner doctest runs a full `run()` to completion. Full
+suite + coverage floors confirmed with the determinism commit (P2.7).
+
+**Known limitations / future improvements.** `trust_delta` is carried on `StateUpdate` but not
+applied by the kernel — governance owns trust scoring (P7). The runtimes that drive `PregelRunner`
+(local/Temporal) and the equivalence/replay tests land in P3.
+
+---
+
+## 2026-07-21 · [P2.4] AgentGraph and topology validation — v0.1.0
+
+**Type:** feature · **Phase:** P2 · **Author:** Claude (agent)
+
+**What.** Implemented `core/graph.py`: `Node` (an `AgentConfig` plus its bound compute callable),
+`Edge` (`source -> target`), the `AgentCallable` type, and `AgentGraph` with topology validation and
+deterministic adjacency accessors (`node_ids`, `nodes`, `edges`, `outbound`, `has_edge`, `has_node`,
+`get_node`). Re-exported from `korchestrator.core` (the Tier-3 surface). Tests lock valid
+construction, all validation failures, cycles-allowed, and orphan-allowed.
+
+**Why.** The kernel runs a directed agent graph; cycles are first-class (that is why it is Pregel,
+not a DAG runner). Validation must happen once, before superstep 0 (spec 06 §4).
+
+**Design decisions.** `Node`/`Edge` are frozen dataclasses (not pydantic models) because a node holds
+a live callable, which is not serialisable — the graph's topology, not its callables, is what serde
+(P8.5) will persist. Validation raises `ValidationError` (the kernel may import `exceptions`) for an
+empty graph, duplicate ids, dangling edge endpoints, and disallowed self-edges; cycles are allowed
+with no check. **Orphan nodes are legal** (spec 06 §4 lists no orphan check) — superstep 0 activates
+every node, so an orphan runs once and deactivates; this resolves the ambiguous "orphan" item in the
+spec 12 P2.4 list in favour of the spec-06 rule. Adjacency is stored sorted for stable, deterministic
+routing regardless of edge input order.
+
+**Architecture changes.** `core/graph.py` imports only `models` and `exceptions` (both legal for the
+kernel). No framework, no optional dependency. Import contracts 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/core/graph.py`, `core/__init__.py`,
+`tests/unit/core/test_graph.py`.
+
+**Breaking changes.** None (new Tier-3 surface).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 8 graph tests pass; graph doctest passes; `ruff`, `ruff format`, `mypy --strict`
+clean on 49 source files; import contracts 3 kept, 0 broken.
+
+**Known limitations / future improvements.** The graph is topology + callables only; the superstep
+runner that drives it (activation, barrier, halting) and message routing land in P2.5/P2.6.
+
+---
+
+## 2026-07-21 · [P2.1–P2.2] Reducers with algebraic laws — v0.1.0
+
+**Type:** feature · **Phase:** P2 · **Author:** Claude (agent)
+
+**What.** Implemented `core/reducers.py` — the four channel reducers (`LastValue`, `Append`,
+`UniqueAppend`, `MergeDict`) plus the `Reducer` protocol and the `Delta` type — and proved their
+algebraic laws with Hypothesis property tests (`tests/unit/core/test_reducers.py`). Each reducer
+merges a channel's current value with one superstep's `(agent_id, value)` deltas. Registered a
+Hypothesis test profile in `tests/conftest.py`.
+
+**Why.** Reducers are the barrier's merge mechanism; if they are not associative and
+order-independent, `asyncio.gather` completion order or Temporal's replay interleaving could change
+the result and corrupt a replay (spec 06 §3). This is the deterministic heart the whole kernel rests
+on, so the laws are property-tested, not example-tested.
+
+**Design decisions.** Deltas are `(agent_id, value)` pairs and each reducer **sorts by `agent_id`
+internally**, so it is a genuinely order-independent pure function. This adds the `agent_id` key to
+spec 06 §3's illustrative `Sequence[T]` signature — deliberately, because the order-independence the
+spec mandates for `LastValue`/`Append` needs a total order over the deltas, and `agent_id` (unique
+per node) is exactly that order. A reducer is applied **once per channel per superstep** (collect →
+sort → apply), not folded incrementally; incremental folding with re-sorting would break `Append`'s
+result, so the operative guarantee is order-independence of the whole delta set, matching spec 06
+§3's "sorts deltas by agent_id before folding". `MergeDict` deep-merges with conflicting leaves
+resolved by highest `agent_id` (LastValue) and raises `ValidationError` on a non-mapping delta. Two
+CI-plumbing corrections: `tests/conftest.py` registers a Hypothesis profile (`max_examples=50`,
+`deadline=None`, suppress `too_slow`) so property tests are deterministic and robust on slow machines
+(no wall-clock decides a test — spec 09 §3); and the base-install CI job now installs `hypothesis`
+(a test tool, not a package runtime dependency — the kernel imports only pydantic/stdlib, and the
+"optional deps absent" check still guards the real extras).
+
+**Architecture changes.** `core/` gains its first real module. It imports only
+`korchestrator.exceptions` and `korchestrator.types` (both legal for the kernel per spec 05); no
+framework, no optional dependency. Import contracts still 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/core/reducers.py`, `core/__init__.py`,
+`tests/unit/core/test_reducers.py`, `tests/conftest.py`, `.github/workflows/ci.yml`.
+
+**Breaking changes.** None (new internal surface).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 15 property/behaviour tests pass (Hypothesis: order-independence for all four,
+idempotence for `LastValue`/`UniqueAppend`/`MergeDict`, explicit non-idempotence for `Append`,
+totality on empty deltas); 4 reducer doctests pass; `ruff`, `ruff format`, `mypy --strict` clean on
+the kernel (`JSONValue` isinstance narrowing holds under strict); import contracts 3 kept, 0 broken.
+
+**Known limitations / future improvements.** Channel→reducer binding, the barrier Reduce step, and
+frozen-snapshot enforcement land in P2.3; the graph in P2.4; the superstep runner in P2.5.
+
+---
+
 ## 2026-07-21 · [P1 review] Fix defects found in the P0+P1 review — v0.1.0
 
 **Type:** fix · **Phase:** P1 · **Author:** Claude (agent)
