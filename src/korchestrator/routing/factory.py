@@ -1,0 +1,77 @@
+"""Cognitive layer (L2). Imports: config, interfaces, exceptions, routing (siblings within layer).
+
+The routing composition point. :func:`get_router` turns a :class:`~korchestrator.config.Settings`
+into a ready :class:`~korchestrator.interfaces.BaseRouter`: it builds the strategy chain named by
+``ROUTING_STRATEGY`` (always ending in the never-declining fallback) and wraps it in a
+:class:`~korchestrator.routing.composite.CompositeRouter`. Advanced strategies are built lazily so
+the base install never needs the ``[routing]`` extra.
+"""
+
+from __future__ import annotations
+
+from korchestrator.config import Settings
+from korchestrator.exceptions import ConfigurationError
+from korchestrator.interfaces import BaseRouter
+from korchestrator.routing.composite import CompositeRouter
+from korchestrator.routing.explicit import ExplicitRouter, FallbackRouter
+
+__all__ = ["get_router"]
+
+_FALLBACK = "fallback"
+
+# The strategy chain each ROUTING_STRATEGY expands to (composite uses ROUTING_PRIORITY_ORDER). An
+# explicitly pinned model is always honoured first, then the named strategy, then the fallback tail.
+_FIXED_CHAINS: dict[str, tuple[str, ...]] = {
+    "explicit": ("explicit", _FALLBACK),
+    "algorithmic": ("explicit", "algorithmic", _FALLBACK),
+    "semantic": ("explicit", "semantic", _FALLBACK),
+}
+
+
+def get_router(settings: Settings | None = None) -> BaseRouter:
+    """Build the router for ``settings`` — a composite chain ending in the fallback tail.
+
+    The default (``ROUTING_STRATEGY="explicit"``) resolves to explicit → fallback and needs no
+    extra. ``"algorithmic"`` and ``"semantic"`` insert their strategy before the tail; semantic
+    needs the ``[routing]`` extra. ``"composite"`` builds the chain from ``ROUTING_PRIORITY_ORDER``.
+
+    Args:
+        settings: Configuration selecting the strategy and its inputs. Defaults to :class:`Settings`
+            (the zero-config explicit strategy).
+
+    Returns:
+        A :class:`~korchestrator.interfaces.BaseRouter` ready for ``select_model``.
+
+    Raises:
+        ConfigurationError: If a strategy name in the chain is not recognised.
+        MissingExtraError: If a semantic strategy is selected without the ``[routing]`` extra.
+
+    Example:
+        >>> from korchestrator.routing import get_router
+        >>> router = get_router()  # zero-config: explicit → fallback
+        >>> hasattr(router, "select_model")
+        True
+    """
+    settings = settings or Settings()
+    chain = [
+        _build_router(name, settings) for name in _chain_for(settings.routing_strategy, settings)
+    ]
+    return CompositeRouter(chain)
+
+
+def _chain_for(strategy: str, settings: Settings) -> tuple[str, ...]:
+    if strategy == "composite":
+        order = settings.routing_priority_order
+        return order if _FALLBACK in order else (*order, _FALLBACK)
+    return _FIXED_CHAINS[strategy]
+
+
+def _build_router(name: str, settings: Settings) -> BaseRouter:
+    if name == "explicit":
+        return ExplicitRouter(settings.agent_model_map)
+    if name == _FALLBACK:
+        return FallbackRouter()
+    raise ConfigurationError(
+        f"Unknown routing strategy {name!r}. Valid strategies: explicit, algorithmic, semantic, "
+        "fallback. Fix ROUTING_STRATEGY or ROUTING_PRIORITY_ORDER."
+    )
