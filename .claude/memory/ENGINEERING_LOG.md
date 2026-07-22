@@ -10,6 +10,64 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P6.1–P6.3] AUB tool bridge, connector registry, built-in connectors — v0.1.0
+
+**Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
+
+**What.** Stood up the Agent Utility Bridge in `tools/`. `registry.py` — `ConnectorRegistry`
+(register a `Connector`, wrap a bare async function via `register_tool`, resolve by tool name,
+entry-point `.discover()` over `korchestrator.connectors` that skips failing/duplicate plugins).
+`connectors/base.py` — the `Connector` structural protocol (name/description/JSON-Schema/execute), a
+superset of the P1 `AUBConnector`. `bridge.py` — `invoke_tool`, the single path every call takes:
+access gate (mounted tools → `TOOL_ACCESS_DENIED`), rate limit, JSON-Schema argument validation,
+timeout, an optional Shield redaction seam (P7), duration stamping, and structured logging; expected
+failures return `ToolResult(ok=False, error_code=...)`, an unexpected connector raise becomes
+`ToolError(TOOL_EXECUTION_FAILED)`. `_schema.py` — a dependency-free JSON-Schema object-subset
+validator. `_ratelimit.py` — `TokenBucketRateLimiter` (injected time source). `connectors/` —
+`FilesystemConnector` (root-confined, traversal denied) and `MockSearchConnector` (deterministic
+offline fallback). Added the `TOOL_EXECUTION_FAILED` error code. `tools/__init__` re-exports
+`AUBConnector` as the documented import path (spec 07 §6).
+
+**Why.** P6.1–P6.3 — the tool layer agents call. One bridge enforces validation/timeout/rate-limit/
+access/redaction uniformly, so a connector is trivial and a custom tool plugs in with no core edit
+(DoD). Built-in connectors give an offline, testable filesystem + search out of the box.
+
+**Design decisions.** (1) Registration is on a `ConnectorRegistry` instance + `Korch(connectors=)`,
+not a process-global `register_*` (B8) — **ADR 0015**. (2) The bridge, not the connector, owns
+validation/timeout/rate-limit/redaction (spec 07 §6): connectors never validate their own inputs.
+(3) A minimal JSON-Schema validator (object subset) avoids a `jsonschema` dependency in the base
+install; `bool` is correctly rejected as a JSON integer/number. (4) Redaction is an injected
+`Redactor` seam defaulting to none — P7's Shield fills it, so `tools/` needs no dependency on the
+unbuilt `security/` redactor. (5) The filesystem connector resolves paths against its root and denies
+traversal (`is_relative_to`) — the security rule at a trust boundary. (6) Real web search needs an
+HTTP client (`[remote]`); the built-in is a deterministic mock fallback, offline for CI.
+
+**Architecture changes.** `tools/` (L4 integration) populated; imports only interfaces/models/
+constants/types/exceptions/logging (+ stdlib) — inward only. import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/tools/{__init__,registry,bridge,_schema,_ratelimit}.py`,
+`tools/connectors/{__init__,base,filesystem,search}.py` (new); `constants/error_codes.py`
+(`TOOL_EXECUTION_FAILED`); `tests/unit/tools/*` and `tests/unit/constants/test_error_codes.py` (new/
+updated); `docs/adr/0015-*.md`.
+
+**Breaking changes.** None. New error code is additive (frozen codes allow additions). New
+`korchestrator.tools` surface; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (11 files); 30 tools tests +
+6 doctests pass; import-linter 4/4; error-code snapshot updated. Covered: happy path, not-found,
+unmounted-denied, schema reject, timeout, rate limit, connector `ok=False` passthrough, unexpected →
+`ToolError`, redaction, duration stamping, traversal denial, deterministic mock search, entry-point
+discovery skipping a bad plugin.
+
+**Known limitations / future improvements.** Redaction seam is a no-op until P7 Shield. OTel spans are
+structured logs for now (real spans in P8 telemetry). MCP-backed connectors land next (P6.4).
+
+---
+
 ## 2026-07-22 · [P5.5/P5.6] User-function router + resolve_router wiring — v0.1.0 · closes P5
 
 **Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)

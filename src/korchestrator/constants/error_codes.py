@@ -32,6 +32,7 @@ ROUTING_NO_CANDIDATES = "ROUTING_NO_CANDIDATES"
 # --- tools ----------------------------------------------------------------------------------
 TOOL_NOT_FOUND = "TOOL_NOT_FOUND"
 TOOL_ACCESS_DENIED = "TOOL_ACCESS_DENIED"
+TOOL_EXECUTION_FAILED = "TOOL_EXECUTION_FAILED"
 NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
 
 # --- governance & run lifecycle -------------------------------------------------------------
@@ -63,5 +64,6 @@ __all__ = [
     "NOT_IMPLEMENTED",
     "ROUTING_NO_CANDIDATES",
     "TOOL_ACCESS_DENIED",
+    "TOOL_EXECUTION_FAILED",
     "TOOL_NOT_FOUND",
 ]

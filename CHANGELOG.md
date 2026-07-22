@@ -15,6 +15,13 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Agent Utility Bridge (Phase 6): `korchestrator.tools` with `ConnectorRegistry` (register a
+  `Connector`, wrap a function via `register_tool`, entry-point `discover()`), the `Connector`
+  contract, and `invoke_tool` — the single path enforcing the mount access gate, rate limiting,
+  JSON-Schema argument validation, timeout, an optional redaction seam, and duration/telemetry.
+  Built-in `FilesystemConnector` (root-confined, traversal-denied) and `MockSearchConnector`
+  (deterministic offline). New `TOOL_EXECUTION_FAILED` error code. Registration is via the registry
+  and `Korch(connectors=…)`, not a process global (ADR 0015).
 - Model routing (Phase 5), wired into execution: `resolve_router(settings, router=…)` and a
   `UserFunctionRouter` that adapts a `(RoutingContext) -> RoutingResult` callable (sync or async).
   A custom `BaseRouter` plugs in by injection — `Korch(router=…)` / `Swarm(router=…)` — with no
