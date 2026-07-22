@@ -90,6 +90,11 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   (spec 08 §5); enterprise deployments supply KIAM/KACP and OpenSandbox. The sandbox tool registry
   is empty until the Agent Utility Bridge (P6) populates it.
 
+- The deterministic **taxonomy** (`korchestrator.taxonomy`): `TaxonomyClassifier.classify(objective)`
+  maps an objective to a typed `TaskSemantics` (intent, difficulty, implied capability, token
+  estimates) using keyword/length heuristics — no model call, no extra, fully reproducible. Plus the
+  built-in agent-descriptor catalogue (`default_descriptors()`, `descriptors_for_intent(intent)`) that
+  the Architect and router use to match intents to agents.
 - `korchestrator.agents.ArchitectAgent` — the Architect meta-agent (requires `[dspy]`). Given an
   objective (and its classified intent/difficulty) it reasons a small team of agent roles and returns
   a validated `ExecutionPlan`. On any reasoning failure — a provider error, or a reply that yields no

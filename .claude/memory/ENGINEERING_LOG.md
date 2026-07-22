@@ -10,6 +10,58 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.8] Deterministic taxonomy — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** `taxonomy/classifier.py`: `TaxonomyClassifier.classify(objective) -> TaskSemantics` — a
+stateless, dependency-free classifier that maps an objective to intent (keyword vocabulary in priority
+order, else `general`), difficulty (length + complex-signal heuristic → trivial/moderate/complex), the
+implied required capability, and rough token estimates. `taxonomy/descriptors.py`: the built-in
+`AgentDescriptor` catalogue with `default_descriptors()` and `descriptors_for_intent(intent)` (never
+empty — falls back to the generalist). Exported from `korchestrator.taxonomy`.
+
+**Why.** The Architect (P4.7) and router (P5) need intent/difficulty and a map from intents to agent
+kinds. Spec 05 §31 gives `taxonomy/` **no** extra, so this is heuristic and offline — deterministic,
+which the whole determinism story depends on (a model-based classifier would be nondeterministic and
+need a gateway/extra; semantic classification is a P5 routing strategy behind `[routing]`).
+
+**Design decisions.** (1) Pure heuristics, no model call — reproducible and instant. (2) Intent is
+first-keyword-match over an ordered vocabulary so the mapping is predictable; unknown → `general`.
+(3) Difficulty: `complex` on multi-part/cross-cutting signals or >40 words; `trivial` only for very
+short objectives (≤4 words) so ordinary tasks stay `moderate`; else `moderate`. (4) The classifier is
+a small class ("the taxonomy classifier", spec 11 §public-surface); the descriptor catalogue is plain
+data with two accessor functions. (5) `AgentDescriptor` is flagged `0.x`-unstable (spec 05 §4), so the
+catalogue can evolve via the changelog.
+
+**Architecture changes.** `taxonomy/` populated, importing only `models` (+ stdlib) — no extra, no
+sibling imports. Import-linter 4/4 kept. `korchestrator.taxonomy.__all__` gains three names; top-level
+`__all__` unchanged.
+
+**Files/modules affected.** `src/korchestrator/taxonomy/classifier.py` (new),
+`src/korchestrator/taxonomy/descriptors.py` (new), `taxonomy/__init__.py`,
+`tests/unit/taxonomy/test_taxonomy.py` (new), `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; top-level `__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 13 unit tests (intent across the vocabulary incl. `general`; determinism + typed
+`TaskSemantics` + capabilities/token estimate; difficulty trivial/moderate/complex; descriptor
+catalogue non-empty with unique ids and the generalist; `descriptors_for_intent` match + generalist
+fallback). `taxonomy/` **100%** covered; `ruff`/`format`/`mypy --strict` clean (65 files);
+import-linter 4/4 kept; isolation gate `OK`; doctest passes.
+
+**Known limitations / future improvements.** (1) Keyword/length heuristics are intentionally simple;
+a semantic (embedding) classifier is a P5 routing strategy behind `[routing]`. (2) `required_capabilities`
+carries a single implied capability; richer multi-capability inference can follow. Next: P4.9 façade
+wiring — `Korch.run`/`Swarm.run` against the kernel with the WorkerAgent as the default reasoning
+agent (the taxonomy + architect feed automatic planning), and the first end-to-end run.
+
+---
+
 ## 2026-07-22 · [P4.7] Architect meta-agent + shared reasoning bridge — v0.1.0
 
 **Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
