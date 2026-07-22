@@ -90,6 +90,14 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   (spec 08 §5); enterprise deployments supply KIAM/KACP and OpenSandbox. The sandbox tool registry
   is empty until the Agent Utility Bridge (P6) populates it.
 
+- `korchestrator.agents.WorkerAgent` — the default reasoning agent (requires the `[dspy]` extra;
+  ADR 0013). It compiles its `Signature` into a `dspy.Predict` at call time and runs it under the
+  **injected** `IModelGateway`: a `dspy.LM` subclass routes DSPy's model calls to
+  `IModelGateway.complete` (so heterogeneous per-agent models and the offline MockLM both work), and a
+  lenient chat adapter falls back to the first output field when a reply is not field-marked (so a
+  deterministic MockLM echo still parses). The blocking DSPy call runs in a worker thread
+  (`asyncio.to_thread`); a base install raises an actionable `MissingExtraError` when reasoning runs.
+  `Agent.bind` now also accepts an optional `gateway` the composition root injects.
 - Lazy DSPy **signatures** (`korchestrator.agents`): a `Signature` base with `InputField` /
   `OutputField` markers that declare a reasoning contract **without importing `dspy`**, plus the
   built-in `WorkerSignature` and `ArchitectSignature`. `Signature.to_dspy()` materialises a real

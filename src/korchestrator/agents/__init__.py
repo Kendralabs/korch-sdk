@@ -13,6 +13,7 @@ from korchestrator.agents.signatures import (
     Signature,
     WorkerSignature,
 )
+from korchestrator.agents.worker import WorkerAgent
 
 __all__ = [
     "Agent",
@@ -20,5 +21,6 @@ __all__ = [
     "InputField",
     "OutputField",
     "Signature",
+    "WorkerAgent",
     "WorkerSignature",
 ]
