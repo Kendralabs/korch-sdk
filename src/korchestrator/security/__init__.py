@@ -4,4 +4,6 @@ Allowed imports (beyond stdlib + pydantic): config, exceptions, constants. Redac
 secrets, and sanitises output; one consolidated Shield implementation.
 """
 
-__all__: list[str] = []
+from korchestrator.security.redactor import RedactionResult, Shield
+
+__all__ = ["RedactionResult", "Shield"]
