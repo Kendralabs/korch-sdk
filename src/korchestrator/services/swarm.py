@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing_extensions import Self
 
+from korchestrator.agents import Agent
 from korchestrator.config import Settings
 from korchestrator.interfaces import (
     BaseRouter,
@@ -16,7 +17,6 @@ from korchestrator.interfaces import (
     IModelGateway,
 )
 from korchestrator.models.result import RunResult
-from korchestrator.services.agent import Agent
 
 __all__ = ["Swarm"]
 

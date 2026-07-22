@@ -40,9 +40,7 @@ def select_active(node_ids: Sequence[str], state: AgentState) -> tuple[str, ...]
     if state.superstep == 0:
         return tuple(node_id for node_id in node_ids if node_id not in halted)
     return tuple(
-        node_id
-        for node_id in node_ids
-        if node_id not in halted and state.inbox.get(node_id)
+        node_id for node_id in node_ids if node_id not in halted and state.inbox.get(node_id)
     )
 
 
