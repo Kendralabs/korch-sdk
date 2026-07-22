@@ -10,6 +10,68 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.7] Architect meta-agent + shared reasoning bridge — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** `agents/architect.py`: `ArchitectAgent`, the meta-agent that turns an objective (+
+intent/difficulty) into a validated `ExecutionPlan`. `plan()` validates the objective, reasons on a
+worker thread (`ArchitectSignature` → `roles`/`rationale`), parses the roles into unique, slug-id'd
+`AgentConfig`s, and builds the plan; on any reasoning failure — including a MockLM echo that yields no
+valid role — it returns a deterministic single generalist-agent **mock plan**, while `MissingExtraError`
+propagates past the fallback (ADR 0013). Also extracted the DSPy↔gateway bridge (the `dspy.LM`
+subclass, lenient adapter, message conversion, and the `predict_under_gateway` call) from
+`worker.py` into a shared internal `agents/_reasoning.py`, now used by both the worker and the
+architect.
+
+**Why.** The architect is how a swarm gets its topology from a bare objective (spec 05 §36), and it
+must never leave the caller without a runnable plan — hence the mock-plan fallback. The bridge
+extraction removes the duplication the architect would otherwise create (one canonical
+DSPy-integration implementation, per CLAUDE.md §engineering).
+
+**Design decisions.** (1) `ArchitectAgent` is a standalone meta-agent, **not** an `Agent` subclass —
+it emits a plan, not a superstep `StateUpdate`. (2) The mock-plan fallback fires on reasoning
+failures (provider error, or zero valid roles parsed), but **not** on `MissingExtraError` — the
+`try/except` re-raises it, so a base install still fails loudly (ADR 0013). (3) Under MockLM the
+lenient echo usually slugs into some valid-but-nonsense roles, so the fallback is exercised by a
+failing gateway / empty roles rather than by MockLM; the pure parsing (`_slug`, `_agents_from_roles`
+— dedup, bound to 8, skip invalid) is unit-tested directly without dspy. (4) `predict_under_gateway`
+takes the already-loaded `dspy` module as a parameter so `load_dspy()` stays in each caller **outside**
+its reasoning-failure `try` — preserving the `MissingExtraError` boundary. (5) Difficulty is
+normalised to the `ExecutionPlan` literal; unknown values become `"moderate"`.
+
+**Architecture changes.** New `agents/_reasoning.py` (internal); `worker.py` slimmed to import it.
+`dspy` stays lazy — `import korchestrator.agents` verified dspy-free. Import-linter 4/4 kept.
+`korchestrator.agents.__all__` gains `ArchitectAgent`; top-level `__all__` unchanged.
+
+**Files/modules affected.** `src/korchestrator/agents/architect.py` (new),
+`src/korchestrator/agents/_reasoning.py` (new), `agents/worker.py` (refactored to share the bridge),
+`agents/__init__.py`, `tests/unit/agents/test_architect.py` (new), `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; worker behaviour unchanged — its tests still pass; top-level
+`__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 9 architect tests (pure `_slug`/`_agents_from_roles` parsing — normalise, dedup,
+bound, reject; short-objective → `ValidationError`; missing gateway → `ConfigurationError`; no dspy →
+`MissingExtraError` without falling back; structured reply → multi-agent plan; failing gateway → the
+single-agent mock plan; deterministic under MockLM). Full agents suite 35 tests pass; `agents/` 97%
+covered (architect 95%, `_reasoning` 97%, worker 93%, signatures 99%); the worker refactor regresses
+nothing. `ruff`/`format`/`mypy --strict` clean (63 files); import-linter 4/4 kept; isolation gate
+`OK`; agents import verified dspy-free.
+
+**Known limitations / future improvements.** (1) Intent/difficulty are inputs to `plan()`; the
+taxonomy that computes them is P4.8. (2) Plan `edges`/`tasks` are not yet inferred (single-tier role
+list); dependency decomposition can enrich the `ArchitectSignature` later. (3) Under MockLM the
+architect can emit nonsense-but-valid roles rather than the mock plan — fine for determinism, and real
+models/scripted replies drive real decompositions. Next: P4.8 taxonomy (dspy-free intent/difficulty +
+agent descriptors), then P4.9 façade wiring — the first end-to-end run.
+
+---
+
 ## 2026-07-22 · [P4.6] DSPy WorkerAgent under MockLM — v0.1.0
 
 **Type:** feature · **Phase:** P4 · **Author:** Claude (agent) · **ADR:** 0013
