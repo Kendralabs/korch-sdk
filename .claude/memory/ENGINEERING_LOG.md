@@ -10,6 +10,66 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P3.1/P3.2] In-process local runtime + runtime selection — v0.1.0
+
+**Type:** feature · **Phase:** P3 · **Author:** Claude (agent)
+
+**What.** Amended `IDurableRuntime` to the spec 06 §6 shape (`now`/`start`/`wait`/`signal`) per
+[ADR 0010](../../docs/adr/0010-idurableruntime-shape-now-start-wait-signal.md), and implemented
+`runtime/local_runtime.py` (`LocalRuntime`) — the in-process `IDurableRuntime` that drives the
+`PregelRunner` loop to completion with zero infrastructure (the `KORCH_RUNTIME=local` default) — plus
+`resolve_runtime(settings, graph, *, clock, channels)` in `runtime/__init__.py`, the composition-root
+factory that selects the runtime from config. Updated the interface conformance fake.
+
+**Why.** The local runtime is the default for dev, CI, and embedding, and the first end-to-end run
+(P4.9) uses it. Runtime selection by config alone (spec 06 §8) is what makes local ↔ Temporal
+swappable without touching agent/graph code.
+
+**Design decisions.** **ADR 0010** — the P1.4 `IDurableRuntime.run(state)` was the minimal shape; P3
+needs the authoritative spec 06 §6 four-method contract (`start`+`wait` for durable start-then-rejoin,
+`signal` for HITL, `now` for the clock). Spec 06 §6 writes `start(graph, state)`, which would import
+`core.AgentGraph` into `interfaces/` and break the import-linter `layers` contract — so the graph is
+injected at construction and the protocol depends on `models` only. This is a breaking change to a
+documented protocol, but it lands during 0.x before any release and before any implementation, so no
+consumer is affected (CHANGELOG `### Changed`). The **local runtime is synchronous**: `start` runs to
+completion and stores the result; `wait` returns it; crash recovery is explicitly out of scope (the
+process is the durability boundary, spec 06 §6.1). `signal` raises `NotImplementedError` until HITL
+lands in P3.5. The **clock is a required injected param** (no wall-clock default) so the runtime stays
+deterministic and testable; the composition root supplies a real clock in P4. `resolve_runtime`'s
+temporal branch raises `MissingExtraError` for now; **P3.3 replaces it with a lazy import + construction
+of `TemporalRuntime`** (temporal_runtime.py does not exist yet, so importing it here would break
+mypy). The unreachable `ConfigurationError` after the exhaustive `Literal` was removed (mypy
+`warn_unreachable`).
+
+**Architecture changes.** `runtime/` gains its first adapter; it imports `core`, `interfaces`,
+`models`, `config`, `exceptions` (all legal for the adapter layer). `import korchestrator.runtime`
+pulls in **no** `temporalio` (verified). Import contracts 3 kept, 0 broken.
+
+**Files/modules affected.** `docs/adr/0010-*.md`, `src/korchestrator/interfaces/runtime.py`,
+`src/korchestrator/runtime/{__init__,local_runtime}.py`,
+`tests/unit/runtime/test_local_runtime.py`, `tests/unit/interfaces/test_protocols.py`, `CHANGELOG.md`.
+
+**Breaking changes.** `IDurableRuntime` reshaped (see ADR 0010) — 0.x pre-release, no consumer
+affected; migration is trivial (compose `start`+`wait` where `run` was used).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** Implementers of `IDurableRuntime`: replace `run(state)` with `now`/`start`/
+`wait`/`signal`; the façade composes `start`+`wait`.
+
+**Testing status.** 7 local-runtime + 4 interface conformance tests pass (run-to-completion, `now`,
+unknown-run rejection, `signal` NotImplemented, local selection, temporal-without-extra
+`MissingExtraError`, and local-runtime == direct-runner equivalence); runtime doctests pass; `ruff`,
+`ruff format`, `mypy --strict` clean on 52 source files; import contracts 3 kept, 0 broken; base
+install pulls in no `temporalio`.
+
+**Known limitations / future improvements.** The Temporal adapter (P3.3-P3.6) — `PregelMaster`
+workflow, `SuperstepActivity`, retry/jitter, continue-as-new, HITL signals, and the replay/equivalence/
+crash tests — requires `temporalio` and a Temporal test environment that cannot be installed or run
+in this Windows session; that work is CI-gated (`@pytest.mark.temporal`). See the handoff note.
+
+---
+
 ## 2026-07-21 · [P2.7] Lock determinism and halting — v0.1.0
 
 **Type:** test · **Phase:** P2 · **Author:** Claude (agent)
