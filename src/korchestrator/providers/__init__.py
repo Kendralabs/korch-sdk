@@ -5,4 +5,6 @@ provider clients optional (lazy). The default ARI implementations: local identit
 OpenAI-compatible gateway, MockLM.
 """
 
-__all__: list[str] = []
+from korchestrator.providers.mock_lm import MockCall, MockLM
+
+__all__ = ["MockCall", "MockLM"]

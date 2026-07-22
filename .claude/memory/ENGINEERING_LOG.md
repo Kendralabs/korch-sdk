@@ -10,6 +10,54 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.1] Deterministic MockLM gateway — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** Implemented `providers/mock_lm.py`: `MockLM`, a deterministic offline `IModelGateway` (the
+default gateway), plus the `MockCall` record for its call log. `complete()` returns a deterministic
+assistant `Message` — a scripted response for the model if registered, else a configured default,
+else an echo of the last message; it records every call. `available_models()` returns a single mock
+`ModelCard`. Re-exported from `korchestrator.providers`. Tests lock structural `IModelGateway`
+conformance, determinism, scripted/default/echo responses, the call log, and `available_models`.
+
+**Why.** MockLM is the default gateway and the load-bearing enabler of offline, deterministic testing
+of the whole agent path (spec 03 §4, spec 09 §3-§4). It is the zero-config default (spec 08 §1.1) and
+what the Tier-1 one-liner uses on a base install.
+
+**Design decisions.** Fully deterministic and **no randomness** — the `seed` parameter is accepted
+for parity with real gateways but never introduces randomness (workflow-path callers must stay
+replay-safe). No network, no optional dependency: `providers/mock_lm.py` imports only `models` +
+stdlib, so it runs on the pydantic-only base install. Completions carry a fixed placeholder
+`valid_time`; the agent layer stamps the real time from the injected clock when it builds its
+`StateUpdate`. The call log is exposed as a read-only `calls` tuple so tests assert on behaviour, not
+on internal state.
+
+**Architecture changes.** `providers/` gains its first adapter, importing `models` only (legal;
+`interfaces` conformance is structural via the `IModelGateway` Protocol). No optional dependency.
+Import contracts 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/providers/mock_lm.py`, `providers/__init__.py`,
+`tests/unit/providers/test_mock_lm.py`.
+
+**Breaking changes.** None (new surface).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 7 unit tests + 1 doctest pass; `ruff`, `ruff format`, `mypy --strict` clean on 54
+source files. Structural `IModelGateway` conformance and determinism confirmed.
+
+**Known limitations / future improvements.** The local ARI providers (identity/sandbox, P4.2), the
+real OpenAI-compatible gateway + `get_lm` (P4.3), and the DSPy cognitive layer (agents, taxonomy,
+P4.4-P4.8) and the Tier 1+2 façade wiring (P4.9) are next. An open design question to resolve against
+the specs before P4.5/P4.6: how the DSPy worker/architect coexist with MockLM so the Tier-1 one-liner
+runs on a base install (no `[dspy]`) while the cognitive layer raises `MissingExtraError` when its
+real reasoning is used — likely a MockLM/simple path that does not invoke DSPy.
+
+---
+
 ## 2026-07-22 · [P3.6] Lock runtime equivalence, replay, crash recovery, roll-over — v0.1.0
 
 **Type:** test · **Phase:** P3 · **Author:** Claude (agent)

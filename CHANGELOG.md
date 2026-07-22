@@ -67,6 +67,10 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   parks it (status `governance_paused`, no compute) until `resume` or `cancel`, bounded by a 24-hour
   deadline after which it is `timed_out`. Delivered via `IDurableRuntime.signal`. (`edit_resume`
   arrives with the HITL façade in a later phase; the local runtime is synchronous and has no HITL.)
+- The deterministic offline `MockLM` gateway (`korchestrator.providers.MockLM`) — the default
+  `IModelGateway`. The same messages always yield the same completion; it supports scripted
+  per-model responses and records a call log. No network, no randomness, no credentials — it is what
+  makes the full agent path testable in CI, and it is the zero-config default.
 
 ### Changed
 
