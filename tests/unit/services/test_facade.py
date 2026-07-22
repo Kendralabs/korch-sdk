@@ -1,7 +1,7 @@
-"""Contract tests for the P1 façade signatures (P1.5).
+"""Contract tests for the façade builder surface (P1.5).
 
-The façade surface is frozen here: builders collect topology; execution raises
-``NotImplementedError`` until P4.9. These tests lock the current, deliberate behaviour.
+These lock the declarative surface — how ``Agent``/``Swarm``/``Korch`` build and validate topology.
+Execution (``run``) is exercised end-to-end in ``test_run.py`` (P4.9).
 """
 
 from __future__ import annotations
@@ -54,20 +54,9 @@ def test_swarm_add_returns_self_for_chaining() -> None:
     assert swarm.add(Agent(id="lead", role="lead")) is swarm
 
 
-def test_swarm_run_is_not_implemented_until_p4_9() -> None:
-    swarm = Swarm(objective="Summarize the design").add(Agent(id="lead", role="lead"))
-    with pytest.raises(NotImplementedError):
-        swarm.run()
-
-
 def test_korch_constructs_with_defaults() -> None:
     # No arguments, no environment — the zero-config path constructs cleanly.
     assert isinstance(Korch(), Korch)
-
-
-def test_korch_run_is_not_implemented_until_p4_9() -> None:
-    with pytest.raises(NotImplementedError):
-        Korch().run("Summarize durable agent execution")
 
 
 def test_korch_accepts_injected_collaborators() -> None:

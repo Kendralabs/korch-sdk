@@ -104,10 +104,13 @@ class WorkerAgent(Agent):
         """
         answer, is_final = await asyncio.to_thread(self._reason, state)
         now = self.clock.now()
+        # A worker's contribution is its answer, so it accumulates into the run's final_answer; a
+        # terminal ``is_final`` additionally halts the node. (Intermediate ReAct thoughts — P6 — will
+        # be emitted separately as ``kind="thought"``.)
         message = Message(
             id=f"{state.run_id}:{state.superstep}:{self.id}:0",
             role=MessageRole.ASSISTANT,
-            kind="answer" if is_final else "thought",
+            kind="answer",
             sender=self.id,
             content=answer,
             superstep=state.superstep,

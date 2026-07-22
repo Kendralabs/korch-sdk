@@ -10,6 +10,77 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.9] Façade wiring — the first end-to-end run — v0.1.0
+
+**Type:** feature · **Phase:** P4 (critical-path milestone) · **Author:** Claude (agent)
+
+**What.** Wired `Korch.run` and `Swarm.run` to the kernel via a new composition-root helper
+`services/_composition.py`. `Korch.run(objective)`: validate → `TaxonomyClassifier.classify` →
+`ArchitectAgent.plan` → build an `AgentGraph` of default `WorkerAgent`s from the plan → `run_graph`
+(mint run id, `resolve_runtime`, `start`/`wait`) → `RunResult`. `Swarm.run()`: build the graph from
+the declared agents/edges (a declarative agent → default `WorkerAgent`; a custom/overridden agent →
+used directly) → `run_graph`. Both wrap the async flow in a single `asyncio.run`. Removed the P1
+`NotImplementedError` stubs and un-xfail'd the Tier-1/Tier-2 examples in `test_public_surface.py`.
+Also: the `WorkerAgent` now emits its contribution as a `kind="answer"` message (so it accumulates
+into `final_answer`), keeping `halt=is_final`.
+
+**Why.** This is the payoff milestone — the first time `Korch().run(...)` and `Swarm().run()` actually
+execute (spec 04 Tiers 1-2, spec 12 "first end-to-end run"). Everything P4.1-P4.8 built (providers,
+agents, signatures, worker, architect, taxonomy, kernel, runtime) meets here.
+
+**Design decisions.** (1) `services/_composition.py` is the one wiring site (spec 03 §5): it owns the
+wall-clock and run-id minting (`uuid4`) — legal in the composition root, injected inward so the kernel
+stays deterministic and reads no wall clock. (2) A declarative agent is detected by
+`type(agent).think is Agent.think` and run by the default `WorkerAgent`; an agent that overrides
+`think` (custom, or a `WorkerAgent`) is bound and used directly (ADR 0012/0013) — so a **custom agent
+runs the whole path with no `[dspy]`** (spec 11 §137), while reasoning agents raise `MissingExtraError`
+without the extra. (3) Worker messages are `kind="answer"` because a worker's output *is* its
+contribution to `final_answer`; a lone worker (no edges) terminates in one superstep via the
+no-active-node condition, and a swarm terminates naturally as inboxes drain (verified: Tier-2 runs 2
+supersteps with all three agents contributing). (4) `Korch.run` uses the Architect for automatic
+planning; under MockLM the plan is deterministic (echo → parsed roles or the single-agent mock plan),
+so the run is reproducible. (5) The façade is sync (`def run`) and wraps one `asyncio.run`; the DSPy
+LM's own `asyncio.run` runs inside a `to_thread` worker thread, so the loops never nest in one thread.
+
+**Architecture changes.** New `services/_composition.py`. `services/` now legitimately imports the
+feature/cognitive modules it composes (agents, taxonomy, providers, runtime) — allowed only for the
+façade (spec 05 §56). Refined the ADR-0011 httpx contract to `allow_indirect_imports = True`: the
+composition root may import `providers` (which owns the lazily-imported gateway) without being charged
+for `httpx` transitively; the base install stays httpx-free at runtime because gateway_openai imports
+`httpx` inside its methods. Import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/services/_composition.py` (new),
+`services/korch.py`, `services/swarm.py` (run implemented), `agents/worker.py` (answer kind),
+`tests/unit/services/test_run.py` (new), `tests/unit/services/test_facade.py` (dropped the
+`NotImplementedError` stubs), `tests/unit/test_public_surface.py` (un-xfail'd Tier 1/2),
+`tests/unit/agents/test_worker.py` (kind assertion), `.importlinter`, `CHANGELOG.md`.
+
+**Breaking changes.** None to the public surface (`__all__` unchanged; `Korch.run`/`Swarm.run`
+signatures unchanged). Behavioural: they now execute instead of raising `NotImplementedError` — the
+intended completion of the P1 stubs.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** New `test_run.py` (6): short objective → `ValidationError` (Korch + Swarm); Korch
+reasoning without dspy → `MissingExtraError`; **a custom-agent swarm runs end-to-end with no `[dspy]`**
+and is deterministic (`"6 words"`); Korch/Swarm reasoning under MockLM complete with a `final_answer`;
+Swarm honours the declared topology (all three reviewers contribute, lead after the others). Tier-1/
+Tier-2 public-API examples now pass (xfail removed). `ruff`/`format`/`mypy --strict` clean (66 files);
+import-linter 4/4 kept; isolation gate `OK`.
+
+**Known limitations / future improvements.** (1) Under MockLM the answers are echoes of the DSPy
+prompt (a deterministic mock, not real reasoning); real gateways produce real answers. (2) `Korch.run`
+always plans via the Architect — under MockLM that can yield several nonsense-but-valid agents; a
+future flag could bypass planning for a trivial objective. (3) Persistence/router/HITL collaborators
+are accepted by the façade but not yet consulted (P5/P7). (4) Byte-identical determinism (spec 06
+§127) is proven at the kernel/runtime level with a fixed clock; `Korch.run` uses a wall-clock and
+`uuid4` run id, so its timestamps/run-id vary by design. **Phase 4 is functionally complete**: the
+first end-to-end run works across both tiers.
+
+---
+
 ## 2026-07-22 · [P4.8] Deterministic taxonomy — v0.1.0
 
 **Type:** feature · **Phase:** P4 · **Author:** Claude (agent)

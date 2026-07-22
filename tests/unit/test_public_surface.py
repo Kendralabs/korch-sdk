@@ -36,20 +36,16 @@ def test_timeout_error_is_not_top_level_but_is_reachable() -> None:
     assert issubclass(TimeoutError, korchestrator.KorchError)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="Korch.run is wired to the kernel in P4.9 — owner: sdk-team — P4.9"
-)
 def test_tier1_one_liner() -> None:
+    pytest.importorskip("dspy")  # reasoning requires the [dspy] extra (ADR 0013)
     from korchestrator import Korch
 
     result = Korch().run("Research durable agent execution and summarize the top 3")
     assert result.final_answer
 
 
-@pytest.mark.xfail(
-    strict=True, reason="Swarm.run is wired to the kernel in P4.9 — owner: sdk-team — P4.9"
-)
 def test_tier2_typed_swarm() -> None:
+    pytest.importorskip("dspy")  # reasoning requires the [dspy] extra (ADR 0013)
     from korchestrator import Agent, Swarm
 
     swarm = (
