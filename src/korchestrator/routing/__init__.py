@@ -10,16 +10,21 @@ models (in ``korchestrator.models``). The concrete strategies are exported for c
 """
 
 from korchestrator.interfaces import BaseRouter
+from korchestrator.routing.algorithmic import AlgorithmicRouter
 from korchestrator.routing.composite import CompositeRouter
 from korchestrator.routing.explicit import ExplicitRouter, FallbackRouter
 from korchestrator.routing.factory import get_router
 from korchestrator.routing.model_cards import builtin_model_cards, load_model_cards
+from korchestrator.routing.semantic import Embedder, SemanticRouter
 
 __all__ = [
+    "AlgorithmicRouter",
     "BaseRouter",
     "CompositeRouter",
+    "Embedder",
     "ExplicitRouter",
     "FallbackRouter",
+    "SemanticRouter",
     "builtin_model_cards",
     "get_router",
     "load_model_cards",

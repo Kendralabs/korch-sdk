@@ -12,8 +12,10 @@ from __future__ import annotations
 from korchestrator.config import Settings
 from korchestrator.exceptions import ConfigurationError
 from korchestrator.interfaces import BaseRouter
+from korchestrator.routing.algorithmic import AlgorithmicRouter
 from korchestrator.routing.composite import CompositeRouter
 from korchestrator.routing.explicit import ExplicitRouter, FallbackRouter
+from korchestrator.routing.semantic import Embedder, SemanticRouter, make_embedder
 
 __all__ = ["get_router"]
 
@@ -28,7 +30,7 @@ _FIXED_CHAINS: dict[str, tuple[str, ...]] = {
 }
 
 
-def get_router(settings: Settings | None = None) -> BaseRouter:
+def get_router(settings: Settings | None = None, *, embedder: Embedder | None = None) -> BaseRouter:
     """Build the router for ``settings`` — a composite chain ending in the fallback tail.
 
     The default (``ROUTING_STRATEGY="explicit"``) resolves to explicit → fallback and needs no
@@ -38,6 +40,9 @@ def get_router(settings: Settings | None = None) -> BaseRouter:
     Args:
         settings: Configuration selecting the strategy and its inputs. Defaults to :class:`Settings`
             (the zero-config explicit strategy).
+        embedder: An embedding backend for the semantic strategy. When omitted, one is built from
+            ``settings`` (requiring the ``[routing]`` extra); inject a fake to test semantic routing
+            offline.
 
     Returns:
         A :class:`~korchestrator.interfaces.BaseRouter` ready for ``select_model``.
@@ -54,7 +59,8 @@ def get_router(settings: Settings | None = None) -> BaseRouter:
     """
     settings = settings or Settings()
     chain = [
-        _build_router(name, settings) for name in _chain_for(settings.routing_strategy, settings)
+        _build_router(name, settings, embedder)
+        for name in _chain_for(settings.routing_strategy, settings)
     ]
     return CompositeRouter(chain)
 
@@ -66,9 +72,16 @@ def _chain_for(strategy: str, settings: Settings) -> tuple[str, ...]:
     return _FIXED_CHAINS[strategy]
 
 
-def _build_router(name: str, settings: Settings) -> BaseRouter:
+def _build_router(name: str, settings: Settings, embedder: Embedder | None) -> BaseRouter:
     if name == "explicit":
         return ExplicitRouter(settings.agent_model_map)
+    if name == "algorithmic":
+        return AlgorithmicRouter(settings.routing_weights)
+    if name == "semantic":
+        return SemanticRouter(
+            embedder or make_embedder(settings),
+            ttl_seconds=settings.modelcard_cache_ttl_seconds,
+        )
     if name == _FALLBACK:
         return FallbackRouter()
     raise ConfigurationError(
