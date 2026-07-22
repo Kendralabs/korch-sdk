@@ -90,6 +90,12 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   (spec 08 §5); enterprise deployments supply KIAM/KACP and OpenSandbox. The sandbox tool registry
   is empty until the Agent Utility Bridge (P6) populates it.
 
+- `korchestrator.agents.ArchitectAgent` — the Architect meta-agent (requires `[dspy]`). Given an
+  objective (and its classified intent/difficulty) it reasons a small team of agent roles and returns
+  a validated `ExecutionPlan`. On any reasoning failure — a provider error, or a reply that yields no
+  valid agent role (as a MockLM echo does) — it returns a deterministic single-agent **mock plan**, so
+  a swarm always gets a runnable plan; `MissingExtraError` still propagates (it does not trigger the
+  fallback). The DSPy↔gateway bridge is now shared by the worker and architect.
 - `korchestrator.agents.WorkerAgent` — the default reasoning agent (requires the `[dspy]` extra;
   ADR 0013). It compiles its `Signature` into a `dspy.Predict` at call time and runs it under the
   **injected** `IModelGateway`: a `dspy.LM` subclass routes DSPy's model calls to
