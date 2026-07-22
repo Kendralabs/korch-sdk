@@ -53,5 +53,18 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   an injected clock. Runs on a `pydantic`-only base install.
 - `AgentState.halted_agents` — a new optional field (default empty) recording which nodes have
   individually halted, so a halted node is never reactivated. Additive and backward-compatible.
+- The in-process local runtime, `korchestrator.runtime.LocalRuntime` — an `IDurableRuntime` that
+  runs a graph to completion with zero infrastructure (the `KORCH_RUNTIME=local` default) — and
+  `resolve_runtime(settings, graph, *, clock, ...)`, which selects the runtime from config.
+  Selecting `temporal` without the `[temporal]` extra raises an actionable `MissingExtraError`.
+
+### Changed
+
+- **Breaking (0.x).** `IDurableRuntime` is reshaped from a single `run(state)` method to
+  `now()` / `start(state)` / `wait(run_id)` / `signal(run_id, name, payload)` (spec 06 §6), so it can
+  express durable start-then-rejoin and carry HITL control signals. The graph is injected into the
+  concrete runtime at construction rather than passed to `start()`, keeping `interfaces/` dependent
+  on `models/` only. This lands before any release and before any implementation existed, so no
+  consumer is affected. See [ADR 0010](docs/adr/0010-idurableruntime-shape-now-start-wait-signal.md).
 
 [0.1.0]: https://github.com/kendralabs/korch-sdk/releases/tag/v0.1.0
