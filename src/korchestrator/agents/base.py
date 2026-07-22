@@ -19,6 +19,7 @@ from typing_extensions import Self
 
 from korchestrator.core.graph import Node
 from korchestrator.exceptions import ConfigurationError, ValidationError
+from korchestrator.interfaces import IModelGateway
 from korchestrator.models.agent import AgentConfig, AgentPersona
 from korchestrator.models.state import AgentState, StateUpdate
 
@@ -116,6 +117,7 @@ class Agent:
                 code="KORCH_VALIDATION_FAILED",
             ) from exc
         self._clock: _BoundClock | None = None
+        self._gateway: IModelGateway | None = None
 
     @property
     def id(self) -> str:
@@ -147,13 +149,17 @@ class Agent:
             )
         return self._clock
 
-    def bind(self, *, clock: Clock) -> Self:
-        """Inject the replay-safe ``clock`` and return ``self`` for chaining.
+    def bind(self, *, clock: Clock, gateway: IModelGateway | None = None) -> Self:
+        """Inject the replay-safe ``clock`` (and optionally the model ``gateway``); return ``self``.
 
         Called by the composition root before a run. The clock is the same injected
-        ``Callable[[], datetime]`` the kernel uses, so an agent's timestamps stay replay-safe.
+        ``Callable[[], datetime]`` the kernel uses, so an agent's timestamps stay replay-safe. The
+        gateway is used by reasoning agents (e.g. :class:`~korchestrator.agents.WorkerAgent`);
+        agents that do not reason ignore it.
         """
         self._clock = _BoundClock(clock)
+        if gateway is not None:
+            self._gateway = gateway
         return self
 
     def to_node(self) -> Node:

@@ -10,6 +10,72 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.6] DSPy WorkerAgent under MockLM — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent) · **ADR:** 0013
+
+**What.** `agents/worker.py`: `WorkerAgent(Agent)`, the default reasoning agent. `think()` runs the
+blocking DSPy call in a worker thread (`asyncio.to_thread`) and folds the reply into a `StateUpdate`;
+`_reason()` compiles the agent's `Signature` to `dspy.Predict` and runs it under a per-call
+`dspy.context`. Two lazily-built adapters bridge DSPy to the SDK: a `dspy.LM` subclass that routes
+DSPy's model calls to the injected `IModelGateway.complete` (not litellm), and a lenient
+`ChatAdapter` that, when a reply is not field-marked, puts the raw completion in the first output
+field (bools default `False`). `Agent.bind` gains an optional `gateway`. Exported as
+`korchestrator.agents.WorkerAgent`.
+
+**Why.** This is the single reasoning path (ADR 0013): declarative and custom agents reason through
+DSPy, but the SDK's contracts require the model to come through the `IModelGateway` port (portability,
+MockLM offline testing, heterogeneous per-agent models) and require determinism under MockLM. DSPy
+normally talks to litellm and expects field-marked output; the LM subclass and lenient adapter make
+it obey the port and tolerate MockLM's deterministic echo.
+
+**Design decisions.** (1) The `dspy.LM` and `ChatAdapter` subclasses are **built inside functions**
+after `load_dspy()` — they cannot be module-level classes (that would need a top-level `dspy` import,
+B5). (2) The async→sync bridge: `think` is async, `_reason` is sync in a thread, and the LM adapter
+calls the async `gateway.complete` via `asyncio.run` in that thread — real superstep parallelism, and
+the DSPy call stays on an activity boundary, never workflow scope. (3) `_reason` checks the gateway
+**before** importing dspy, so a missing gateway is a fast `ConfigurationError` even on a base install.
+(4) The gateway is bound (`bind(gateway=...)`) rather than constructed in, mirroring the clock — the
+composition root injects both. (5) `cache=False`, `num_retries=0` on the LM so behaviour is
+predictable and our `ProviderError` wrapping is not masked by DSPy retries. (6) Model selection uses
+`AgentConfig.model` or a neutral `korch-default` placeholder (no hardcoded vendor model; MockLM
+ignores it) until routing (P5) supplies one. (7) "TypedPredictor + ReAct" (spec 11) is realised as
+`dspy.Predict` over a typed signature; tool-driven `dspy.ReAct` lands with the AUB (P6), since ReAct
+without tools is degenerate.
+
+**Architecture changes.** `agents/` gains the worker; `dspy` stays lazy (verified: `import
+korchestrator.agents` pulls in no `dspy`). `Agent.bind` amended additively to accept a gateway.
+Import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/agents/worker.py` (new), `agents/__init__.py`,
+`agents/base.py` (bind gains `gateway`), `tests/unit/agents/test_worker.py` (new), `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; `Agent.bind` gains an optional keyword arg; top-level
+`__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 8 unit tests: worker is an `Agent`; missing gateway → `ConfigurationError`;
+reasoning without dspy → `MissingExtraError` (sys.modules patch); **deterministic** under MockLM
+(same content twice — spec 06 §127 intent); a field-marked reply parses and halts (`is_final`);
+heterogeneous per-agent models honoured (MockLM records each); an unstructured reply falls back
+without halting; a failing gateway → `ProviderError` with `__cause__`. `worker.py` 94% covered;
+`ruff`/`format`/`mypy --strict` clean (61 files); import-linter 4/4 kept; isolation gate `OK`; agents
+import verified dspy-free.
+
+**Known limitations / future improvements.** (1) Under MockLM the answer is the model's echo of
+DSPy's formatted prompt and `is_final` is `False` (the lenient fallback), so a single-agent MockLM run
+terminates via the `max_supersteps` bound rather than an explicit halt — fine for determinism/smoke,
+and real models or scripted replies drive `halt` properly. (2) Tool-driven `dspy.ReAct` (bounded ≤3)
+is deferred to P6 (no tools until the AUB). (3) `asyncio.run` per LM call is simple but re-creates a
+loop each call; revisit if profiling shows it matters. Next: P4.7 `ArchitectAgent` (intent+difficulty
+→ `ExecutionPlan`, mock-plan fallback), then P4.8 taxonomy and P4.9 façade wiring (first end-to-end
+run) where the worker becomes the default reasoning agent and the Tier-1/Tier-2 doctests un-xfail.
+
+---
+
 ## 2026-07-22 · [P4.5] Lazy DSPy signatures — v0.1.0
 
 **Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
