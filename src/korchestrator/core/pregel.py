@@ -52,18 +52,23 @@ def build_result(
     started_at: datetime,
     completed_at: datetime,
     error_code: str | None = None,
+    status: RunStatus = RunStatus.COMPLETED,
 ) -> RunResult:
-    """Assemble the terminal :class:`RunResult` from the final state (shared by both runtimes)."""
+    """Assemble the terminal :class:`RunResult` from the final state (shared by both runtimes).
+
+    ``status`` defaults to ``COMPLETED``; a runtime passes ``CANCELLED`` or ``TIMED_OUT`` when a
+    control signal or a HITL deadline ends the run.
+    """
     final_answer = "\n".join(
         message.content for message in state.messages if message.kind == "answer"
     )
     return RunResult(
         run_id=state.run_id,
-        status=RunStatus.COMPLETED,
+        status=status,
         final_answer=final_answer,
         supersteps=state.superstep,
         messages=state.messages,
-        state=state.model_copy(update={"status": RunStatus.COMPLETED}),
+        state=state.model_copy(update={"status": status}),
         trust_score=state.trust_score,
         error_code=error_code,
         error=("Run reached the max_supersteps bound before completing." if error_code else None),
