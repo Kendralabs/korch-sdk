@@ -10,17 +10,23 @@ test doubles from ``tests/fixtures/`` (pytest puts this conftest's directory on 
 from collections.abc import Callable
 
 import pytest
-from hypothesis import HealthCheck, settings
 
 from fixtures.fake_clock import FakeClock
 
-settings.register_profile(
-    "korch",
-    max_examples=50,
-    deadline=None,
-    suppress_health_check=[HealthCheck.too_slow],
-)
-settings.load_profile("korch")
+# hypothesis is only needed for the property tests (the [dev] / full job). The base-install,
+# [temporal], and [remote] CI jobs install it selectively, so its absence must not break conftest.
+try:
+    from hypothesis import HealthCheck, settings
+except ImportError:
+    pass
+else:
+    settings.register_profile(
+        "korch",
+        max_examples=50,
+        deadline=None,
+        suppress_health_check=[HealthCheck.too_slow],
+    )
+    settings.load_profile("korch")
 
 
 @pytest.fixture
