@@ -30,6 +30,8 @@ _ENV_TO_FIELD: dict[str, str] = {
     "MOCK_LLM": "mock_llm",
     "KORCH_RUNTIME": "korch_runtime",
     "PERSISTENCE_BACKEND": "persistence_backend",
+    # --- governance (Phase 7) ---
+    "GOVERNANCE_TRUST_THRESHOLD": "governance_trust_threshold",
     # --- routing (Phase 5) ---
     "ROUTING_STRATEGY": "routing_strategy",
     "EMBEDDING_PROVIDER": "embedding_provider",
@@ -86,6 +88,9 @@ class Settings(BaseModel):
             in-process, or ``"temporal"`` for durable execution.
         persistence_backend: Which context-graph backend to use; ``"none"`` runs fully
             standalone with no external store.
+        governance_trust_threshold: The global fallback HITL intervention threshold
+            (``GOVERNANCE_TRUST_THRESHOLD``, spec 08 §1.3), used when an agent has no
+            per-agent ``AgentConfig.hitl_threshold`` of its own.
         routing_strategy: How a model is chosen per agent — ``"explicit"`` (the default; works
             with no extra) plus its fallback, ``"algorithmic"``, ``"semantic"`` (needs the
             ``[routing]`` extra), or ``"composite"``.
@@ -115,6 +120,9 @@ class Settings(BaseModel):
     mock_llm: bool = True
     korch_runtime: Literal["local", "temporal"] = "local"
     persistence_backend: Literal["none", "memory", "kcg"] = "memory"
+
+    # --- governance (Phase 7) ---
+    governance_trust_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
 
     # --- routing (Phase 5) ---
     routing_strategy: Literal["explicit", "semantic", "algorithmic", "composite"] = "explicit"

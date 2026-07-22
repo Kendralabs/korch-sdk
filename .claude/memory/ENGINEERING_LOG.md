@@ -10,6 +10,77 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P7.3] Policy engine + audit log — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Two additions to `governance/`, plus one new setting. `policy.py`: `GovernanceAction`
+(`ALLOW`/`INTERVENE`), `GovernanceDecision` (agent id, trust score, effective threshold, action,
+reason), and `evaluate_policy(check, *, agent_id, hitl_threshold, global_threshold)` — a pure
+function comparing a `GovernanceCheck`'s trust score against the agent's own `hitl_threshold` when
+set, else `global_threshold`; below-threshold is `INTERVENE`. `audit.py`: `AuditEntry` (a frozen
+telemetry+decision+`recorded_at` record) and `AuditLog` — an append-only, in-memory trail with
+`record()`, `entries`, and `for_run(run_id)`. `config/Settings` gains `governance_trust_threshold`
+(env `GOVERNANCE_TRUST_THRESHOLD`, default `0.5`, spec 08 §1.3) — the composition root's source for
+`evaluate_policy`'s `global_threshold`. `korchestrator.governance.__all__` grows to nine names.
+
+**Why.** P7.3 — "Policy engine, audit log, per-agent `hitl_threshold` with `GOVERNANCE_TRUST_THRESHOLD`
+fallback" (spec 12). This is the threshold/decision layer P7.2's `check_governance` was deliberately
+left without; P7.4 wires an `INTERVENE` verdict into the runtime's pause signal.
+
+**Design decisions.** (1) `evaluate_policy` stays **config-free and pure** — it takes an already-
+resolved `global_threshold: float` rather than importing `Settings` itself, so `governance/` needs no
+`config` coupling beyond what P7.2 already declared, and the function is trivially testable without
+constructing a `Settings`. The composition root (P7.4, when it wires governance into a run) is the
+one place that reads `Settings.governance_trust_threshold` and an agent's
+`AgentConfig.hitl_threshold` and passes them in — matching B7 (wiring only at the façade). (2) A
+per-agent `hitl_threshold` **always wins over the global fallback** when set, in both directions — it
+can be stricter (a lower bar for intervention) or more lenient than the global default; the fallback
+only applies when an agent declares none (`AgentConfig.hitl_threshold` is already `float | None`
+since P1). (3) `AuditLog` is **in-memory and non-durable by design** — the standalone default that
+works under `PERSISTENCE_BACKEND=none`; it never reads the wall clock (`recorded_at` is always
+supplied by the caller), so nothing about it depends on process time. It is deliberately not the
+bitemporal Context Graph (P7.6) — that is the durable, queryable trail a composition root
+additionally forwards entries to; `AuditLog` is governance's own lightweight, always-available
+record. (4) `GovernanceAction` follows the existing `str, Enum` convention (`RunStatus`,
+`MessageRole`) rather than a bare `Literal`, for parity with the rest of `models/state.py`.
+
+**Architecture changes.** `governance/policy.py` and `governance/audit.py` added (L5); imports stay
+within the module's declared allowance (`models`-adjacent via `governance.trust`, stdlib, pydantic —
+`audit.py` additionally imports `governance.policy`/`governance.telemetry`, both same-package).
+`config/settings.py` gains one field + one `_ENV_TO_FIELD` entry — no new leaf-utility imports.
+Import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/governance/{policy,audit,__init__}.py` (policy/audit
+new, `__init__` re-exports); `src/korchestrator/config/settings.py`
+(`governance_trust_threshold`); `tests/unit/governance/{test_policy,test_audit}.py` (new);
+`tests/unit/config/test_settings_governance.py` (new); `CHANGELOG.md`.
+
+**Breaking changes.** None. New `korchestrator.governance` names (`GovernanceAction`,
+`GovernanceDecision`, `evaluate_policy`, `AuditEntry`, `AuditLog`) are additive; `Settings` gains an
+optional, defaulted field; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (92 source files);
+import-linter 4/4 kept; the isolation gate and env-confinement check both `OK`. New: threshold
+allow/intervene at the boundary; a per-agent `hitl_threshold` overriding the global fallback in both
+the stricter and the more lenient direction; the decision carries the score and names the agent;
+`AuditLog` starts empty, appends in order, filters `for_run`, and its entries are frozen;
+`Settings.governance_trust_threshold` defaults to `0.5`, reads from `GOVERNANCE_TRUST_THRESHOLD`, an
+explicit argument wins over the environment, and out-of-bounds values are rejected. 9 doctests pass
+(2 new in `policy.py`, 1 new in `audit.py`, plus existing governance/config doctests).
+
+**Known limitations / future improvements.** No runtime wiring yet — nothing calls `evaluate_policy`
+or writes to an `AuditLog` during an actual run; that lands in P7.4 alongside the pause signal
+(`GovernanceHaltError` veto path noted as deferred since the P6.8 log entry). `AuditLog` has no size
+bound or eviction policy (fine for an in-memory, single-run/test scope; revisit if long-lived
+processes accumulate unbounded history before a persistent backend is wired in P7.6).
+
+---
+
 ## 2026-07-23 · [P7.2] Trust scoring — kernel bookkeeping + governance's telemetry read — v0.1.0
 
 **Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)

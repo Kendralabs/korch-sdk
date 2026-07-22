@@ -15,6 +15,12 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Policy engine + audit log (Phase 7): `korchestrator.governance` gains `evaluate_policy()` —
+  compares a superstep's trust score against an agent's own `hitl_threshold` (falling back to the
+  new `GOVERNANCE_TRUST_THRESHOLD` setting, default `0.5`) and returns a `GovernanceDecision`
+  (`GovernanceAction.ALLOW`/`INTERVENE`) — plus `AuditLog`/`AuditEntry`, an append-only in-memory
+  trail of decisions and the telemetry each was based on. Pure and config-free; the runtime pause
+  signal that acts on an `INTERVENE` verdict lands in the next Phase 7 commit.
 - Trust scoring (Phase 7): the kernel barrier now folds each active agent's
   `StateUpdate.trust_delta` into `AgentState.trust_score` every superstep, clamped to `[0.0, 1.0]`
   — pure and order-independent, so the score is deterministic and replay-safe. `korchestrator.
