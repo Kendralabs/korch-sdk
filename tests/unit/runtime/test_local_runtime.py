@@ -79,12 +79,21 @@ def test_resolve_runtime_selects_local(make_clock: Callable[..., object]) -> Non
     assert isinstance(runtime, LocalRuntime)
 
 
-def test_resolve_runtime_temporal_without_extra_raises(
+def test_resolve_runtime_temporal_depends_on_the_extra(
     make_clock: Callable[..., object],
 ) -> None:
-    with pytest.raises(MissingExtraError) as info:
-        resolve_runtime(Settings(korch_runtime="temporal"), _graph(), clock=make_clock())  # type: ignore[arg-type]
-    assert info.value.code == "KORCH_MISSING_EXTRA"
+    import importlib.util
+
+    has_temporal = importlib.util.find_spec("temporalio") is not None
+    if has_temporal:
+        # With the extra installed, temporal resolves to the durable adapter.
+        runtime = resolve_runtime(Settings(korch_runtime="temporal"), _graph(), clock=make_clock())  # type: ignore[arg-type]
+        assert type(runtime).__name__ == "TemporalRuntime"
+    else:
+        # Without it, selecting temporal is an actionable missing-extra error.
+        with pytest.raises(MissingExtraError) as info:
+            resolve_runtime(Settings(korch_runtime="temporal"), _graph(), clock=make_clock())  # type: ignore[arg-type]
+        assert info.value.code == "KORCH_MISSING_EXTRA"
 
 
 async def test_local_runtime_matches_a_direct_runner(make_clock: Callable[..., object]) -> None:
