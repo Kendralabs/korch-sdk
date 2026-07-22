@@ -4,4 +4,6 @@ Allowed imports (beyond stdlib + pydantic): interfaces, models, config, exceptio
 execution context and extracts the Minimum Viable Context; prunes off the hot loop.
 """
 
-__all__: list[str] = []
+from korchestrator.context.compiler import CompiledContext, ContextCompiler, Summarizer
+
+__all__ = ["CompiledContext", "ContextCompiler", "Summarizer"]

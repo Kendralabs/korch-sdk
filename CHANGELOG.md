@@ -15,6 +15,11 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Context compiler (Phase 6): `korchestrator.context` with `ContextCompiler.compile()` and
+  `CompiledContext` — Minimum Viable Context extraction that keeps the objective and the substantive
+  messages (answers/handoffs) first, packs the recent remainder under a character budget, and prunes
+  the rest. An optional `Summarizer` seam folds the pruned tail; it degrades gracefully to a count.
+  Runs off the hot loop and is deterministic without a summariser.
 - MCP client (Phase 6): `korchestrator.mcp` with `MCPServerConfig` (stdio/sse descriptor) and
   `MCPClient.discover()`, which connects to an MCP server and returns its tools as `Connector`s for
   the shared AUB registry — so agents can't tell an MCP tool from a native one. Discovery failures
