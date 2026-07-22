@@ -10,6 +10,180 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P5.5/P5.6] User-function router + resolve_router wiring — v0.1.0 · closes P5
+
+**Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)
+
+**What.** Completed Phase 5 by adding the user-supplied router and wiring routing into execution.
+`UserFunctionRouter` (in `routing/composite.py`) adapts a `(RoutingContext) -> RoutingResult`
+callable — sync or async — into a `BaseRouter`, validating the return type. `resolve_router(settings,
+*, router=None, embedder=None)` (in `routing/factory.py`) is the composition entrypoint: an injected
+router wins, else it builds from settings. The composition root (`services/_composition.py`) now
+routes a model per agent at graph-build time: `classify` (deterministic taxonomy → `TaskSemantics`),
+`resolve_routing` (router + candidate `ModelCard`s), and the now-async `graph_from_configs`/
+`graph_from_agents` call `router.select_model` for each default-worker agent (honouring a pinned
+`AgentConfig.model` via `RoutingContext.explicit_model`) and pass the chosen model into the
+`WorkerAgent`. Custom agents (own `think`) supply their own reasoning and are not routed. Both
+façades (`Korch.run`, `Swarm.run`) resolve the router (injected or configured) and classify the
+objective before building the graph.
+
+**Why.** P5.5/P5.6 — the last routing pieces: a code-level custom router with no subclassing, and
+routing that actually influences a run. Routing runs at composition (never workflow scope), so a
+model choice is deterministic and replay-safe.
+
+**Design decisions.** (1) Routing is resolved **at the composition root, before the run** — model
+selection is pure w.r.t. `RoutingContext` and happens outside workflow scope, so determinism and the
+replay contract hold (determinism.md). (2) A custom router plugs in **by injection** (`Korch(router=)`
+/ `Swarm(router=)`); the `korchestrator.routers` entry-point discovery from spec 07 §5 is **deferred**
+(no second consumer yet — abstraction test) — see **ADR 0014**. (3) Custom agents are not routed:
+they own their reasoning and model, so overriding it would be wrong; only default workers get a routed
+model. (4) The graph builders became async to call `select_model`; only the two façades called them,
+so the change is internal.
+
+**Architecture changes.** `services/_composition.py` (the one wiring site) now imports `routing`,
+`taxonomy`, and the routing models — legal at the façade. No inner layer gained a dependency;
+import-linter 4/4 kept.
+
+**Files/modules affected.** `routing/composite.py` (`UserFunctionRouter`), `routing/factory.py`
+(`resolve_router`), `routing/__init__.py` (exports); `services/_composition.py`, `services/korch.py`,
+`services/swarm.py` (wiring); `tests/unit/routing/test_user_function.py`,
+`tests/unit/services/test_run.py` (routing-wiring tests); `docs/adr/0014-*.md`.
+
+**Breaking changes.** None. Internal helper signatures changed (`graph_from_*` now async + routing
+params); no public surface change — top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (12 files); import-linter 4/4;
+full non-temporal suite **368 passed**, coverage **94.55%** (≥80 floor). New: a `UserFunctionRouter`
+pinned model reaches the gateway end-to-end; `AGENT_MODEL_MAP` routes the named model to the gateway;
+`resolve_router` returns the injected router; sync and async user functions both adapt. (The 9
+Temporal tests need a Temporal server and are excluded, as in P4.)
+
+**Known limitations / future improvements.** Entry-point router discovery deferred (ADR 0014).
+`SemanticRouter`'s real embedder path (`sentence-transformers`) is only exercised with the `[routing]`
+extra installed, never in CI. `MODELCARD_URL` deferred. Phase 5 is complete.
+
+---
+
+## 2026-07-22 · [P5.3/P5.4] Algorithmic + semantic routing strategies — v0.1.0
+
+**Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)
+
+**What.** Added the two ranking strategies. `routing/algorithmic.py` — `AlgorithmicRouter` ranks
+candidate `ModelCard`s by a weighted blend of quality, cost, and latency (`ROUTING_WEIGHTS`): cost
+and latency are inverted and every dimension is min/max-normalised across the candidate set to
+`[0,1]`, candidates lacking a required capability are filtered out first, and the winner is chosen
+by score with a stable tie-break on model name. It also estimates the run cost from the task's token
+estimates. `routing/semantic.py` — `SemanticRouter` embeds the task and each candidate description
+and picks the most cosine-similar model; embeddings run behind an `Embedder` protocol, are cached
+per description with a configured TTL (`MODELCARD_CACHE_TTL_SECONDS`) via an injected monotonic time
+source, and the real backend (`sentence-transformers`) is imported lazily inside `make_embedder`
+(raising `MissingExtraError` without the `[routing]` extra). `get_router` now registers both
+strategies and takes an optional `embedder` for offline testing/injection.
+
+**Why.** P5.3/P5.4 — cost/capability-aware and description-aware model selection, the strategies
+that use the `ModelCard` catalogue. Semantic routing is the only path that needs an extra, kept
+strictly opt-in so the base install stays dependency-free (spec 11 §158).
+
+**Design decisions.** (1) Cosine similarity is pure Python (stdlib `math`), so the semantic module
+needs neither `numpy` nor `sentence-transformers` at import — only the real `Embedder` does, lazily.
+This keeps the semantic strategy testable offline with a deterministic fake embedder. (2) The
+embedding cache takes an injected `time_source` (defaulting to `time.monotonic`) so TTL expiry is
+tested deterministically without sleeping — legal here because routing runs at composition, never in
+workflow scope (determinism.md). (3) Algorithmic scores are normalised to `[0,1]` and the router is
+pure and order-independent (a flipped candidate order yields the same result), so routing never
+introduces nondeterminism into a superstep. (4) `get_router(..., embedder=fake)` lets semantic
+routing be exercised in CI with no extra; production omits it and `make_embedder` builds the real one.
+
+**Architecture changes.** None. `routing/` still imports only inward + stdlib; `sentence-transformers`
+/`numpy` are confined to the lazy `make_embedder`/`_SentenceTransformerEmbedder` path. import-linter
+4/4 kept (including `core must not import frameworks or optional extras`).
+
+**Files/modules affected.** `src/korchestrator/routing/{algorithmic,semantic}.py` (new);
+`routing/factory.py` and `routing/__init__.py` (register + export the strategies);
+`tests/unit/routing/test_{algorithmic,semantic}.py` (new).
+
+**Breaking changes.** None. `get_router` gained a keyword-only `embedder` parameter (non-breaking).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (7 files); 36 routing tests +
+8 doctests pass. Cost weight picks the cheaper model, quality weight the stronger; capability filter
+drops ineligible candidates; ranking is order-independent; the embedding cache re-embeds only after
+the TTL; the semantic path raises `MissingExtraError` without the extra (verified by patching
+`sys.modules`).
+
+**Known limitations / future improvements.** The default embedding model downloads weights on first
+real use (an adapter-boundary network call, never in CI). Composite user-function router + execution
+wiring land in P5.5/P5.6.
+
+---
+
+## 2026-07-22 · [P5.2] Explicit routing strategy + factory + model cards — v0.1.0
+
+**Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)
+
+**What.** Stood up the `routing/` module (the routing models from P5.1/P1.2 already existed). Added:
+`routing/model_cards.py` — a built-in `ModelCard` catalogue (`builtin_model_cards()`) and
+`load_model_cards(settings)` (builtin/file JSON sources; `url` deferred with an actionable error);
+`routing/explicit.py` — `ExplicitRouter` (honours a per-context pinned model, then `AGENT_MODEL_MAP`,
+else declines with `RoutingError(ROUTING_NO_CANDIDATES)`) and `FallbackRouter` (never declines —
+resolves to a configured default so the zero-config install always resolves); `routing/composite.py`
+— `CompositeRouter` (tries sub-routers in order, first decision wins, passes the winner's result
+through unchanged); `routing/factory.py` — `get_router(settings)` building the strategy chain from
+`ROUTING_STRATEGY` (always ending in the fallback tail). Extended `config/Settings` with the routing
+variable group (`routing_strategy`, `agent_model_map`, `routing_weights`, `routing_priority_order`,
+`embedding_provider`, `modelcard_*`) and taught `Settings.from_env` to parse JSON (`AGENT_MODEL_MAP`,
+`ROUTING_WEIGHTS`) and CSV (`ROUTING_PRIORITY_ORDER`) variables, wrapping bad JSON in
+`ConfigurationError`. `korchestrator.routing` re-exports `BaseRouter` (defined in `interfaces/`) as
+the documented import path (spec 07 §5), plus `get_router` and the strategy classes.
+
+**Why.** P5.2 — the default routing path. "Explicit plus one fallback is the default" (spec 11 §150):
+per-agent model selection that works on the base install with no extra, and the machinery
+(`get_router`, the composite chain, model cards) the ranking strategies (P5.3/P5.4) build on.
+
+**Design decisions.** (1) `BaseRouter` stays a `Protocol` in `interfaces/` (a supporting protocol,
+P1) and is re-exported from `routing/` so spec 07's `from korchestrator.routing import BaseRouter`
+resolves — one definition, documented path. (2) Every fixed strategy chain is *explicit-first* then
+the named strategy then *fallback-last*: a pinned model always wins, and the chain always resolves.
+(3) `CompositeRouter` passes the winning `RoutingResult` through unchanged (accurate `strategy`/`reason`
+naming the router that actually decided) rather than relabelling to `"composite"`. (4) `MODELCARD_URL`
+is deferred: URL loading needs an HTTP client (`httpx`, confined to `clients`/`providers` by ADR 0011),
+so `url` raises `ConfigurationError` pointing at `builtin`/`file`. (5) Routing config lives on
+`Settings` now (config is the one env reader, B6); Phase 8 still finalizes `.env`/`configure()`.
+
+**Architecture changes.** New `routing/` module populated (was an empty skeleton). No boundary change:
+`routing/` imports only `interfaces`, `models`, `config`, `exceptions`, `logging` — import-linter's
+four contracts stay green. `config/` now imports `exceptions` (leaf → leaf, no cycle).
+
+**Files/modules affected.** `src/korchestrator/routing/{__init__,model_cards,explicit,composite,factory}.py`
+(new); `src/korchestrator/config/settings.py` (routing fields + env parsing);
+`tests/unit/routing/test_{explicit,composite,model_cards,factory}.py` and
+`tests/unit/config/test_settings_routing.py` (new).
+
+**Breaking changes.** None. Additive: new `Settings` fields (all defaulted), a new `routing/` public
+surface (`korchestrator.routing`, not top-level `__all__` — the golden snapshot is untouched).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (7 files); routing + config +
+contract suites pass (98 tests) and module doctests pass (8). import-linter 4/4 kept. Router purity
+asserted (same context → same result); the default chain resolves via the fallback tail with no extra.
+
+**Known limitations / future improvements.** Algorithmic and semantic strategies land in P5.3/P5.4;
+`get_router` currently builds only explicit + fallback (a `composite` chain naming `algorithmic`
+raises until P5.3 registers it). `MODELCARD_URL` deferred. Routing is not yet wired into execution
+(P5.6).
+
+---
+
 ## 2026-07-22 · [P4.9] Façade wiring — the first end-to-end run — v0.1.0
 
 **Type:** feature · **Phase:** P4 (critical-path milestone) · **Author:** Claude (agent)

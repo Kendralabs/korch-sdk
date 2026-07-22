@@ -20,7 +20,6 @@ from korchestrator.interfaces import (
 )
 from korchestrator.models.result import RunResult
 from korchestrator.services import _composition as comp
-from korchestrator.taxonomy import TaxonomyClassifier
 
 __all__ = ["Korch"]
 
@@ -88,7 +87,7 @@ class Korch:
         clock = comp.wall_clock()
 
         async def _flow() -> RunResult:
-            semantics = TaxonomyClassifier().classify(objective)
+            semantics = comp.classify(objective)
             plan = (
                 await ArchitectAgent()
                 .bind(gateway=gateway)
@@ -99,7 +98,16 @@ class Korch:
                     max_supersteps=max_supersteps,
                 )
             )
-            graph = comp.graph_from_configs(plan.agents, plan.edges, clock=clock, gateway=gateway)
+            router, candidates = comp.resolve_routing(settings, self._router)
+            graph = await comp.graph_from_configs(
+                plan.agents,
+                plan.edges,
+                clock=clock,
+                gateway=gateway,
+                router=router,
+                task=semantics,
+                candidates=candidates,
+            )
             return await comp.run_graph(
                 graph,
                 settings=settings,
