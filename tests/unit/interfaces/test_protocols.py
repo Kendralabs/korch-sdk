@@ -8,6 +8,7 @@ non-conforming class does not. Renaming a protocol method breaks the matching fa
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 
 from korchestrator import interfaces
 from korchestrator.interfaces import (
@@ -76,7 +77,16 @@ class _Sandbox:
 
 
 class _Runtime:
-    async def run(self, state: AgentState, *, max_supersteps: int = 10) -> RunResult:
+    def now(self) -> datetime:
+        raise NotImplementedError
+
+    async def start(self, state: AgentState, *, max_supersteps: int = 10) -> str:
+        raise NotImplementedError
+
+    async def wait(self, run_id: str, *, timeout_seconds: float | None = None) -> RunResult:
+        raise NotImplementedError
+
+    async def signal(self, run_id: str, name: str, payload: Mapping[str, str]) -> None:
         raise NotImplementedError
 
 

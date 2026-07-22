@@ -11,6 +11,10 @@ from __future__ import annotations
 import string
 from collections.abc import Sequence
 
+import pytest
+
+pytest.importorskip("hypothesis")
+
 from hypothesis import given
 from hypothesis import strategies as st
 

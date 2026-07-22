@@ -9,7 +9,7 @@ wall clock (spec 06 §1-§5).
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 
 from korchestrator.core.channels import ChannelSchema
@@ -20,13 +20,61 @@ from korchestrator.models.result import RunResult
 from korchestrator.models.state import AgentState, Message, RunStatus, StateUpdate
 from korchestrator.types import JSONValue
 
-__all__ = ["Clock", "PregelRunner"]
+__all__ = ["Clock", "PregelRunner", "build_result", "select_active"]
 
 # The injected, replay-safe clock. Under Temporal this is ``workflow.now()``; locally, a monotone
 # injected clock. Workflow-path code MUST use this, never ``datetime.now()`` (spec 06 §5).
 Clock = Callable[[], datetime]
 
 DEFAULT_MAX_SUPERSTEPS = 10
+
+
+def select_active(node_ids: Sequence[str], state: AgentState) -> tuple[str, ...]:
+    """Return the node ids that compute this superstep, in ``node_ids`` order (spec 06 §2).
+
+    Superstep 0 activates every node; later supersteps activate only nodes with a non-empty inbox.
+    A node that has halted is never reactivated. Pure over ``(node_ids, state)`` so a runtime can
+    compute activation from serialised topology in workflow scope (the Temporal ``PregelMaster``).
+    """
+    halted = set(state.halted_agents)
+    if state.superstep == 0:
+        return tuple(node_id for node_id in node_ids if node_id not in halted)
+    return tuple(
+        node_id
+        for node_id in node_ids
+        if node_id not in halted and state.inbox.get(node_id)
+    )
+
+
+def build_result(
+    state: AgentState,
+    *,
+    started_at: datetime,
+    completed_at: datetime,
+    error_code: str | None = None,
+    status: RunStatus = RunStatus.COMPLETED,
+) -> RunResult:
+    """Assemble the terminal :class:`RunResult` from the final state (shared by both runtimes).
+
+    ``status`` defaults to ``COMPLETED``; a runtime passes ``CANCELLED`` or ``TIMED_OUT`` when a
+    control signal or a HITL deadline ends the run.
+    """
+    final_answer = "\n".join(
+        message.content for message in state.messages if message.kind == "answer"
+    )
+    return RunResult(
+        run_id=state.run_id,
+        status=status,
+        final_answer=final_answer,
+        supersteps=state.superstep,
+        messages=state.messages,
+        state=state.model_copy(update={"status": status}),
+        trust_score=state.trust_score,
+        error_code=error_code,
+        error=("Run reached the max_supersteps bound before completing." if error_code else None),
+        started_at=started_at,
+        completed_at=completed_at,
+    )
 
 
 class PregelRunner:
@@ -82,14 +130,7 @@ class PregelRunner:
         Superstep 0 activates every node; later supersteps activate only nodes with a non-empty
         inbox. A node that has halted is never reactivated.
         """
-        halted = set(state.halted_agents)
-        if state.superstep == 0:
-            return tuple(node_id for node_id in self._graph.node_ids if node_id not in halted)
-        return tuple(
-            node_id
-            for node_id in self._graph.node_ids
-            if node_id not in halted and state.inbox.get(node_id)
-        )
+        return select_active(self._graph.node_ids, state)
 
     # --- one superstep --------------------------------------------------------------------------
 
@@ -238,32 +279,6 @@ class PregelRunner:
             if current.halted:
                 break
 
-        return self._build_result(current, started_at, self._clock(), error_code)
-
-    def _build_result(
-        self,
-        state: AgentState,
-        started_at: datetime,
-        completed_at: datetime,
-        error_code: str | None,
-    ) -> RunResult:
-        """Assemble the terminal :class:`RunResult` from the final state."""
-        final_answer = "\n".join(
-            message.content for message in state.messages if message.kind == "answer"
-        )
-        final_state = state.model_copy(update={"status": RunStatus.COMPLETED})
-        return RunResult(
-            run_id=state.run_id,
-            status=RunStatus.COMPLETED,
-            final_answer=final_answer,
-            supersteps=state.superstep,
-            messages=state.messages,
-            state=final_state,
-            trust_score=state.trust_score,
-            error_code=error_code,
-            error=(
-                "Run reached the max_supersteps bound before completing." if error_code else None
-            ),
-            started_at=started_at,
-            completed_at=completed_at,
+        return build_result(
+            current, started_at=started_at, completed_at=self._clock(), error_code=error_code
         )

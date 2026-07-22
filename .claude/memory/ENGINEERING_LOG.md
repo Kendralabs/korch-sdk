@@ -10,6 +10,233 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P3.6] Lock runtime equivalence, replay, crash recovery, roll-over — v0.1.0
+
+**Type:** test · **Phase:** P3 · **Author:** Claude (agent)
+
+**What.** Added `tests/e2e/test_runtime_equivalence.py` (marked `temporal`): the same swarm on the
+local and Temporal runtimes produces an **equivalent `RunResult`** (identical status, final_answer,
+supersteps, trust_score, error_code, and message log, excluding runtime-specific timestamps); a
+**replay** test runs the recorded workflow history through `temporalio.worker.Replayer` and asserts no
+nondeterminism; a **crash-recovery** test starts a run on one worker, lets that worker exit while the
+run is parked, and completes it on a fresh worker; and a **roll-over** test forces several
+`continue_as_new` roll-overs (via a low `PregelRequest.continue_as_new_after`) and asserts the
+`RunResult` is unaffected. Made `PregelRequest.continue_as_new_after` a field so the roll-over
+threshold is testable without touching the sandboxed module constant. Guarded `test_reducers.py` with
+`importorskip("hypothesis")` so `pytest tests -m temporal` collects cleanly in a `[temporal]`-only env.
+
+**Why.** Determinism and durability are the runtime's product guarantees; they must be tested, not
+asserted (spec 06 §8, spec 09 §5.3). The equivalence test is the one that fails if the two adapters
+ever drift.
+
+**Design decisions.** All four run on Temporal's in-process time-skipping test server — no external
+cluster. Equivalence uses the **same `run_id`** for both runtimes so the deterministic message ids
+match, and compares everything except the two clocks' timestamps (spec 06 §8). Crash recovery is
+realised as a **worker restart while paused** (durable state lives in the server, not the worker),
+which together with the replay test (activities are replayed from history, never re-executed) covers
+"resume from the last checkpoint with no duplicated work". Roll-over drives the ping-pong graph past a
+low threshold to `MAX_SUPERSTEPS` across several roll-overs, with `started_at` carried through.
+
+**Architecture changes.** None (tests + one internal `PregelRequest` field). Import contracts 3 kept,
+0 broken.
+
+**Files/modules affected.** `tests/e2e/test_runtime_equivalence.py`,
+`src/korchestrator/runtime/temporal_runtime.py` (`continue_as_new_after` field),
+`tests/unit/core/test_reducers.py` (`importorskip`).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** The full `temporal` suite passes in a clean `[temporal]` venv:
+`pytest tests -m temporal` → **9 passed** (2 execution + 3 signal + 4 equivalence/replay/crash/
+roll-over), 1 skipped (reducer property tests, no hypothesis), 208 deselected. `ruff`, `ruff format`,
+`mypy --strict` clean on 53 source files. **P3 Definition of Done met: both runtimes produce
+equivalent results; replay is green; a forced worker restart resumes without duplicated work; runtime
+is swappable by config alone.**
+
+**Known limitations / future improvements.** `edit_resume` (P7.4) and production client wiring (P4).
+The Temporal suite runs in its own CI job; the `[dev]` matrix runs `-m "not temporal"` (a `beartype`
+import hook from observability extras conflicts with the workflow sandbox).
+
+---
+
+## 2026-07-22 · [P3.5] Durable HITL control signals — v0.1.0
+
+**Type:** feature · **Phase:** P3 · **Author:** Claude (agent)
+
+**What.** Added durable HITL control signals to the Temporal runtime. `PregelMaster` now defines
+`cancel`/`pause`/`resume` workflow signals and honours them in the loop: `cancel` ends the run as
+`cancelled`; `pause` parks it (status `governance_paused`) on a `workflow.wait_condition`, consuming
+no compute, until `resume` or `cancel`, bounded by a 24h deadline after which it is `timed_out`.
+`build_result` gained a `status` parameter for the signal-terminated outcomes.
+`TemporalRuntime.signal` delivers `cancel`/`pause`/`resume` to the workflow. Three `temporal`-marked
+tests verify each path on the time-skipping server.
+
+**Why.** Human-in-the-loop control of durable runs (spec 06 §7): an operator can cancel a run or
+pause it for inspection and resume it, without the run consuming compute while parked.
+
+**Design decisions.** **Scope split**: P3.5 delivers the durable signal core (`cancel`/`pause`/
+`resume` + `wait_condition` + the 24h `timed_out` deadline). `edit_resume` — applying an operator
+`StateUpdate` through the reducers (spec 06 §7) — ties to the operator-edit contract of the HITL
+façade and lands in P7.4; the `signal` method raises an actionable `NotImplementedError` for it until
+then. The **local runtime has no HITL**: it runs synchronously (the run completes inside `start`), so
+there is no in-flight run to signal; its `signal` raises an actionable error pointing to the Temporal
+runtime. The pause check reads `self._paused` at the loop top, but the inner post-`wait_condition`
+cancel branch was removed — the loop top handles a pending cancel — to avoid a mypy `warn_unreachable`
+false positive (mypy can't see the async signal-handler mutation). The signal tests use `start_signal`
+so the pause/cancel is delivered atomically with start (deterministic), and time-skipping fast-forwards
+the 24h HITL deadline for the `timed_out` test.
+
+**Architecture changes.** None beyond the runtime; the signal infrastructure is confined to
+`temporal_runtime.py`. Import contracts 3 kept, 0 broken.
+
+**Files/modules affected.** `src/korchestrator/runtime/temporal_runtime.py`,
+`src/korchestrator/runtime/local_runtime.py`, `src/korchestrator/core/pregel.py` (`build_result`
+`status` param), `tests/integration/test_temporal_runtime.py`, `CHANGELOG.md`.
+
+**Breaking changes.** None (new signal surface; `build_result` gained an optional keyword).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 5 temporal tests pass in a clean `[temporal]` venv (2 execution + 3 signal:
+cancel→`cancelled`, pause→`timed_out` via the 24h skip, pause+resume→`completed`); `ruff`,
+`ruff format`, `mypy --strict` clean on 53 source files.
+
+**Known limitations / future improvements.** `edit_resume` (operator update through the reducers) is
+P7.4. Signal timeout is a fixed 24h; `TEMPORAL_HITL_TIMEOUT` config lands in P8. P3.6 adds the
+replay/equivalence/crash/roll-over test matrix.
+
+---
+
+## 2026-07-22 · [P3.3/P3.4] Durable Temporal runtime — v0.1.0
+
+**Type:** feature · **Phase:** P3 · **Author:** Claude (agent)
+
+**What.** Implemented `runtime/temporal_runtime.py` (the `[temporal]` extra): the `PregelMaster`
+workflow drives the superstep loop in deterministic workflow scope and invokes one
+`SuperstepActivity` (`SuperstepWorker.run_superstep`) per superstep for the nondeterministic agent
+compute; `build_worker()` registers both; and `TemporalRuntime` is the client-side `IDurableRuntime`
+(`start`/`wait`/`now`; `signal` lands in P3.5). Added a bounded jittered retry policy, activity
+timeouts, and `continue_as_new` roll-over before the 50k-event cap (P3.4). Wired
+`resolve_runtime`'s temporal branch to a lazy import. Extracted `select_active` and `build_result`
+as pure functions in `core/pregel.py` so the workflow reuses the kernel's activation/result logic
+without the graph's live callables. Added `tests/fixtures/graphs.py` and
+`tests/integration/test_temporal_runtime.py` (marked `temporal`).
+
+**Why.** Durable, replay-safe execution on Temporal, selectable by config alone (spec 06 §6.2). The
+kernel's determinism is what makes replay exact.
+
+**Design decisions.** The **workflow/activity split** solves the serialization boundary: the workflow
+holds only serialisable data (the `AgentState` and `node_ids`) and computes activation/halting/result
+from it; the graph's live callables live in the activity's worker. Domain models cross via
+`temporalio.contrib.pydantic`'s data converter. `transaction_time` is stamped from `workflow.now()`
+passed into the activity, keeping the barrier replay-deterministic while agent compute stays in the
+activity. **The full superstep (compute + reduce + route) runs in the activity** rather than splitting
+reduce into workflow scope — the activity completion *is* the barrier (spec 06 §6.2), the reduced
+state is recorded in history, and this keeps the reducers/graph out of the sandbox entirely
+(simpler + verifiable). `temporalio` is imported at **module top of temporal_runtime.py** (the
+`@workflow.defn`/`@activity.defn` decorators require it), which is legal because the module is loaded
+lazily via `resolve_runtime` — `import korchestrator.runtime` never touches temporalio (verified).
+Non-retryable errors: `ValidationError`/`AuthError`/`QuotaExceededError`/`GovernanceHaltError`.
+
+**Verification note (local env pollution).** The `temporal` tests fail under this repo's *polluted*
+local venv because `arize-phoenix`/`langsmith` (present from unrelated packages) activate a
+`beartype.claw` import hook that collides with Temporal's workflow-sandbox reimport. They **pass in a
+clean `[temporal]` venv** (verified: `pytest -m temporal` → 2 passed), which is exactly what the new
+CI `temporal` job provides. The `[dev]` `test` job now runs `-m "not temporal"`; the dedicated
+`temporal` job runs the marked tests in a clean install (spec 09 §6.1). `conftest.py` was made to
+tolerate a missing `hypothesis` so the `[temporal]`/`[remote]` jobs (which don't install it) can load.
+
+**Architecture changes.** `runtime/temporal_runtime.py` is the sole home of `temporalio` (confined,
+module-lazy-loaded). `core/pregel.py` gained two pure exports (`select_active`, `build_result`) shared
+by both runtimes. Import contracts 3 kept, 0 broken; base install pulls in no temporalio.
+
+**Files/modules affected.** `src/korchestrator/runtime/temporal_runtime.py`, `runtime/__init__.py`,
+`src/korchestrator/core/pregel.py`, `tests/integration/test_temporal_runtime.py`,
+`tests/fixtures/graphs.py`, `tests/conftest.py`, `.github/workflows/ci.yml`, `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; `select_active`/`build_result` are new kernel helpers).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Temporal integration tests pass in a clean `[temporal]` venv (swarm-to-completion
+and max-supersteps, on the time-skipping test server); `ruff`, `ruff format`, `mypy --strict` clean on
+53 source files; import contracts 3 kept, 0 broken; `import korchestrator.runtime` pulls in no
+temporalio. The non-temporal suite is green in the main env.
+
+**Known limitations / future improvements.** HITL signals (P3.5) and the replay/equivalence/crash/
+roll-over test matrix (P3.6) are next. Production client wiring (connect to `TEMPORAL_ADDRESS`, run a
+worker) is composed at the façade in P4; the runtime currently takes an injected client.
+
+---
+
+## 2026-07-22 · [P3.1/P3.2] In-process local runtime + runtime selection — v0.1.0
+
+**Type:** feature · **Phase:** P3 · **Author:** Claude (agent)
+
+**What.** Amended `IDurableRuntime` to the spec 06 §6 shape (`now`/`start`/`wait`/`signal`) per
+[ADR 0010](../../docs/adr/0010-idurableruntime-shape-now-start-wait-signal.md), and implemented
+`runtime/local_runtime.py` (`LocalRuntime`) — the in-process `IDurableRuntime` that drives the
+`PregelRunner` loop to completion with zero infrastructure (the `KORCH_RUNTIME=local` default) — plus
+`resolve_runtime(settings, graph, *, clock, channels)` in `runtime/__init__.py`, the composition-root
+factory that selects the runtime from config. Updated the interface conformance fake.
+
+**Why.** The local runtime is the default for dev, CI, and embedding, and the first end-to-end run
+(P4.9) uses it. Runtime selection by config alone (spec 06 §8) is what makes local ↔ Temporal
+swappable without touching agent/graph code.
+
+**Design decisions.** **ADR 0010** — the P1.4 `IDurableRuntime.run(state)` was the minimal shape; P3
+needs the authoritative spec 06 §6 four-method contract (`start`+`wait` for durable start-then-rejoin,
+`signal` for HITL, `now` for the clock). Spec 06 §6 writes `start(graph, state)`, which would import
+`core.AgentGraph` into `interfaces/` and break the import-linter `layers` contract — so the graph is
+injected at construction and the protocol depends on `models` only. This is a breaking change to a
+documented protocol, but it lands during 0.x before any release and before any implementation, so no
+consumer is affected (CHANGELOG `### Changed`). The **local runtime is synchronous**: `start` runs to
+completion and stores the result; `wait` returns it; crash recovery is explicitly out of scope (the
+process is the durability boundary, spec 06 §6.1). `signal` raises `NotImplementedError` until HITL
+lands in P3.5. The **clock is a required injected param** (no wall-clock default) so the runtime stays
+deterministic and testable; the composition root supplies a real clock in P4. `resolve_runtime`'s
+temporal branch raises `MissingExtraError` for now; **P3.3 replaces it with a lazy import + construction
+of `TemporalRuntime`** (temporal_runtime.py does not exist yet, so importing it here would break
+mypy). The unreachable `ConfigurationError` after the exhaustive `Literal` was removed (mypy
+`warn_unreachable`).
+
+**Architecture changes.** `runtime/` gains its first adapter; it imports `core`, `interfaces`,
+`models`, `config`, `exceptions` (all legal for the adapter layer). `import korchestrator.runtime`
+pulls in **no** `temporalio` (verified). Import contracts 3 kept, 0 broken.
+
+**Files/modules affected.** `docs/adr/0010-*.md`, `src/korchestrator/interfaces/runtime.py`,
+`src/korchestrator/runtime/{__init__,local_runtime}.py`,
+`tests/unit/runtime/test_local_runtime.py`, `tests/unit/interfaces/test_protocols.py`, `CHANGELOG.md`.
+
+**Breaking changes.** `IDurableRuntime` reshaped (see ADR 0010) — 0.x pre-release, no consumer
+affected; migration is trivial (compose `start`+`wait` where `run` was used).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** Implementers of `IDurableRuntime`: replace `run(state)` with `now`/`start`/
+`wait`/`signal`; the façade composes `start`+`wait`.
+
+**Testing status.** 7 local-runtime + 4 interface conformance tests pass (run-to-completion, `now`,
+unknown-run rejection, `signal` NotImplemented, local selection, temporal-without-extra
+`MissingExtraError`, and local-runtime == direct-runner equivalence); runtime doctests pass; `ruff`,
+`ruff format`, `mypy --strict` clean on 52 source files; import contracts 3 kept, 0 broken; base
+install pulls in no `temporalio`.
+
+**Known limitations / future improvements.** The Temporal adapter (P3.3-P3.6) — `PregelMaster`
+workflow, `SuperstepActivity`, retry/jitter, continue-as-new, HITL signals, and the replay/equivalence/
+crash tests — requires `temporalio` and a Temporal test environment that cannot be installed or run
+in this Windows session; that work is CI-gated (`@pytest.mark.temporal`). See the handoff note.
+
+---
+
 ## 2026-07-21 · [P2.7] Lock determinism and halting — v0.1.0
 
 **Type:** test · **Phase:** P2 · **Author:** Claude (agent)
