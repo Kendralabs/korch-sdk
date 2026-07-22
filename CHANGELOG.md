@@ -15,6 +15,14 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Model routing (Phase 5), explicit strategy: `korchestrator.routing` with `get_router()`, the
+  `BaseRouter` supporting protocol (re-exported from `interfaces`), and the explicit + fallback
+  strategies behind a `CompositeRouter` chain. The default (`ROUTING_STRATEGY="explicit"`) selects a
+  per-agent model — a pinned model or an `AGENT_MODEL_MAP` entry — and always resolves via a
+  never-declining fallback tail, on the base install with no extra. A built-in `ModelCard` catalogue
+  (`builtin_model_cards()`) and a file/builtin loader (`load_model_cards()`). New `Settings` fields
+  for routing (`routing_strategy`, `agent_model_map`, `routing_weights`, `routing_priority_order`,
+  `embedding_provider`, `modelcard_*`), with `Settings.from_env` parsing their JSON/CSV forms.
 - Self-contained `korchestrator` package skeleton: every module directory from the module
   catalogue, each with a layer-naming docstring and an explicit `__all__`; `py.typed`;
   and the single-source `version.py` pinned to `0.1.0`.

@@ -10,6 +10,66 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P5.2] Explicit routing strategy + factory + model cards — v0.1.0
+
+**Type:** feature · **Phase:** P5 (model routing) · **Author:** Claude (agent)
+
+**What.** Stood up the `routing/` module (the routing models from P5.1/P1.2 already existed). Added:
+`routing/model_cards.py` — a built-in `ModelCard` catalogue (`builtin_model_cards()`) and
+`load_model_cards(settings)` (builtin/file JSON sources; `url` deferred with an actionable error);
+`routing/explicit.py` — `ExplicitRouter` (honours a per-context pinned model, then `AGENT_MODEL_MAP`,
+else declines with `RoutingError(ROUTING_NO_CANDIDATES)`) and `FallbackRouter` (never declines —
+resolves to a configured default so the zero-config install always resolves); `routing/composite.py`
+— `CompositeRouter` (tries sub-routers in order, first decision wins, passes the winner's result
+through unchanged); `routing/factory.py` — `get_router(settings)` building the strategy chain from
+`ROUTING_STRATEGY` (always ending in the fallback tail). Extended `config/Settings` with the routing
+variable group (`routing_strategy`, `agent_model_map`, `routing_weights`, `routing_priority_order`,
+`embedding_provider`, `modelcard_*`) and taught `Settings.from_env` to parse JSON (`AGENT_MODEL_MAP`,
+`ROUTING_WEIGHTS`) and CSV (`ROUTING_PRIORITY_ORDER`) variables, wrapping bad JSON in
+`ConfigurationError`. `korchestrator.routing` re-exports `BaseRouter` (defined in `interfaces/`) as
+the documented import path (spec 07 §5), plus `get_router` and the strategy classes.
+
+**Why.** P5.2 — the default routing path. "Explicit plus one fallback is the default" (spec 11 §150):
+per-agent model selection that works on the base install with no extra, and the machinery
+(`get_router`, the composite chain, model cards) the ranking strategies (P5.3/P5.4) build on.
+
+**Design decisions.** (1) `BaseRouter` stays a `Protocol` in `interfaces/` (a supporting protocol,
+P1) and is re-exported from `routing/` so spec 07's `from korchestrator.routing import BaseRouter`
+resolves — one definition, documented path. (2) Every fixed strategy chain is *explicit-first* then
+the named strategy then *fallback-last*: a pinned model always wins, and the chain always resolves.
+(3) `CompositeRouter` passes the winning `RoutingResult` through unchanged (accurate `strategy`/`reason`
+naming the router that actually decided) rather than relabelling to `"composite"`. (4) `MODELCARD_URL`
+is deferred: URL loading needs an HTTP client (`httpx`, confined to `clients`/`providers` by ADR 0011),
+so `url` raises `ConfigurationError` pointing at `builtin`/`file`. (5) Routing config lives on
+`Settings` now (config is the one env reader, B6); Phase 8 still finalizes `.env`/`configure()`.
+
+**Architecture changes.** New `routing/` module populated (was an empty skeleton). No boundary change:
+`routing/` imports only `interfaces`, `models`, `config`, `exceptions`, `logging` — import-linter's
+four contracts stay green. `config/` now imports `exceptions` (leaf → leaf, no cycle).
+
+**Files/modules affected.** `src/korchestrator/routing/{__init__,model_cards,explicit,composite,factory}.py`
+(new); `src/korchestrator/config/settings.py` (routing fields + env parsing);
+`tests/unit/routing/test_{explicit,composite,model_cards,factory}.py` and
+`tests/unit/config/test_settings_routing.py` (new).
+
+**Breaking changes.** None. Additive: new `Settings` fields (all defaulted), a new `routing/` public
+surface (`korchestrator.routing`, not top-level `__all__` — the golden snapshot is untouched).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (7 files); routing + config +
+contract suites pass (98 tests) and module doctests pass (8). import-linter 4/4 kept. Router purity
+asserted (same context → same result); the default chain resolves via the fallback tail with no extra.
+
+**Known limitations / future improvements.** Algorithmic and semantic strategies land in P5.3/P5.4;
+`get_router` currently builds only explicit + fallback (a `composite` chain naming `algorithmic`
+raises until P5.3 registers it). `MODELCARD_URL` deferred. Routing is not yet wired into execution
+(P5.6).
+
+---
+
 ## 2026-07-22 · [P4.9] Façade wiring — the first end-to-end run — v0.1.0
 
 **Type:** feature · **Phase:** P4 (critical-path milestone) · **Author:** Claude (agent)
