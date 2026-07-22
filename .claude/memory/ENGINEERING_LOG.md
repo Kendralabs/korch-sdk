@@ -10,6 +10,70 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.3] Networked OpenAI gateway + get_lm factory — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** `providers/gateway_openai.py`: `OpenAIGateway`, the networked default `IModelGateway` for
+any OpenAI-compatible chat-completions endpoint. `complete()` maps `Message`s to OpenAI chat roles,
+POSTs `/chat/completions`, and returns the assistant reply as a `Message`; `available_models()` lists
+`/models` as `ModelCard`s. `providers/factory.py`: `get_lm(model_name, *, settings, api_key,
+base_url, timeout_seconds)`, returning `MockLM` when `settings.mock_llm` else a configured
+`OpenAIGateway`. Both re-exported from `korchestrator.providers`. 25 tests: `respx`-mocked HTTP for
+every path (completion mapping, header/credential, max_tokens, and each error → its wrapped
+`KorchError`), plus the factory branches.
+
+**Why.** `OpenAIGateway` is the real-inference default behind the `IModelGateway` port (spec 03 §5),
+the counterpart to MockLM; `get_lm` is the selection point the façade uses to pick mock vs real. P4.3
+delivers the first code that touches a real dependency, so its error-wrapping discipline (spec 08
+§2.2) is load-bearing.
+
+**Design decisions.** (1) **Config fully injected** — `api_key` and `base_url` are required
+constructor args with no hardcoded endpoint (golden rule 3), and the gateway reads no environment
+(spec 07 §5); P8 will source these from `Settings` in `config/`. (2) **`httpx` is lazy and confined**
+— imported inside `complete()`/`available_models()`, behind the `[remote]` extra; verified that
+`import korchestrator.providers` pulls in no `httpx`, so the base install stays `pydantic`-only.
+(3) **Every vendor exception is wrapped** with `raise ... from exc`: timeout→`TimeoutError`,
+401/403→`AuthError`, 429→`RateLimitError`, non-JSON/unexpected-shape/other→`ProviderError`; no
+`httpx` type crosses the boundary. (4) A fresh `AsyncClient` per call (no shared client lifecycle) —
+simplest correct; connection pooling is a noted future improvement. (5) `available_models` fills the
+capability fields `/models` does not report with documented placeholder constants, never fabricated
+as real figures. (6) `get_lm` is **internal** (not added to `korchestrator.__all__`), so the public
+snapshot is unchanged. (7) Returned `Message.valid_time` is a placeholder the agent layer re-stamps
+from the injected clock — the gateway performs no wall-clock read (it is outside workflow scope, so
+this is discipline rather than requirement).
+
+**Architecture changes.** `providers/` gains its networked adapter and a factory; both import only
+`interfaces`/`models`/`config`/`exceptions` + stdlib, with `httpx` lazy. Import-linter 3/3 kept.
+`respx` (already declared in `[dev]`) is now used for HTTP contract tests.
+
+**Files/modules affected.** `src/korchestrator/providers/gateway_openai.py`,
+`src/korchestrator/providers/factory.py`, `providers/__init__.py`,
+`tests/unit/providers/test_gateway_openai.py`, `tests/unit/providers/test_factory.py`, `CHANGELOG.md`.
+
+**Breaking changes.** None (new surface; `korchestrator.__all__` unchanged).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 45 provider tests pass (25 new); `ruff`/`format`/`mypy --strict` clean on 58
+source files; import-linter 3/3 kept; isolation gate `OK`; provider doctests pass; base-install
+import verified httpx-free. Provider package coverage 99% (gateway_openai 98%, factory 100%). The
+gateway's wrap path asserts the full spec 08 §2.2 shape (KorchError subclass + non-empty `code` +
+`__cause__`).
+
+**Known limitations / future improvements.** (1) The cross-cutting `tests/unit/test_error_wrapping.py`
+that spec 08 §2.2 mandates over *every* public entry point is deferred to its owning phase (P8); the
+gateway path is already locked here. (2) A fresh `AsyncClient` per call — add pooling if profiling
+shows it matters. (3) `available_models` capability metadata is placeholder until a routing catalogue
+(P5) or enterprise gateway supplies real figures. (4) `get_lm` sources credentials from explicit args
+until P8 adds gateway fields to `Settings`. Still open for P4.5/P4.6: how the DSPy worker/architect
+coexist with MockLM so the Tier-1 one-liner runs on a base install (no `[dspy]`) while the cognitive
+layer raises `MissingExtraError` when its real reasoning is used — the next design decision.
+
+---
+
 ## 2026-07-22 · [P4.2] Default local ARI providers — identity + sandbox — v0.1.0
 
 **Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
