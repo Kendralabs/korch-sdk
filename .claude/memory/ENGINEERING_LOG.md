@@ -10,6 +10,51 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P6.6] Context compiler + Minimum Viable Context extraction — v0.1.0
+
+**Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
+
+**What.** Added `context/`. `ContextCompiler.compile(state)` builds a budget-bounded
+`CompiledContext` from an `AgentState` snapshot: it always keeps the objective, ranks messages by
+kind (answers/handoffs first) then recency, greedily packs them under a character budget
+(`max_chars`) and count cap (`max_messages`), and prunes the rest. An optional `Summarizer` seam
+folds the pruned tail into a short note; with no summariser (or on its failure) it degrades to a
+count. `CompiledContext` reports `original_count`/`included_count`/`pruned_count`/`truncated`/
+`summarized` so the reduction is measurable.
+
+**Why.** P6.6 — keep the model prompt small and relevant. MVC extraction measurably reduces context
+size (acceptance) and runs off the hot loop against a frozen snapshot.
+
+**Design decisions.** (1) Runs **off the hot loop**: an agent calls it against an immutable snapshot;
+it never mutates state and, without a summariser, is pure and deterministic. (2) A character budget
+is a dependency-free token proxy — deterministic and good enough for MVC; a real tokenizer can slot
+in later. (3) **Graceful degradation**: a missing or throwing summariser never breaks compilation —
+it falls back to a count note (spec 07/P6.6 "degrades gracefully"). (4) Priority (answer > handoff >
+tool > thought) preserves substantive contributions when the budget bites; output is re-ordered
+chronologically for a coherent prompt.
+
+**Architecture changes.** `context/` (L3) populated; imports models/exceptions only (+ stdlib).
+import-linter 4/4 kept; feature-independent from tools/mcp.
+
+**Files/modules affected.** `src/korchestrator/context/{__init__,compiler}.py` (new);
+`tests/unit/context/test_compiler.py` (new).
+
+**Breaking changes.** None. New `korchestrator.context` surface; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean; 7 tests + 1 doctest pass;
+import-linter 4/4. Covered: objective kept, MVC reduces size under budget, answers survive pruning,
+chronological ordering, summariser folds the tail, broken summariser degrades, determinism.
+
+**Known limitations / future improvements.** Character budget is a token proxy (real tokenizer later).
+The compiler is not yet auto-invoked inside the worker prompt build — wiring it into `think` is a
+later refinement; today it is a standalone, testable component.
+
+---
+
 ## 2026-07-22 · [P6.4] MCP client — discover server tools as AUB connectors — v0.1.0
 
 **Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)
