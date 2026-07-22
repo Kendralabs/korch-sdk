@@ -12,9 +12,9 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P2 — Pregel kernel — **complete** on branch `feat/p2-pregel-kernel` (off `develop`, pending push/PR). All 7 tasks landed across 5 commits. |
-| **Last completed phase** | P2 — the deterministic BSP kernel: reducers + laws, AgentGraph, ChannelSchema, PregelRunner (activation/barrier/routing/halting), determinism suite. Runs on pydantic alone. |
-| **Blocking** | Nothing. P3 (runtime adapters: local + Temporal) is ready to begin once P2 merges. |
+| **Active phase** | P3 — Runtime adapters — **complete** on branch `feat/p3-runtime-adapters` (off `develop`, with P2 merged; pending push/PR). All 6 tasks + ADR 0010 landed across 4 commits. |
+| **Last completed phase** | P3 — local runtime (default) and durable Temporal adapter, swappable by config: PregelMaster workflow + SuperstepActivity, retry/jitter, continue-as-new, HITL signals (cancel/pause/resume). Cross-runtime equivalence, replay, crash-recovery, and roll-over are test-locked (9 temporal tests, verified on the time-skipping server). |
+| **Blocking** | Nothing. P4 (cognitive layer: MockLM → agents → the first end-to-end run) is next; it is the critical-path milestone (P4.9). |
 | **Code written** | P0 foundation (see below) plus: the `KorchError` tree + error codes; the frozen domain models (`state`/`agent`/`plan`/`routing`/`result`/`tool` + `types.JSONValue`); the ARI ports and supporting protocols; and the frozen public façade (`Korch`/`Swarm`/`Agent`) with the 27-name `__all__` guarded by a golden snapshot. |
 
 The package now builds standalone (`pip install -e .`, `python -m build`, clean-env wheel install all
@@ -54,7 +54,8 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen) | P1 |
 | `services/` | Façade | **tested** (`Korch`/`Swarm`/`Agent` signatures; `run` → `NotImplementedError` until P4.9) | P1, P4 |
 | `core/` | Kernel (L1) | **tested** (reducers + laws, AgentGraph, ChannelSchema, PregelRunner; determinism-locked; ≥97% cov) | P2 |
-| `agents/` · `taxonomy/` · `routing/` · `runtime/` · `context/` · `persistence/` · `providers/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P3–P9 |
+| `runtime/` | Adapter | **tested** (LocalRuntime + resolve_runtime; TemporalRuntime PregelMaster/SuperstepActivity, retry/rollover, HITL signals; equivalence/replay/crash/rollover verified) | P3 |
+| `agents/` · `taxonomy/` · `routing/` · `context/` · `persistence/` · `providers/` · `tools/` · `mcp/` · `a2a/` · `governance/` · `security/` · `events/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P4–P9 |
 
 ## 4. Public surface
 
