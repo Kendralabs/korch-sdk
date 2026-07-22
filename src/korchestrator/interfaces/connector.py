@@ -1,6 +1,9 @@
 """Contract layer. Imports: korchestrator.models, stdlib.
 
-The ``AUBConnector`` supporting protocol — execute a tool invocation for the Agent Utility Bridge.
+The tool-execution contracts: ``AUBConnector`` (execute only) and its discovery-aware superset
+``Connector`` (adds ``name``/``description``/``schema``). Both the native AUB connectors and the
+MCP-backed connectors implement ``Connector`` — it lives here so ``tools`` and ``mcp`` can meet at a
+shared contract without importing each other (feature independence).
 """
 
 from __future__ import annotations
@@ -11,7 +14,7 @@ from typing import Protocol, runtime_checkable
 from korchestrator.models.tool import ToolResult
 from korchestrator.types import JSONValue
 
-__all__ = ["AUBConnector"]
+__all__ = ["AUBConnector", "Connector"]
 
 
 @runtime_checkable
@@ -38,4 +41,30 @@ class AUBConnector(Protocol):
         tenant_id: str = "default",
     ) -> ToolResult:
         """Invoke ``tool`` with ``args`` in ``tenant_id``; return a :class:`ToolResult`."""
+        ...
+
+
+@runtime_checkable
+class Connector(AUBConnector, Protocol):
+    """A single named tool: an :class:`AUBConnector` that also advertises its name and schema.
+
+    This is the contract the bridge and registry key on. Native connectors and MCP-backed connectors
+    both implement it. ``execute`` MUST NOT raise for *expected* failures — it returns
+    ``ToolResult(ok=False, error_code=...)``; only unexpected failures propagate (the bridge wraps
+    them as ``ToolError``). Arguments are validated by the bridge before ``execute`` is called.
+    """
+
+    @property
+    def name(self) -> str:
+        """The tool name agents mount by (``AgentConfig.tools``) and the registry keys on."""
+        ...
+
+    @property
+    def description(self) -> str:
+        """A short human/model-readable description of what the tool does."""
+        ...
+
+    @property
+    def schema(self) -> Mapping[str, JSONValue]:
+        """The JSON-Schema (object) the bridge validates arguments against."""
         ...

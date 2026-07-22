@@ -30,6 +30,7 @@ from korchestrator.types import JSONValue
 EXPECTED = {
     "AUBConnector",
     "BaseRouter",
+    "Connector",
     "GraphRepository",
     "IDurableRuntime",
     "IExecutionSandbox",

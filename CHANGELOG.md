@@ -15,6 +15,12 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- MCP client (Phase 6): `korchestrator.mcp` with `MCPServerConfig` (stdio/sse descriptor) and
+  `MCPClient.discover()`, which connects to an MCP server and returns its tools as `Connector`s for
+  the shared AUB registry — so agents can't tell an MCP tool from a native one. Discovery failures
+  are non-fatal; the real transport needs the `[mcp]` extra. The `Connector` contract moved to
+  `korchestrator.interfaces` (added to its `__all__`) so `tools` and `mcp` share it without importing
+  each other; the `korchestrator.tools` import path is unchanged.
 - Agent Utility Bridge (Phase 6): `korchestrator.tools` with `ConnectorRegistry` (register a
   `Connector`, wrap a function via `register_tool`, entry-point `discover()`), the `Connector`
   contract, and `invoke_tool` — the single path enforcing the mount access gate, rate limiting,

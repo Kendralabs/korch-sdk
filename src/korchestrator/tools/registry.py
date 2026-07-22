@@ -14,8 +14,8 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from typing_extensions import Self
 
 from korchestrator.exceptions import ValidationError
+from korchestrator.interfaces import Connector
 from korchestrator.models.tool import ToolResult
-from korchestrator.tools.connectors.base import Connector
 from korchestrator.types import JSONValue
 
 __all__ = ["ENTRY_POINT_GROUP", "ConnectorRegistry"]
