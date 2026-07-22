@@ -10,6 +10,68 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-22 · [P4.2] Default local ARI providers — identity + sandbox — v0.1.0
+
+**Type:** feature · **Phase:** P4 · **Author:** Claude (agent)
+
+**What.** Implemented the two zero-infrastructure default ARI providers. `providers/identity_local.py`:
+`LocalIdentityProvider`, an unsecured single-tenant `IIdentityProvider` that authenticates any
+non-empty agent within its one bound tenant and returns a deterministic synthetic DID
+(`did:korch:local:<tenant>:<agent>`), refusing cross-tenant requests with `AuthError`.
+`providers/sandbox_local.py`: `LocalSandbox`, a subprocess-isolating `IExecutionSandbox` that maps
+each registered tool to an argv command, runs it in a child process, delivers the invocation `args`
+as one JSON document on stdin, bounds it with a hard kill-on-expiry timeout, and returns the child's
+stdout as a normalised `ToolResult` (JSON-parsed when possible, else raw text). Both re-exported from
+`korchestrator.providers`. 14 unit tests cover port conformance, the insecure-construction warning,
+determinism, tenant enforcement, and — for the sandbox — success, non-JSON output, unknown tool,
+non-zero exit, and the timeout path.
+
+**Why.** These are the default implementations behind two of the three ARI ports (spec 03 §5), so a
+fresh install runs with no identity infrastructure and no external sandbox. They pair with MockLM
+(P4.1) to complete the local, offline provider set the agent layer (P4.4+) and façade (P4.9) wire in.
+
+**Design decisions.** (1) Both are explicit development fallbacks per the security rule: each logs a
+`WARNING` on construction and is documented as rejected by the production-boot gate under a durable
+deployment (spec 08 §5) — the gate itself lands with the config finalisation in P8. (2) `LocalSandbox`
+is genuinely subprocess-based (spec 03 §5 says "subprocess"), which makes the timeout real (the child
+is killed) and keeps a hung/crashing tool off the caller's process; it deliberately does **not** yet
+enforce CPU/memory/network limits — that hardening is OpenSandbox/enterprise. (3) The tool→argv
+registry is injected and empty by default; the AUB (P6) populates it, so no speculative tool wiring
+now. (4) Wall-clock (`time.monotonic`) is used only for `duration_ms` — legal here because providers
+are outside workflow scope (determinism rule applies to the kernel, not adapters). (5) Tool failures
+(unknown tool, non-zero exit, spawn error, timeout) are returned as `ok=False` `ToolResult`s, never
+raised, so a caller/barrier cannot be crashed by tool behaviour; existing error codes are reused
+(`TOOL_NOT_FOUND`, `KORCH_TIMEOUT`, `KORCH_PROVIDER_FAILED`) — no new code added to the frozen set.
+
+**Architecture changes.** `providers/` gains two more adapters importing only `exceptions` / `models`
+/ `constants` + stdlib (no optional dependency, no sibling imports). Import-linter: 3 contracts kept,
+0 broken. First use of the namespaced `logging.getLogger("korchestrator")` logger in `src/`.
+
+**Files/modules affected.** `src/korchestrator/providers/identity_local.py`,
+`src/korchestrator/providers/sandbox_local.py`, `providers/__init__.py`,
+`tests/unit/providers/test_identity_local.py`, `tests/unit/providers/test_sandbox_local.py`,
+`CHANGELOG.md`.
+
+**Breaking changes.** None (new surface).
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** 14 new unit tests pass (22 provider tests total); `ruff`, `ruff format`,
+`mypy --strict` clean on 56 source files; import-linter 3/3 kept; isolation gate `OK`. Provider
+doctests pass. Full-suite coverage run recorded in the PR.
+
+**Known limitations / future improvements.** (1) No production-boot rejection yet — the gate that
+refuses these providers under a durable deployment is P8; until then, safety rests on the construction
+warning and the local runtime default. (2) `LocalSandbox` enforces isolation and timeout but no
+resource (CPU/memory/network/filesystem) limits — deferred to OpenSandbox. (3) The sandbox tool
+registry is empty until the AUB bridge (P6) registers connectors. Still open for P4.5/P4.6: how the
+DSPy worker/architect coexist with MockLM so the Tier-1 one-liner runs on a base install (no `[dspy]`)
+while the cognitive layer raises `MissingExtraError` when its real reasoning is used.
+
+---
+
 ## 2026-07-22 · [P4.1] Deterministic MockLM gateway — v0.1.0
 
 **Type:** feature · **Phase:** P4 · **Author:** Claude (agent)

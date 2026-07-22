@@ -71,6 +71,14 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   `IModelGateway`. The same messages always yield the same completion; it supports scripted
   per-model responses and records a call log. No network, no randomness, no credentials — it is what
   makes the full agent path testable in CI, and it is the zero-config default.
+- The default local ARI providers (`korchestrator.providers`): `LocalIdentityProvider` — an
+  unsecured, single-tenant `IIdentityProvider` that resolves an agent to a deterministic synthetic
+  DID and enforces its bound tenant; and `LocalSandbox` — a subprocess-isolating `IExecutionSandbox`
+  that runs a registered tool command in a child process under a hard, kill-on-expiry timeout and
+  returns a normalised `ToolResult`. Both are zero-infrastructure development fallbacks: each logs a
+  warning on construction and is rejected by the production-boot gate under a durable deployment
+  (spec 08 §5); enterprise deployments supply KIAM/KACP and OpenSandbox. The sandbox tool registry
+  is empty until the Agent Utility Bridge (P6) populates it.
 
 ### Changed
 
