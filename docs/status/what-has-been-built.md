@@ -168,6 +168,37 @@ Finalized the seven foundations every module depends on (spec 08).
   root; the rest of the documented span tree and the remaining four metrics are defined (correct
   OTel instrument kind per name) but not yet wired into the kernel/tool/gateway call sites.
 
+## P9 — Remote client ✅
+
+The optional Python client for a hosted Korchestrator engine, `korchestrator.remote.
+KorchestratorClient`, behind the `[remote]` extra. Nothing in Tiers 1–3 (the local kernel) depends
+on it, and the base install never imports it.
+
+- ✅ **P9.1 — Transport + auth**: the authenticated, retrying HTTP transport. One `Authorization:
+  Bearer` header for both a static API key and a Keycloak/KIAM JWT, 30s default timeout, up to 3
+  retries with full-jitter exponential backoff on `429`/`502`/`503`/`504` and connection failures
+  — never any other `4xx`. New `ApiError` (`status`/`code`/`trace_id`).
+- ✅ **P9.2 — Credential safety**: a credential-safe `repr` (`base_url` only); test-locked that no
+  error path or `repr`/`str` ever leaks the API key, and that `clients/` performs no file I/O.
+- ✅ **P9.3 — Run lifecycle**: `run`, `run_swarm`, `get_run`, `wait`, `run_and_wait`, `list_runs`,
+  `get_run_summary`. Every numeric run status the engine can return is normalized to the
+  `RunStatus` string vocabulary. New wire-facing `RemoteRunResult`/`RunSummary` (not the local
+  kernel's `RunResult` — no fabricated nested `AgentState`).
+- ✅ **P9.4 — Control + identity**: `resume`, `cancel`, `edit_resume` (mirrors the local kernel's
+  own signal shape), `me`, `my_quota`, `my_runs`, and key management (`create_key`/`list_keys`/
+  `revoke_key`). A newly created key's secret (`ApiKey.key`) is a `SecretStr`, shown once.
+- ✅ **P9.5 — Streaming**: `stream(run_id)` — a native async iterator (the only method that isn't a
+  sync wrapper), auto-reconnecting on a dropped connection. Resumes from "now," not the last
+  delivered event — the wire format carries no event id.
+- ✅ **P9.6 — Discovery**: `tools`, `models` (reuses the local kernel's own `ModelCard`),
+  `swarm_templates` — completes the method surface.
+- ✅ **P9.7 — Contract-conformance tests**: a table-driven suite proving every one of the 20
+  methods surfaces exactly `ApiError` on a non-2xx response, with a guard against a future method
+  silently missing a table entry.
+- ✅ **P9.8 — TypeScript parity matrix**: `docs/parity-matrix.md` settles the deferred TypeScript
+  client's contract (ADR 0008) — every method marked `TS: planned`, with three discrepancies
+  between an earlier design sketch and the shipped Python client resolved and labelled.
+
 ---
 
 ## Decisions recorded along the way (ADRs)
