@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P10 — Testing, benchmarks & quality gates — **in progress** (P10.1 done; P10.2's ReAct-loop gap fix done, integration suite partial) on branch `feat/p10-testing-benchmarks-quality` (off `develop`, not yet pushed). Phase 9 is complete and merged. |
-| **Last completed milestone** | **P10.2 (partial) — `WorkerAgent` ReAct tool-calling loop.** Writing P10.2's integration suite surfaced that `AgentConfig.tools` never actually ran a tool — a real gap left open since P4.6/P6. Implemented the bounded ReAct loop via a new `IToolInvoker` port (mirrors `IModelGateway`), wired `Korch`/`Swarm(connectors=[...])` through the composition root, and fixed a kernel bug (`PregelRunner` was silently dropping every non-`answer`-kind message from the run's message log). See ADR 0018. Two integration tests (`tests/integration/test_tools_integration.py`) pass end-to-end against a real `FilesystemConnector`. |
-| **Blocking** | Nothing for this work. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s coverage gap is this same issue, left untouched; re-confirmed via `git stash` that these 13 failures are identical on the pre-ReAct commit). Next: finish P10.2 (MCP + routing integration tests), then P10.3–P10.6. |
-| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1 committed locally; P10.2's ReAct work is staged, not yet committed. |
+| **Active phase** | P10 — Testing, benchmarks & quality gates — **in progress** (P10.1 done; P10.2 done) on branch `feat/p10-testing-benchmarks-quality` (off `develop`, not yet pushed with P10.2's integration-suite commit). Phase 9 is complete and merged. |
+| **Last completed milestone** | **P10.2 — Integration suite, complete.** Writing the tool-calling integration test surfaced that `AgentConfig.tools` never actually ran a tool — a real gap left open since P4.6/P6. Implemented the bounded ReAct loop via a new `IToolInvoker` port (mirrors `IModelGateway`), wired `Korch`/`Swarm(connectors=[...])` through the composition root, and fixed a kernel bug (`PregelRunner` was silently dropping every non-`answer`-kind message from the run's message log). See ADR 0018. Then closed the rest of P10.2's named surface: `tests/integration/test_tools_integration.py` (a real `FilesystemConnector`), `test_mcp_integration.py` (a fake `MCPSession`'s tool through `MCPClient.discover`), `test_routing_integration.py` (the built-in `AlgorithmicRouter`, two weightings routing to two different models) — all end-to-end through a full `Swarm.run()`. Runtime swap + governance pause/resume were confirmed already covered by the existing `tests/integration/test_temporal_runtime.py`. |
+| **Blocking** | Nothing for this work. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s coverage gap is this same issue, left untouched; re-confirmed via `git stash` that these 13 failures are identical on the pre-ReAct commit). Next: P10.3 (E2E suite), P10.4 (regression harness), P10.5 (benchmarks), P10.6 (ratchet). |
+| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1 pushed; P10.2's ReAct-loop commit is pushed; the integration-suite completion (MCP + routing tests) is staged, not yet committed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (105 source files), `pytest` (dspy + non-dspy paths; **792 passed**,
-97.04% cov, 13 Temporal/e2e excluded — all confirmed pre-existing), import-linter (**4 contracts
+ruff-format, `mypy --strict` (105 source files), `pytest` (dspy + non-dspy paths, excluding the one
+Temporal-dependent file; **793 passed**, 96.83% cov), import-linter (**4 contracts
 kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
 single-sourcing. `import korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry`
 stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, and
@@ -40,7 +40,7 @@ stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, a
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
 | P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
 | P9 | Remote client (Python only — TS deferred) | **Complete** (P9.1–P9.8; not yet pushed/merged to `develop`) |
-| P10 | Testing, benchmarks & quality gates | **In progress** (P10.1 done; P10.2–P10.6 next) |
+| P10 | Testing, benchmarks & quality gates | **In progress** (P10.1–P10.2 done; P10.3–P10.6 next) |
 | P11 | Documentation, examples & DX | Not started |
 | P12 | CI/CD, packaging & publishing | Not started |
 | P13 | External backend adapter | **Out of scope** — separate repository |
