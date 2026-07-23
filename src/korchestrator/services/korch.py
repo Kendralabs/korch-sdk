@@ -17,6 +17,7 @@ from korchestrator.agents import ArchitectAgent
 from korchestrator.config import Settings
 from korchestrator.interfaces import (
     BaseRouter,
+    Connector,
     GraphRepository,
     IDurableRuntime,
     IModelGateway,
@@ -24,6 +25,7 @@ from korchestrator.interfaces import (
 from korchestrator.models.result import RunResult
 from korchestrator.services import _composition as comp
 from korchestrator.services.hooks import EventHandler, Middleware
+from korchestrator.tools import ConnectorRegistry
 from korchestrator.types import JSONValue
 
 __all__ = ["Korch"]
@@ -43,6 +45,11 @@ class Korch:
         router: The model router to inject; resolved from config when omitted.
         repository: The graph repository to inject; resolved from config when omitted.
         middleware: Middleware fired around each superstep, in registration order.
+        connectors: Tools available to the Architect's plan (ADR 0015) — a
+            :class:`~korchestrator.tools.ConnectorRegistry` this ``Korch`` owns, or connectors to
+            build one from. Omit entirely if no agent needs tools; an agent whose planned
+            ``AgentConfig.tools`` is non-empty with no ``connectors`` given raises
+            ``ConfigurationError`` (P10.2).
 
     Example:
         >>> from korchestrator import Korch
@@ -59,6 +66,7 @@ class Korch:
         router: BaseRouter | None = None,
         repository: GraphRepository | None = None,
         middleware: Sequence[Middleware] = (),
+        connectors: Sequence[Connector] | ConnectorRegistry | None = None,
     ) -> None:
         """Store the (optionally injected) collaborators; resolution happens on first use."""
         self._settings = settings
@@ -67,6 +75,7 @@ class Korch:
         self._router = router
         self._repository = repository
         self._middleware = tuple(middleware)
+        self._connectors = connectors
         self._handlers: list[tuple[str, EventHandler]] = []
 
     def on(self, event: str, handler: EventHandler) -> Self:
@@ -102,6 +111,7 @@ class Korch:
         gateway = comp.resolve_gateway(settings, self._model_gateway)
         clock = comp.wall_clock()
         repository = comp.resolve_repository(settings, self._repository)
+        tool_invoker = comp.resolve_tool_invoker(self._connectors)
 
         async def _flow() -> RunResult:
             semantics = comp.classify(objective)
@@ -124,6 +134,7 @@ class Korch:
                 router=router,
                 task=semantics,
                 candidates=candidates,
+                tool_invoker=tool_invoker,
             )
             return await comp.run_graph(
                 graph,

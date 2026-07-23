@@ -16,6 +16,7 @@ from korchestrator.agents import Agent
 from korchestrator.config import Settings
 from korchestrator.interfaces import (
     BaseRouter,
+    Connector,
     GraphRepository,
     IDurableRuntime,
     IModelGateway,
@@ -23,6 +24,7 @@ from korchestrator.interfaces import (
 from korchestrator.models.result import RunResult
 from korchestrator.services import _composition as comp
 from korchestrator.services.hooks import EventHandler, Middleware
+from korchestrator.tools import ConnectorRegistry
 from korchestrator.types import JSONValue
 
 __all__ = ["Swarm"]
@@ -43,6 +45,10 @@ class Swarm:
         router: The model router to inject; resolved from config when omitted.
         repository: The graph repository to inject; resolved from config when omitted.
         middleware: Middleware fired around each superstep, in registration order.
+        connectors: Tools available to agents in this swarm (ADR 0015) — a
+            :class:`~korchestrator.tools.ConnectorRegistry` this ``Swarm`` owns, or connectors to
+            build one from. Omit entirely if no agent needs tools; an agent whose ``tools`` is
+            non-empty with no ``connectors`` given raises ``ConfigurationError`` (P10.2).
 
     Example:
         >>> from korchestrator import Agent, Swarm
@@ -66,6 +72,7 @@ class Swarm:
         router: BaseRouter | None = None,
         repository: GraphRepository | None = None,
         middleware: Sequence[Middleware] = (),
+        connectors: Sequence[Connector] | ConnectorRegistry | None = None,
     ) -> None:
         """Start an empty swarm for ``objective``; store optionally injected collaborators."""
         self._objective = objective
@@ -75,6 +82,7 @@ class Swarm:
         self._router = router
         self._repository = repository
         self._middleware = tuple(middleware)
+        self._connectors = connectors
         self._handlers: list[tuple[str, EventHandler]] = []
         self._agents: dict[str, Agent] = {}
         self._edges: list[tuple[str, str]] = []
@@ -132,6 +140,7 @@ class Swarm:
         clock = comp.wall_clock()
         agents = tuple(self._agents.values())
         repository = comp.resolve_repository(settings, self._repository)
+        tool_invoker = comp.resolve_tool_invoker(self._connectors)
 
         async def _flow() -> RunResult:
             semantics = comp.classify(self._objective)
@@ -144,6 +153,7 @@ class Swarm:
                 router=router,
                 task=semantics,
                 candidates=candidates,
+                tool_invoker=tool_invoker,
             )
             return await comp.run_graph(
                 graph,
