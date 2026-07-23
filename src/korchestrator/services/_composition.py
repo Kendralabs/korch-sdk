@@ -29,6 +29,7 @@ from korchestrator.routing import load_model_cards, resolve_router
 from korchestrator.runtime import resolve_runtime
 from korchestrator.services.hooks import EventHandler, HookRegistry, Middleware
 from korchestrator.taxonomy import TaxonomyClassifier
+from korchestrator.telemetry import record_metric, start_span
 from korchestrator.types import JSONValue
 from korchestrator.validators import (
     validate_max_supersteps as validate_max_supersteps,
@@ -223,7 +224,13 @@ async def run_graph(
     tenant_id: str = "default",
     observer: SuperstepObserver | None = None,
 ) -> RunResult:
-    """Mint a run, resolve the runtime, and drive ``graph`` to its terminal :class:`RunResult`."""
+    """Mint a run, resolve the runtime, and drive ``graph`` to its terminal :class:`RunResult`.
+
+    Wrapped in the ``agent.run`` span and the ``korch.run.duration``/``korch.run.status`` metrics
+    (spec 08 §4) — a no-op unless ``KORCH_TELEMETRY_ENABLED`` is set. The rest of the documented
+    span tree (``agent.superstep``/``agent.plan``/``tool.call``/``gen_ai.call``) is not yet wired;
+    see the engineering log for P8.7.
+    """
     state = AgentState(
         run_id=uuid.uuid4().hex,
         objective=objective,
@@ -231,8 +238,22 @@ async def run_graph(
         transaction_time=clock(),
     )
     runtime = resolve_runtime(settings, graph, clock=clock, observer=observer)
-    run_id = await runtime.start(state, max_supersteps=max_supersteps)
-    return await runtime.wait(run_id)
+    started_at = clock()
+    with start_span(
+        "agent.run",
+        settings=settings,
+        run_id=state.run_id,
+        tenant_id=tenant_id,
+        max_supersteps=max_supersteps,
+    ) as span:
+        run_id = await runtime.start(state, max_supersteps=max_supersteps)
+        result = await runtime.wait(run_id)
+        span.set_attribute("status", result.status.value)
+        span.set_attribute("supersteps", result.supersteps)
+    duration_ms = (clock() - started_at).total_seconds() * 1000
+    record_metric("korch.run.duration", duration_ms, settings=settings, status=result.status.value)
+    record_metric("korch.run.status", 1, settings=settings, status=result.status.value)
+    return result
 
 
 def _edit_resume_payload(

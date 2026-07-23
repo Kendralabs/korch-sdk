@@ -10,6 +10,95 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P8.7] Optional OpenTelemetry telemetry — v0.1.0 (closes Phase 8)
+
+**Type:** feature · **Phase:** P8 (cross-cutting foundations, final task) · **Author:** Claude (agent)
+
+**What.** `telemetry/tracer.py` (new): `is_enabled(settings=None)`, `start_span(name, *,
+settings=None, **attributes)`, `record_metric(name, value, *, settings=None, **attributes)`.
+Disabled (`KORCH_TELEMETRY_ENABLED` false, the default) — `start_span` returns the same
+module-level `_NoOpSpan` singleton on every call (no context manager allocation, no attribute
+processing beyond the caller's own `**kwargs`, no OTel import) and `record_metric` returns
+immediately. Enabled, both lazily import `opentelemetry.trace`/`opentelemetry.metrics` (confined
+inside `_otel()` — never at module top level) and raise `MissingExtraError` if the `[otel]` extra
+isn't installed. `record_metric` routes each of the six spec-named metrics to the correct OTel
+instrument kind (`korch.run.duration`/`korch.superstep.duration` → histogram;
+`korch.agents.active` → up/down counter; `korch.tool.calls`/`korch.model.tokens`/
+`korch.run.status` → counter), caching created instruments by name. `services/_composition.py`'s
+`run_graph` — the one composition-root function every `Korch.run`/`Swarm.run` call passes through
+— is wrapped in an `agent.run` span (`run_id`, `tenant_id`, `max_supersteps` attributes at start;
+`status`, `supersteps` set before the span closes) and records `korch.run.duration`/
+`korch.run.status` after.
+
+**Why.** P8.7 — "telemetry/ — optional OTel spans/metrics behind the `[otel]` extra and
+`KORCH_TELEMETRY_ENABLED`, zero overhead when off," the last task of Phase 8 (spec 08 §4).
+
+**Design decisions.** (1) **`start_span`/`record_metric` take an explicit `settings` kwarg,
+defaulting to the process-wide `get_settings()`.** The first draft read only `get_settings()`
+(the `configure()`-installed singleton) directly — which is disconnected from the `Settings` a
+`Korch`/`Swarm` call actually resolves (`self._settings or Settings.from_env()`, per spec 08 §1.2's
+injection model). That would have silently ignored `Swarm(settings=Settings(
+korch_telemetry_enabled=True))` unless the caller *also* called `configure()` process-wide — a
+real DI-boundary bug caught before committing, not a hypothetical. `run_graph` now passes its own
+resolved `settings` through explicitly; the `get_settings()` fallback stays for standalone/
+zero-config callers (docstring examples, future call sites that don't have a `Settings` on hand
+yet). (2) **The no-op path returns a literal singleton, not a freshly-built context manager** —
+`_NoOpSpan.__enter__` returns `self`; there is no `@contextmanager`-decorated function on the
+disabled branch, matching spec 08 §4's "no context manager allocation" literally rather than just
+in spirit. (3) **`tracer.start_as_current_span(...)`'s abstract type is `Iterator[Span]`** (it's
+implemented with `@contextmanager` by every concrete SDK, but the ABC method itself isn't
+decorated) **while it's used and documented as a context manager at runtime** — reconciled with one
+explicit, commented `cast`, not a broader `# type: ignore`. (4) **Only the outer `agent.run` span
+and its two metrics are wired this task** — the full span tree (`agent.superstep`/`agent.plan`/
+`tool.call`/`gen_ai.call`) and the remaining four metrics thread through the kernel, tool bridge,
+and model gateway, none of which currently carry a `Settings`/span-context handle; wiring all of
+them is a multi-module change belonging to those modules' own future work, not a one-task bolt-on.
+(5) **`benchmarks/`'s telemetry-on/off delta regression is explicitly deferred to P10** (Testing,
+Benchmarks & Quality Gates) — `benchmarks/` doesn't exist yet; a bare timing assertion inside the
+unit suite would violate T2 (no wall-clock timing in tests) for no real coverage gain. (6) Neither
+function joins top-level `korchestrator.__all__`, matching spec 04 §6's literal `__init__.py`
+example (telemetry isn't listed there, exactly like `ConfigurationError`, ADR 0016).
+
+**Architecture changes.** `telemetry/tracer.py` (new) — imports `config`, `exceptions`, stdlib;
+OTel imported only inside `_otel()`. `telemetry/__init__.py` re-exports `Span`, `is_enabled`,
+`record_metric`, `start_span`. `services/_composition.py` imports `korchestrator.telemetry`
+(a leaf utility — legal for the façade layer) and wraps `run_graph`. No import-linter contract
+changes; the base install still never imports OTel (`telemetry/` is transitively imported via
+`korchestrator.services`, so the lazy-inside-`_otel()` confinement — not a lazily-loaded module
+like `runtime/temporal_runtime.py` — is what keeps the base install `pydantic`-only here).
+
+**Files/modules affected.** `src/korchestrator/telemetry/{tracer,__init__}.py`;
+`src/korchestrator/services/_composition.py`; `pyproject.toml` (no change needed — `opentelemetry.*`
+ships its own inline types, so no new mypy override was required); `tests/unit/telemetry/
+test_tracer.py` (new); `tests/unit/services/test_run.py` (new end-to-end telemetry-wiring test);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. `KORCH_TELEMETRY_ENABLED` already existed as a `Settings` field (P8.1)
+but was previously unconsumed; consuming it is additive.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (101 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **660 passed**, 95.45% coverage (≥80 floor; `telemetry/tracer.py` itself 99%).
+New: disabled-path singleton-identity and no-op-context-manager tests; `MissingExtraError` on
+enabled-without-`[otel]` (via `sys.modules` patching, the same technique `test_run.py` already uses
+for `dspy`); real span/metric assertions against `InMemorySpanExporter`/`InMemoryMetricReader`
+bound through a monkeypatched `get_tracer`/`get_meter` (never the OTel *global* provider, which can
+only be set once per process — avoiding a test-order hazard); one end-to-end `Swarm(settings=
+Settings(korch_telemetry_enabled=True)).run()` test proving the `agent.run` span and both run
+metrics are actually emitted through the real façade path, not just the unit-level function. All
+doctest examples (2 new) pass offline.
+
+**Known limitations / future improvements.** The documented span tree below `agent.run` and four
+of the six named metrics are defined (correct instrument kind) but not wired into the kernel/tool/
+gateway call sites — tracked as follow-up wiring work, not a new phase. The `benchmarks/`
+zero-overhead regression is P10's job (already an open item in `PROJECT_STATE.md`'s known gaps).
+
+---
+
 ## 2026-07-23 · [P8.6] Trust-boundary validation — v0.1.0
 
 **Type:** feature/fix · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
