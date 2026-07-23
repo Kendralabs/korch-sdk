@@ -199,7 +199,7 @@ class PregelRunner:
         superstep = state.superstep
 
         new_context = self._reduce_context(state, updates)
-        new_inbox, answer_messages = self._route_messages(state, updates, superstep)
+        new_inbox, new_messages = self._route_messages(state, updates, superstep)
         new_trust_score = self._fold_trust(state.trust_score, updates)
 
         newly_halted = {update.agent_id for update in updates if update.halt}
@@ -210,7 +210,7 @@ class PregelRunner:
             update={
                 "context": new_context,
                 "inbox": new_inbox,
-                "messages": (*state.messages, *answer_messages),
+                "messages": (*state.messages, *new_messages),
                 "superstep": superstep + 1,
                 "halted": all_active_halted,
                 "halted_agents": halted_agents,
@@ -255,10 +255,13 @@ class PregelRunner:
         """Assign deterministic ids and route each message to its target inboxes.
 
         Inboxes are rebuilt fresh each superstep (delivered exactly once, to the next superstep).
-        ``answer`` messages additionally accumulate into the run's answer log.
+        Every message — whatever its ``kind`` — additionally accumulates into the run's message
+        log, since a single agent can now emit more than one message per superstep (e.g. a ReAct
+        agent's ``tool`` observations ahead of its ``answer``, P10.2); ``build_result`` filters this
+        log back down to ``kind == "answer"`` when it computes ``final_answer``.
         """
         inbox: dict[str, list[Message]] = {}
-        answers: list[Message] = []
+        log: list[Message] = []
         for update in updates:  # already in agent_id order
             for index, message in enumerate(update.messages):
                 stamped = message.model_copy(
@@ -270,9 +273,8 @@ class PregelRunner:
                 )
                 for target in self._targets(update.agent_id, stamped):
                     inbox.setdefault(target, []).append(stamped)
-                if stamped.kind == "answer":
-                    answers.append(stamped)
-        return {target: tuple(messages) for target, messages in inbox.items()}, answers
+                log.append(stamped)
+        return {target: tuple(messages) for target, messages in inbox.items()}, log
 
     def _targets(self, sender: str, message: Message) -> tuple[str, ...]:
         """Resolve a message's delivery targets (spec 06 §4).

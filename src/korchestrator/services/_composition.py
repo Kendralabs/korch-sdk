@@ -18,7 +18,14 @@ from korchestrator.config import Settings
 from korchestrator.core.graph import AgentGraph, Edge, Node
 from korchestrator.core.pregel import Clock, SuperstepObserver
 from korchestrator.exceptions import MissingExtraError
-from korchestrator.interfaces import BaseRouter, GraphRepository, IDurableRuntime, IModelGateway
+from korchestrator.interfaces import (
+    BaseRouter,
+    Connector,
+    GraphRepository,
+    IDurableRuntime,
+    IModelGateway,
+    IToolInvoker,
+)
 from korchestrator.models.agent import AgentConfig
 from korchestrator.models.result import RunResult
 from korchestrator.models.routing import ModelCard, RoutingContext, TaskSemantics
@@ -30,6 +37,7 @@ from korchestrator.runtime import resolve_runtime
 from korchestrator.services.hooks import EventHandler, HookRegistry, Middleware
 from korchestrator.taxonomy import TaxonomyClassifier
 from korchestrator.telemetry import record_metric, start_span
+from korchestrator.tools import ConnectorRegistry, RegistryToolInvoker
 from korchestrator.types import JSONValue
 from korchestrator.validators import (
     validate_max_supersteps as validate_max_supersteps,
@@ -113,8 +121,30 @@ def resolve_routing(
     return resolve_router(settings, router=router), load_model_cards(settings)
 
 
+def resolve_tool_invoker(
+    connectors: Sequence[Connector] | ConnectorRegistry | None,
+) -> IToolInvoker | None:
+    """Build the :class:`IToolInvoker` ``Korch``/``Swarm`` own for this run, or ``None`` (P10.2).
+
+    ``None`` when ``connectors`` was never passed — an agent that mounts ``tools`` then gets a
+    clear ``ConfigurationError`` ("pass connectors=[...] to Korch/Swarm") rather than a less
+    obvious ``TOOL_NOT_FOUND`` from an empty registry. Any explicit value, even ``[]`` or an empty
+    :class:`ConnectorRegistry`, opts in.
+    """
+    if connectors is None:
+        return None
+    if isinstance(connectors, ConnectorRegistry):
+        return RegistryToolInvoker(connectors)
+    return RegistryToolInvoker(ConnectorRegistry(connectors))
+
+
 def worker_node_from_config(
-    config: AgentConfig, *, clock: Clock, gateway: IModelGateway, model: str
+    config: AgentConfig,
+    *,
+    clock: Clock,
+    gateway: IModelGateway,
+    model: str,
+    tool_invoker: IToolInvoker | None = None,
 ) -> Node:
     """Build a default :class:`WorkerAgent` from ``config`` with the routed ``model``, as a node."""
     worker = WorkerAgent(
@@ -128,7 +158,7 @@ def worker_node_from_config(
         hitl_threshold=config.hitl_threshold,
         timeout_seconds=config.timeout_seconds,
     )
-    return worker.bind(clock=clock, gateway=gateway).to_node()
+    return worker.bind(clock=clock, gateway=gateway, tool_invoker=tool_invoker).to_node()
 
 
 async def _route_model(
@@ -162,6 +192,7 @@ async def graph_from_configs(
     task: TaskSemantics,
     candidates: Sequence[ModelCard],
     tenant_id: str = "default",
+    tool_invoker: IToolInvoker | None = None,
 ) -> AgentGraph:
     """Build a validated :class:`AgentGraph` of default workers from an Architect's plan.
 
@@ -173,7 +204,11 @@ async def graph_from_configs(
         model = await _route_model(
             router, config.id, config.model, task=task, candidates=candidates, tenant_id=tenant_id
         )
-        nodes.append(worker_node_from_config(config, clock=clock, gateway=gateway, model=model))
+        nodes.append(
+            worker_node_from_config(
+                config, clock=clock, gateway=gateway, model=model, tool_invoker=tool_invoker
+            )
+        )
     return AgentGraph(nodes, [Edge(source, target) for source, target in edges])
 
 
@@ -187,6 +222,7 @@ async def graph_from_agents(
     task: TaskSemantics,
     candidates: Sequence[ModelCard],
     tenant_id: str = "default",
+    tool_invoker: IToolInvoker | None = None,
 ) -> AgentGraph:
     """Build a validated :class:`AgentGraph` from user-authored agents (Tier-2 ``Swarm``).
 
@@ -207,10 +243,18 @@ async def graph_from_agents(
                 tenant_id=tenant_id,
             )
             nodes.append(
-                worker_node_from_config(agent.config, clock=clock, gateway=gateway, model=model)
+                worker_node_from_config(
+                    agent.config,
+                    clock=clock,
+                    gateway=gateway,
+                    model=model,
+                    tool_invoker=tool_invoker,
+                )
             )
         else:
-            nodes.append(agent.bind(clock=clock, gateway=gateway).to_node())
+            nodes.append(
+                agent.bind(clock=clock, gateway=gateway, tool_invoker=tool_invoker).to_node()
+            )
     return AgentGraph(nodes, [Edge(source, target) for source, target in edges])
 
 

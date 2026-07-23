@@ -12,6 +12,7 @@ from korchestrator.interfaces.repository import GraphRepository, TenantStore
 from korchestrator.interfaces.router import BaseRouter
 from korchestrator.interfaces.runtime import IDurableRuntime
 from korchestrator.interfaces.sandbox import IExecutionSandbox
+from korchestrator.interfaces.tool_invoker import IToolInvoker
 
 __all__ = [
     "AUBConnector",
@@ -22,5 +23,6 @@ __all__ = [
     "IExecutionSandbox",
     "IIdentityProvider",
     "IModelGateway",
+    "IToolInvoker",
     "TenantStore",
 ]

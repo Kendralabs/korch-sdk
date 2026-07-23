@@ -25,6 +25,7 @@ __all__ = [
     "ArchitectSignature",
     "InputField",
     "OutputField",
+    "ReActWorkerSignature",
     "Signature",
     "WorkerSignature",
     "load_dspy",
@@ -145,6 +146,27 @@ class WorkerSignature(Signature):
     role: str = InputField(desc="the agent's role and persona")
     objective: str = InputField(desc="the overall goal to achieve")
     context: str = InputField(desc="the relevant conversation and shared state so far")
+    answer: str = OutputField(desc="this agent's contribution, or the final answer")
+    is_final: bool = OutputField(desc="whether the answer completes the objective")
+
+
+class ReActWorkerSignature(Signature):
+    """Contribute to the objective, optionally calling one mounted tool first, per step.
+
+    Used instead of :class:`WorkerSignature` whenever an agent has ``tools`` mounted (P10.2) — the
+    ReAct loop calls this once per step, bounded by ``max_react_steps``, feeding each tool's
+    result back into ``context`` for the next step. Leave ``tool_name`` empty to answer directly.
+    """
+
+    role: str = InputField(desc="the agent's role and persona")
+    objective: str = InputField(desc="the overall goal to achieve")
+    context: str = InputField(desc="the conversation, shared state, and prior tool results so far")
+    available_tools: str = InputField(desc="newline-separated 'name: description' of mounted tools")
+    thought: str = OutputField(desc="brief reasoning about what to do next")
+    tool_name: str = OutputField(
+        desc="a name from available_tools to call next, or empty to answer"
+    )
+    tool_args: str = OutputField(desc="a JSON object of arguments for tool_name, or empty")
     answer: str = OutputField(desc="this agent's contribution, or the final answer")
     is_final: bool = OutputField(desc="whether the answer completes the objective")
 

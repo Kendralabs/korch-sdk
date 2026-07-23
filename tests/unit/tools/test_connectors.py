@@ -34,6 +34,17 @@ async def test_filesystem_missing_file(tmp_path: Path) -> None:
     assert result.error_code == "TOOL_NOT_FOUND"
 
 
+async def test_filesystem_generic_os_error_is_reported_as_execution_failed(
+    tmp_path: Path,
+) -> None:
+    # A directory is a real, portable way to trigger IsADirectoryError (an OSError that is not
+    # FileNotFoundError) without relying on platform-specific permission manipulation.
+    (tmp_path / "a_directory").mkdir()
+    result = await FilesystemConnector(tmp_path).execute("read_file", {"path": "a_directory"})
+    assert result.ok is False
+    assert result.error_code == "TOOL_EXECUTION_FAILED"
+
+
 async def test_mock_search_is_deterministic() -> None:
     conn = MockSearchConnector()
     first = await conn.execute("web_search", {"query": "durable agents"})

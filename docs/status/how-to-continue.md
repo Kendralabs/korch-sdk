@@ -6,74 +6,72 @@ What is left, and the exact prompt to paste into a new session.
 
 ## Where we stopped
 
-- `develop` (pushed to GitHub) = **P0–P8 complete**.
-- `feat/p8-cross-cutting-foundations` (pushed, merged `--no-ff` into `develop`) = **P8.1–P8.7
-  complete** — all of Phase 8 (config, logging, exception audit, serialization, validation,
-  telemetry) merged.
-- Immediate next step: start **Phase 9 — Remote client** on a new `feat/p9-*` branch off `develop`.
+- `develop` (pushed to GitHub) = **P0–P9 complete**.
+- `feat/p9-remote-client` (pushed, merged `--no-ff` into `develop`) = **P9.1–P9.8 complete** — all
+  of Phase 9 (the optional Python remote client) merged.
+- Immediate next step: start **Phase 10 — Testing, benchmarks & quality gates** on a new
+  `feat/p10-*` branch off `develop`.
 
-## What Phase 8 shipped
+## What Phase 9 shipped
 
-1. **P8.1 — Settings finalized**: the full spec 08 §1.3 variable table (28 fields); `configure()`/
-   `get_settings()`; resolved the `ConfigurationError` vs `ValidationError` overlap (ADR 0016).
-2. **P8.2 — Config isolation test**: fails the build if env/`.env` reading escapes `config/`.
-3. **P8.3 — Logging**: namespaced `korchestrator` logger, `NullHandler` by default,
-   `enable_logging()`/`disable_logging()`.
-4. **P8.4 — Exception audit**: found and fixed one real gap — the Temporal client boundary could
-   leak a raw `temporalio` exception; now wrapped.
-5. **P8.5 — Serialization**: `to_json`/`from_json`, deterministic and version-tagged, for
-   `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult` (`AgentGraph` excluded, ADR 0017).
-6. **P8.6 — Validation**: `validators/` closed two real, previously-silent gaps — unchecked
-   `max_supersteps` bounds and silent duplicate-agent-id overwrite in `Swarm.add()`.
-7. **P8.7 — Telemetry**: `telemetry/` — `start_span`/`record_metric`, zero-overhead no-op when
-   `KORCH_TELEMETRY_ENABLED` is off (the default); the outer `agent.run` span and
-   `korch.run.duration`/`korch.run.status` metrics are wired into the composition root. The rest
-   of the span tree (`agent.superstep`/`agent.plan`/`tool.call`/`gen_ai.call`) and four of the six
-   named metrics are defined (correct OTel instrument kind) but not yet wired into the kernel/
-   tool/gateway call sites — a follow-up, not a blocker (see `PROJECT_STATE.md` §6).
+1. **P9.1 — Transport + auth**: `KorchestratorClient` (`clients/`, re-exported as
+   `korchestrator.remote`) — `Authorization: Bearer` (one header for a static key or a JWT), 30s
+   default timeout, 3 retries with full-jitter backoff on `429`/`502`/`503`/`504` and connection
+   failures. New `ApiError` (`status`/`code`/`trace_id`).
+2. **P9.2 — Credential safety**: a credential-safe `repr` (`base_url` only); test-locked that no
+   error path leaks the API key; a static check that `clients/` performs no file I/O.
+3. **P9.3 — Run lifecycle**: `run`, `run_swarm`, `get_run`, `wait`, `run_and_wait`, `list_runs`,
+   `get_run_summary`; numeric→string status normalization for all 7 `RunStatus` values. New wire
+   models `RemoteRunResult`/`RunSummary` — deliberately not the local kernel's `RunResult`.
+4. **P9.4 — Control + identity**: `resume`, `cancel`, `edit_resume` (mirrors the local kernel's
+   signal shape), `me`, `my_quota`, `my_runs`, `create_key`/`list_keys`/`revoke_key`. `ApiKey.key`
+   is a `SecretStr`.
+5. **P9.5 — Streaming**: `stream(run_id)` — a native async iterator (the one non-sync-wrapped
+   method), auto-reconnecting on a dropped connection (no `Last-Event-ID` resumption — documented,
+   not silently overstated).
+6. **P9.6 — Discovery**: `tools`, `models` (reuses the local kernel's `ModelCard`),
+   `swarm_templates` — completes the method surface.
+7. **P9.7 — Contract-conformance tests**: a table-driven suite proving all 20 methods surface
+   exactly `ApiError` on a non-2xx response, with a guard against a future method missing a table
+   entry.
+8. **P9.8 — Parity matrix**: `docs/parity-matrix.md` — every method marked `TS: planned` (ADR
+   0008), three sketch-vs-implementation discrepancies resolved and labelled.
 
-**Phase 8 acceptance, met:** env read only in `config/` (test-enforced); logging fully disable-able;
-no raw internal exception escapes uncaught; serde round-trips stay byte-stable and version-tagged;
-telemetry costs nothing when off and raises actionably when enabled without the `[otel]` extra.
+**Phase 9 acceptance, met:** every documented method exists and is tested against a mocked
+transport (`respx`); credentials never appear in any output (test-asserted); streaming consumes
+SSE as an async iterator; the parity matrix is complete with planned gaps labelled; the local
+kernel remains fully usable without `[remote]` installed (nothing in `korchestrator/__init__.py`
+imports `clients`/`remote`, statically checked).
+
+**Public surface note (corrects earlier guidance in this file):** `korchestrator.remote.
+KorchestratorClient` did **not** need a `tests/unit/public_surface.json` update. Spec 04 §7's own
+intro states `korchestrator.remote` is never imported by `korchestrator/__init__.py` — it is a
+separate, optional import path (`from korchestrator.remote import KorchestratorClient`), exactly
+like `korchestrator.config`/`korchestrator.logging`, not an addition to top-level `__all__`. The
+golden file only guards `korchestrator/__init__.py`'s own `__all__`.
 
 **One open item, unchanged since Phase 7, not blocking:** `pytest -m temporal` still cannot run in
 *this* dev machine's environment (pre-existing `beartype`/site-packages conflict, unrelated to any
 korchestrator dependency — see the P7.4 engineering-log entry). Worth confirming once CI exists
 (P12), or sooner if convenient.
 
-## Phase 9 — Remote client (next)
+## Phase 10 — Testing, benchmarks & quality gates (next)
 
-**Branch prefix:** `feat/p9-*` · **Goal:** ship the optional Python remote client as
-`korchestrator.remote` (spec 11 Phase 9, spec 12 P9.1–P9.8). TypeScript is deferred (ADR 0008) —
-Python only, no `clients/typescript/`, no npm job.
+**Branch prefix:** `feat/p10-*` · **Goal:** the committed benchmark baseline, the coverage ratchet,
+and the remaining compliance checks noted as owed since P0–P3 (spec 11 Phase 10, spec 12
+P10.1–P10.x — read the exact task breakdown there before starting; it has not been restated here
+in detail yet).
 
-1. **P9.1 — Transport + auth**: `clients/` — `httpx` async+sync base (`[remote]`), `Authorization:
-   Bearer`, 30s timeout, 3 retries with jittered backoff, retrying only 429/502/503/504.
-2. **P9.2 — Credential safety**: redaction from logs, exceptions, telemetry; a test asserting
-   credentials never appear in any output or on disk.
-3. **P9.3 — Run lifecycle**: `run`, `run_swarm`, `run_and_wait`, `get_run`, `wait`, `list_runs`,
-   `get_run_summary`; numeric→string status normalization.
-4. **P9.4 — Control + identity**: `resume`, `cancel`, `edit_resume`, `me`, `my_quota`, `my_runs`,
-   key management.
-5. **P9.5 — Streaming**: SSE `stream` as an async iterator; reconnect semantics.
-6. **P9.6 — Discovery**: `tools`, `models`, `swarm_templates`.
-7. **P9.7 — Errors + tests**: `ApiError(status, message, code, trace_id)` as a `KorchError`; a full
-   `respx`-mocked suite against the spec 04 §7 contract.
-8. **P9.8 — Parity matrix**: `docs/parity-matrix.md` — every Python method marked `TS: planned`.
+Known, already-tracked inputs to this phase (see `PROJECT_STATE.md` §6 "Known gaps"):
 
-**Phase 9 acceptance:** every documented method exists and is tested against a mocked transport
-(`respx`); credentials never appear in logs/exceptions/telemetry (test-asserted); the streaming
-example consumes SSE; the parity matrix is complete with planned gaps labelled; the local kernel
-remains fully usable without `[remote]` installed.
+- The telemetry-on/off delta regression spec 08 §4 requires (`benchmarks/` doesn't exist yet).
+- The import-purity subprocess test (ADR 0004) and the event-history shape test, owed since
+  P2/P3.
+- Continue the coverage ratchet (global 80% floor, `core/`+`models/` 95%) upward as behaviour has
+  landed — check the current numbers in `PROJECT_STATE.md` §1 before deciding the next target.
 
-**Public surface added:** `korchestrator.remote.KorchestratorClient` (and its supporting models) —
-this is a genuinely new top-level surface, so check names against spec 04 §7 and update
-`tests/unit/public_surface.json` deliberately, with a CHANGELOG entry, per `api-and-compatibility.md`.
+## Phases after P10
 
-## Phases after P9
-
-- **P10** — Testing, benchmarks, quality ratchet (includes the telemetry-on/off `benchmarks/`
-  regression deferred from P8.7).
 - **P11** — Docs, examples, developer experience.
 - **P12** — CI/CD, packaging, publishing.
 - (P13 — external backend adapter — out of scope, separate repo.)
@@ -139,11 +137,12 @@ First, read these to load context (in this order):
    acceptance criteria). On any conflict, the specs win.
 
 Current state:
-- Branch `develop` (pushed) = Phases P0 through P8 complete and merged.
-- Branch `feat/p8-cross-cutting-foundations` = P8.1-P8.7 complete (all of Phase 8), pushed and
-  merged into develop.
-- Next phase = P9 (remote client): P9.1 transport+auth, P9.2 credential safety, P9.3 run lifecycle,
-  P9.4 control+identity, P9.5 streaming, P9.6 discovery, P9.7 errors+tests, P9.8 parity matrix.
+- Branch `develop` (pushed) = Phases P0 through P9 complete and merged.
+- Branch `feat/p9-remote-client` = P9.1-P9.8 complete (all of Phase 9, the optional Python remote
+  client), pushed and merged into develop.
+- Next phase = P10 (testing, benchmarks & quality gates) — read its exact task breakdown in
+  docs/specs/12-implementation-plan.md and docs/specs/11-build-phase-plan.md before starting;
+  known inputs are listed in this file's "Phase 10" section and PROJECT_STATE.md §6.
 
 Standing authorization (already given by the user): after finishing a phase, automatically
 commit → push the feature branch → merge into `develop` with --no-ff → push `develop` → start the
@@ -151,25 +150,23 @@ next phase, without asking for per-phase approval. Do NOT push/merge to `main`. 
 version.py. Never use --no-verify.
 
 How to work each task:
-- Build task-by-task on a new feat/p9-* branch off develop; use the commit groupings the
+- Build task-by-task on a new feat/p10-* branch off develop; use the commit groupings the
   build-phase plan lists.
 - Design the public surface first, put code in the correct layer, write tests that fail without the
   change, then make every gate green: ruff, ruff format, mypy --strict, pytest + coverage (floor
   80% global, 95% for core/ and models/), the import-isolation gate, lint-imports (4 contracts),
   and doctests. Tools run via `python -m ruff|mypy|pytest`; import-linter via
   `python -c "from click.testing import CliRunner; from importlinter.cli import
-  lint_imports_command; ..."` (see how-to-continue.md's own history) since the console script isn't
-  on PATH in this shell.
+  lint_imports_command; ..."` (see this file's "Handy commands") since the console script isn't
+  reliably on PATH in this shell.
 - Keep the base install pydantic-only (heavy deps behind extras, lazily imported). Keep the kernel
   deterministic (no wall-clock/randomness in core/ or workflow scope).
-- korchestrator.remote is a genuinely new top-level public surface (spec 04 §7) — design it against
-  the documented remote contract exactly, and update tests/unit/public_surface.json deliberately
-  with a CHANGELOG entry, per .claude/rules/api-and-compatibility.md.
 - Update .claude/memory/ENGINEERING_LOG.md BEFORE each commit (a hook enforces it) and CHANGELOG.md
   for user-visible changes. Record structural decisions as short ADRs in docs/adr/.
-- When P9's commit groups are done, push + merge P9 into develop, then continue to P10.
+- When P10's commit groups are done, push + merge P10 into develop, then continue to P11.
 - Keep docs/status/*.md and .claude/memory/PROJECT_STATE.md up to date as phases complete.
 
-Start now with P9.1: read its objective/acceptance in the specs, and build the httpx-based
-transport + Bearer auth base in clients/ behind the [remote] extra, and drive it to green.
+Start now: read Phase 10's exact objective/acceptance/task list in the specs (it has not been
+task-by-task detailed in docs/status/ yet — do that as the first step), then begin its first task
+and drive it to green.
 ```

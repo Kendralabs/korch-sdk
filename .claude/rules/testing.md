@@ -45,7 +45,7 @@ call-count assertions couple tests to implementation and break on every refactor
 
 ## Coverage
 
-- Global floor **80%**; `core/` and `models/` **95%**. Ratchet up, never down.
+- Global floor **90%**; `core/` **97%**; `models/` **99%** (ratcheted from 80/95/95 at P10.6). Ratchet up, never down.
 - Coverage is necessary, not sufficient. Assertions must be **meaningful** — a test that executes a
   line without asserting on its effect adds coverage and no safety.
 

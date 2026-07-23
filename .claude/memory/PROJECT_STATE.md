@@ -12,18 +12,18 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P9 — Remote client — **complete** (P9.1–P9.8 done) on branch `feat/p9-remote-client` (off `develop`, not yet pushed). Phase 8 is complete and merged. |
-| **Last completed milestone** | **P9.8 — TypeScript parity matrix (closes Phase 9).** `docs/parity-matrix.md` — every `KorchestratorClient` method/model marked `TS: planned` per ADR 0008, with three Python-vs-original-sketch discrepancies resolved and labelled. Docs-only. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: push `feat/p9-remote-client`, merge `--no-ff` into `develop`, then start Phase 10 (Testing, benchmarks & quality gates). |
-| **Pushed / merged** | `develop` (P0–P8) is pushed to `origin`. `feat/p9-remote-client` has P9.1–P9.8 committed locally, not yet pushed. |
+| **Active phase** | **P10 — Testing, benchmarks & quality gates — complete (P10.1–P10.6).** Phase 9 is also complete and merged. Next: Phase 11 (Documentation, examples & DX). |
+| **Last completed milestone** | **P10.6 — Ratchet coverage floors + wire benchmark regression detection, complete.** Floors raised (with headroom, not pinned): global 80%→90%, `core/` 95%→97%, `models/` 95%→99%, in `pyproject.toml`/CI/spec 09 §7/`.claude/rules/testing.md`. New `scripts/check_benchmark_regression.py` (+ its own unit tests) diffs a fresh benchmark run against the committed `baseline.json` and prints a `::warning::` for a >1.5x regression on three watched metrics; wired into a new CI `benchmarks` job, gated to `workflow_dispatch`/`push:main` only, `continue-on-error: true` — matching spec 09 §8's "never blocks a merge." This closes Phase 10. |
+| **Blocking** | Nothing. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s coverage gap is this same issue, left untouched). Next: Phase 11. |
+| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1–P10.5 pushed; P10.6 is staged. Per the standing autonomous-progression authorization, this phase-completion commit is followed by push → merge into `develop` (`--no-ff`) → push `develop` → begin Phase 11. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (104 source files), `pytest` (dspy + non-dspy paths; **766 passed**,
-95.93% cov, 16 Temporal excluded; `clients/client.py` 99.75%), import-linter (**4 contracts
-kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
-single-sourcing. `import korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry`
-stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, and
-`korchestrator.clients`/`korchestrator.remote` are never imported by
+ruff-format, `mypy --strict` (105 source files), `pytest` (dspy + non-dspy paths, excluding the one
+Temporal-dependent file; **802 passed**, 96.88% cov, comfortably above the new 90% floor),
+import-linter (**4 contracts kept**, incl. the ADR-0011 httpx confinement), the isolation gate,
+env-confinement, and version single-sourcing. `import korchestrator.agents`/
+`korchestrator.routing`/`korchestrator.telemetry` stay `dspy`/`[routing]`/`[otel]`-free; the base
+install stays `pydantic`-only, and `korchestrator.clients`/`korchestrator.remote` are never imported by
 `korchestrator/__init__.py` (statically checked, `test_remote.py`).
 
 ## 2. Phase progress
@@ -39,8 +39,8 @@ stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, a
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
 | P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
-| P9 | Remote client (Python only — TS deferred) | **Complete** (P9.1–P9.8; not yet pushed/merged to `develop`) |
-| P10 | Testing, benchmarks & quality gates | Not started |
+| P9 | Remote client (Python only — TS deferred) | **Complete** (P9.1–P9.8; merged to `develop`) |
+| P10 | Testing, benchmarks & quality gates | **Complete** (P10.1–P10.6) |
 | P11 | Documentation, examples & DX | Not started |
 | P12 | CI/CD, packaging & publishing | Not started |
 | P13 | External backend adapter | **Out of scope** — separate repository |
@@ -55,15 +55,15 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `config/` | Leaf utility | **tested** (full spec 08 §1.3 `Settings` — 28 fields incl. `SecretStr`; opt-in `.env`; `configure`/`get_settings`) | P0, P8.1 |
 | `constants/` · `exceptions/` | Leaf utility | **tested** (`KorchError` tree + error codes, frozen) | P1 |
 | `types/` · `models/` | Contract | **tested** (`JSONValue` + frozen domain models, frozen) | P1 |
-| `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen) | P1 |
+| `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen; `IToolInvoker` added P10.2) | P1 |
 | `services/` | Façade | **tested** (`Korch.run`/`Swarm.run` wired to the kernel via `_composition`; first end-to-end run) | P1, P4 |
-| `core/` | Kernel (L1) | **tested** (reducers + laws, AgentGraph, ChannelSchema, PregelRunner; determinism-locked; ≥97% cov) | P2 |
+| `core/` | Kernel (L1) | **tested** (reducers + laws, AgentGraph, ChannelSchema, PregelRunner; determinism-locked; ≥97% cov; message log now carries every `Message.kind`, not just `answer` — P10.2) | P2 |
 | `runtime/` | Adapter | **tested** (LocalRuntime + resolve_runtime; TemporalRuntime PregelMaster/SuperstepActivity, retry/rollover, HITL signals; equivalence/replay/crash/rollover verified) | P3 |
 | `providers/` | Adapter | **tested** (MockLM; local identity + subprocess sandbox; OpenAI gateway + `get_lm`; 99% cov) | P4 |
-| `agents/` | Cognitive (L2) | **tested** (unified `Agent`; lazy DSPy `Signature`s; `WorkerAgent` + `ArchitectAgent` over a shared gateway bridge; 97% cov) | P4 |
+| `agents/` | Cognitive (L2) | **tested** (unified `Agent`; lazy DSPy `Signature`s; `WorkerAgent` + `ArchitectAgent` over a shared gateway bridge; `WorkerAgent` now runs a real bounded ReAct tool-calling loop when `tools` is mounted, via the injected `IToolInvoker` — P10.2, ADR 0018, closes a P4.6 gap; 97% cov) | P4 |
 | `taxonomy/` | Cognitive (L2) | **tested** (`TaxonomyClassifier` + agent descriptors; 100% cov) | P4 |
 | `routing/` | Cognitive (L2) | **tested** (explicit+fallback default, algorithmic, semantic `[routing]`, composite, user-function behind one `BaseRouter`; `get_router`/`resolve_router`; model-card catalogue; wired into execution) | P5 |
-| `tools/` | Integration (L4) | **tested** (AUB `invoke_tool` + `ConnectorRegistry` + `Connector` contract; schema/timeout/rate-limit/access gate/redaction seam; filesystem + mock-search connectors; ADR 0015) | P6 |
+| `tools/` | Integration (L4) | **tested** (AUB `invoke_tool` + `ConnectorRegistry` + `Connector` contract; schema/timeout/rate-limit/access gate/redaction seam; filesystem + mock-search connectors; ADR 0015; `RegistryToolInvoker` — the `IToolInvoker` implementation `agents/` calls through, P10.2/ADR 0018) | P6 |
 | `mcp/` | Integration (L4) | **tested** (`MCPClient.discover` → `Connector`s; stdio/sse descriptor; fake-session testable; real transport `[mcp]`) | P6 |
 | `context/` | Context (L3) | **tested** (`ContextCompiler` MVC extraction, off the hot loop, graceful summariser degradation) | P6 |
 | `a2a/` | Integration (L4) | **tested** (`directed_message`, `HandoffTransformer`) | P6 |
@@ -136,7 +136,7 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Manifest corrections during P0 | `--xfail-strict` → `xfail_strict=true` (spec named a nonexistent pytest flag); `import-linter` added to `[dev]`. Both recorded in the engineering log. | ✔ P0 |
 | ~~`ConfigurationError` vs `ValidationError` overlap~~ | **Resolved by ADR 0016 (P8.1).** `ValidationError` = structural (wraps pydantic, what `configure()` raises); `ConfigurationError` = resolution/support failures, stays submodule-only. | ✔ P8.1 |
 | `ToolError` default code is specific | `ToolError.default_code = TOOL_NOT_FOUND` — a raiser that omits `code=` gets a misleading "not found". No raiser exists until the tool bridge (P6); revisit then (generic default or required `code`). Raised by the P1 API review. | P6 |
-| Benchmark baseline not established | Committed baseline lands in P10, incl. the telemetry-on/off delta regression spec 08 §4 requires. | P10 |
+| ~~Benchmark baseline not established~~ | **Resolved P10.5.** `benchmarks/baseline.json` committed: `bench_superstep`/`bench_import`/`bench_memory`/`bench_serde` (spec 09 §8) plus `bench_telemetry_overhead` (the telemetry-on/off delta spec 08 §4 requires — the one benchmark that hard-asserts, per that spec's explicit "MUST... assert"). | ✔ P10.5 |
 | Telemetry span tree / metrics only partially wired | `telemetry/` (P8.7) built and tested `start_span`/`record_metric`; only the outer `agent.run` span + `korch.run.duration`/`korch.run.status` are actually called (from `_composition.run_graph`). `agent.superstep`/`agent.plan`/`tool.call`/`gen_ai.call` and `korch.superstep.duration`/`korch.agents.active`/`korch.tool.calls`/`korch.model.tokens` are defined but unwired — needs threading through `core/`, `agents/`, `tools/bridge.py`, `providers/`. | Follow-up (no phase assigned) |
 | TS parity matrix | Ships as documentation in P9 with every method marked `TS: planned`. | P9 |
 | Backlog capabilities deliberately unbuilt | Context Graph external backends, speculative execution, FinOps quotas, KL DSL. Interface-now/implement-minimally; revisit post-1.0 only with real demand. | Post-1.0 |

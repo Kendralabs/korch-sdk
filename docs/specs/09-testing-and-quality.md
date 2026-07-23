@@ -232,9 +232,14 @@ import at module top level that silently makes an extra mandatory.
 
 | Scope | Floor | Enforcement |
 |---|---|---|
-| Global (`korchestrator`) | **80%** | `fail_under = 80` in `pyproject.toml`; CI fails the build below it |
-| `korchestrator/core/` | **95%** | Per-package check in the coverage gate |
-| `korchestrator/models/` | **95%** | Per-package check in the coverage gate |
+| Global (`korchestrator`) | **90%** | `fail_under = 90` in `pyproject.toml`; CI fails the build below it |
+| `korchestrator/core/` | **97%** | Per-package check in the coverage gate |
+| `korchestrator/models/` | **99%** | Per-package check in the coverage gate |
+
+Ratcheted from 80/95/95 at P10.6 (achieved was ~97% global, ~98% `core/`, 100% `models/`, excluding
+the local Temporal-environment gap tracked in `PROJECT_STATE.md`); each floor keeps headroom below
+the measured level rather than pinning to it, since the CI Python matrix (3.10-3.13) and the
+`temporal`-marked tests can shift the exact number run to run.
 
 **The ratchet rule.** Floors move **up, never down**. When sustained coverage exceeds a floor by five
 points or more, raise the floor in a `chore` PR. Lowering a floor — or adding `# pragma: no cover` to
