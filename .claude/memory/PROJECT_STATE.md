@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P10 — Testing, benchmarks & quality gates — **in progress** (P10.1–P10.3 done) on branch `feat/p10-testing-benchmarks-quality` (off `develop`). Phase 9 is complete and merged. |
-| **Last completed milestone** | **P10.3 — E2E suite, complete.** "Full swarm on local and Temporal" and "HITL round trip" were confirmed already covered by existing suites (`test_runtime_equivalence.py`, `test_temporal_runtime.py`); added the genuinely missing "streaming consumption" leg: `tests/e2e/test_streaming_consumption.py` proves a real multi-superstep `Swarm.run()`'s events flow through `HookRegistry.dispatch` → `EventPublisher` → `Subscription` → `format_sse` in order, end to end. |
-| **Blocking** | Nothing for this work. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s coverage gap is this same issue, left untouched; re-confirmed via `git stash` that these 13 failures are identical on the pre-ReAct commit). Next: P10.4 (regression harness), P10.5 (benchmarks), P10.6 (ratchet). |
-| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1 and P10.2 pushed; P10.3 is staged, not yet committed. Phase merges to `develop` only once all of P10 (P10.1–P10.6) is done. |
+| **Active phase** | P10 — Testing, benchmarks & quality gates — **in progress** (P10.1–P10.4 done) on branch `feat/p10-testing-benchmarks-quality` (off `develop`). Phase 9 is complete and merged. |
+| **Last completed milestone** | **P10.4 — Regression harness, complete.** New `tests/regression/`. Audited the engineering log's full bug-fix history first — nearly everything already carries a regression test in its own unit-test file (T7 has been followed consistently). Two real bugs had **no** existing coverage anywhere: the P10.2 kernel message-log bug (now locked directly at the `PregelRunner` level, no DSPy) and the P8.4 `.env`-unreadable-file `OSError` leak (had no test at all until now). `tests/regression/` holds only these two — not a backfill of everything already covered elsewhere. |
+| **Blocking** | Nothing for this work. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s coverage gap is this same issue, left untouched; re-confirmed via `git stash` that these 13 failures are identical on the pre-ReAct commit). Next: P10.5 (benchmarks), P10.6 (ratchet). |
+| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1–P10.3 pushed; P10.4 is staged, not yet committed. Phase merges to `develop` only once all of P10 (P10.1–P10.6) is done. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
 ruff-format, `mypy --strict` (105 source files), `pytest` (dspy + non-dspy paths, excluding the one
-Temporal-dependent file; **794 passed**, 96.83% cov), import-linter (**4 contracts
+Temporal-dependent file; **796 passed**, 96.88% cov), import-linter (**4 contracts
 kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
 single-sourcing. `import korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry`
 stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, and
@@ -40,7 +40,7 @@ stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, a
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
 | P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
 | P9 | Remote client (Python only — TS deferred) | **Complete** (P9.1–P9.8; merged to `develop`) |
-| P10 | Testing, benchmarks & quality gates | **In progress** (P10.1–P10.3 done; P10.4–P10.6 next) |
+| P10 | Testing, benchmarks & quality gates | **In progress** (P10.1–P10.4 done; P10.5–P10.6 next) |
 | P11 | Documentation, examples & DX | Not started |
 | P12 | CI/CD, packaging & publishing | Not started |
 | P13 | External backend adapter | **Out of scope** — separate repository |
