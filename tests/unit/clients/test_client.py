@@ -92,6 +92,18 @@ async def test_api_error_falls_back_to_response_text_when_the_body_is_not_json()
     await client.aclose()
 
 
+@respx.mock
+async def test_api_error_falls_back_to_response_text_when_the_json_body_has_no_message() -> None:
+    respx.get(f"{BASE_URL}/v1/me").mock(return_value=httpx.Response(400, json={"detail": "nope"}))
+    client = KorchestratorClient(BASE_URL)
+    with pytest.raises(ApiError) as info:
+        await client._request("GET", "/v1/me")
+    assert info.value.status == 400
+    assert info.value.code == "KORCH_API_ERROR"  # no `code` field in the body -> the default
+    assert "detail" in info.value.message  # falls back to the raw text of the JSON body
+    await client.aclose()
+
+
 # --- retryable status codes ----------------------------------------------------------------------
 
 

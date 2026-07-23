@@ -15,6 +15,14 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Remote client run lifecycle (Phase 9): `KorchestratorClient` gains `run`, `run_swarm`,
+  `run_and_wait`, `get_run`, `wait`, `list_runs`, `get_run_summary` (spec 04 §7.3). Every numeric
+  run status the engine can return is normalized to the `RunStatus` string vocabulary before
+  validation (spec 04 §7.4). New `korchestrator.models.remote.RemoteRunResult`/`RunSummary` —
+  the client's own wire-facing result shapes, distinct from the local kernel's `RunResult` (no
+  nested `AgentState`). `wait`/`run_and_wait` poll; real-time SSE streaming lands in the next
+  Phase 9 task. The wire-format details (field names, list-response shape) are the SDK's own
+  documented assumption pending a full engine schema — see the P9.3 engineering-log entry.
 - Remote client credential safety (Phase 9): `KorchestratorClient.__repr__` shows `base_url` only,
   never headers or the credential. Test-locked (spec 04 §7.2): the client's `repr`/`str`, and
   every error `KorchestratorClient` can raise (`ApiError`, `NetworkError`, `TimeoutError`), never

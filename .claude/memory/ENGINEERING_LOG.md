@@ -10,6 +10,96 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P9.3] Remote client run lifecycle — v0.1.0
+
+**Type:** feature · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient` gains the run-lifecycle surface (spec 04 §7.3/§7.4): `run`,
+`run_swarm`, `get_run`, `wait`, `run_and_wait`, `list_runs`, `get_run_summary` — all sync,
+each a thin `asyncio.run(...)` wrapper around a private `_..._async` coroutine built on P9.1's
+`_request`. `run` (`POST /v1/run/auto`) and `run_swarm` (`POST /v1/run/swarm`, taking the same
+`AgentConfig`/edges shape `Swarm` uses) return the run's initial state; `get_run`
+(`GET /v1/run/{id}`) fetches current state; `wait` polls `get_run` until a terminal status
+(`completed`/`failed`/`cancelled`/`timed_out` — explicitly *not* `governance_paused`, which stays
+pending for an operator); `run_and_wait` composes `run` + `wait` in one event loop; `list_runs`
+(`GET /v1/runs`) and `get_run_summary` (`GET /v1/runs/{id}/summary`) return the new, lighter
+`models.remote.RunSummary`. Every numeric run status the engine can return (`0`-`6`) is normalized
+to the `RunStatus` string vocabulary before model validation (spec 04 §7.4).
+
+**Why.** P9.3 — "run, run_swarm, run_and_wait, get_run, wait, list_runs, get_run_summary;
+numeric→string status normalization" (spec 11 Phase 9, spec 12 P9.3).
+
+**Design decisions.** (1) **New `models.remote.RemoteRunResult`/`RunSummary`, not a reuse of the
+local kernel's `RunResult`.** `RunResult.state: AgentState` is a required nested field (`run_id`,
+`objective` ≥10 chars, `transaction_time`, …) that the remote wire contract has no basis for —
+spec 04 §7 documents *concepts* and the status vocabulary, not a full JSON schema, and there is no
+engine response that plausibly reconstructs a full kernel `AgentState`. Fabricating one to satisfy
+`RunResult`'s validation would be actively misleading (inventing data the engine never sent), so
+this task defines two purpose-built, wire-facing models instead — matching the codebase's existing
+pattern of one model per genuinely distinct concept (`AgentConfig` vs `AgentState` is the same
+kind of split), not two names for one thing. (2) **Every wire-shape decision this task makes
+(field names, the `{"runs": [...]}` vs bare-array `list_runs` body, the error-body fields) is an
+assumption, not a transcription** — spec 04 §7 doesn't pin a JSON schema beyond §7.1's concept
+table and §7.4's status/webhook fields. The chosen shapes reuse the SDK's own established
+vocabulary (spec 04 §3.1) everywhere a name was available (`run_id`, `status`, `final_answer`,
+`supersteps`, `trust_score`) so the client is at least internally consistent and is the executable
+specification of the wire format until a real engine or a fuller schema doc exists — exactly the
+same kind of documented assumption P9.1 made for `ApiError`'s error-body shape. (3) **Numeric
+status 0 and 5 are filled in, not left unhandled** — spec 04 §7.4's table only lists `1/2/3/4/6`;
+`0` (`started`, preceding `running` in the lifecycle diagram) and `5` (`governance_paused`, the
+only `RunStatus` value the table omits) are the two values needed to make the mapping total over
+all seven `RunStatus` members, and are called out as an inference in the code comment, not
+presented as a literal spec quote. An unrecognised numeric code is rejected as an `ApiError`
+(`502`) rather than silently passed through or defaulted — a genuine engine/client vocabulary
+mismatch should fail loudly, not produce a `RunResult` with a status nobody chose. (4) **`wait`
+polls, it does not stream** — SSE streaming is P9.5's job; `wait` is documented as the simple,
+inefficient-but-correct baseline every engine implementation supports, consistent with `run_and_
+wait`'s composition. (5) **Every public method is sync** (`asyncio.run(self._..._async(...))`),
+continuing the P9.1 design commitment that `client.run_and_wait(...)` in spec 04 §7's own Tier-4
+example is called with no `await` — `run_and_wait`'s async core awaits `_run_async` then `_wait_
+async` inside ONE event loop (not two stacked `asyncio.run` calls), so the sync/async split costs
+nothing beyond the one wrapper line per public method.
+
+**Architecture changes.** `models/remote.py` (new): `RemoteRunResult`, `RunSummary`; both
+re-exported from `korchestrator.models` (not top-level `korchestrator.__all__` — the whole
+`clients`/`remote` surface stays outside that golden file, per the P9.1 precedent).
+`clients/client.py` grows substantially (7 public methods + 7 private async cores + 4 module-level
+parsing helpers); no new import-linter-relevant dependency (still only `models`, `exceptions`,
+`httpx`, stdlib).
+
+**Files/modules affected.** `src/korchestrator/models/{remote,__init__}.py`;
+`src/korchestrator/clients/client.py`; `tests/unit/clients/test_run_lifecycle.py` (new, 27 tests);
+one added test in `tests/unit/clients/test_client.py`; `CHANGELOG.md`.
+
+**Breaking changes.** None. Additive only; `tests/unit/public_surface.json` untouched (same
+reasoning as P9.1 — `korchestrator.remote` is a separate, optional import path).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients`: **44 passed** (P9.1+P9.2+P9.3 combined). New in this task: `run`/`run_swarm`
+request-body shape (including tenant_id omission and `AgentConfig`/edges serialization); every one
+of the seven documented numeric statuses normalizes correctly (parametrized); an already-string
+status is accepted as-is; an unrecognised numeric status raises; a malformed or non-JSON body
+raises; `wait` polls through `running` and explicitly through `governance_paused` before returning
+on a terminal status, backoff-sleep mocked (no real waiting — T2); `run_and_wait` composes both
+calls; `list_runs` parses both a bare array and a `{"runs": [...]}` wrapper, rejects anything else,
+and passes `tenant_id` as a query parameter; `get_run_summary` parses the summary shape. All
+package doctests (85, up from 78) still pass, including two new runnable (non-skipped)
+construct-and-close examples backing each `# doctest: +SKIP` network-touching example line.
+
+**Known limitations / future improvements.** The wire-format assumptions in Design decision (2)
+are unverified against any real engine — when a real Korchestrator engine (or a fuller schema doc)
+exists, P9.7's full `respx` contract suite (or a follow-up) should reconcile them, and any
+divergence is a documentation/implementation fix, not a breaking-change decision, since nothing
+here is part of a released compatibility surface yet. The raw-`AgentState` start path
+(`POST /v1/run` in spec 04 §7.3's endpoint table) is not implemented — it's absent from the P9.1-
+P9.8 task breakdown entirely, so it's being treated as out of scope for this implementation rather
+than an oversight.
+
 ## 2026-07-23 · [P9.2] Remote client credential safety — v0.1.0
 
 **Type:** feature/test · **Phase:** P9 (remote client) · **Author:** Claude (agent)

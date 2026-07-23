@@ -13,21 +13,41 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from types import TracebackType
 
 import httpx
+from pydantic import ValidationError as PydanticValidationError
 from typing_extensions import Self
 
 from korchestrator.exceptions import ApiError, NetworkError
 from korchestrator.exceptions import TimeoutError as KorchTimeoutError
+from korchestrator.models.agent import AgentConfig
+from korchestrator.models.remote import RemoteRunResult, RunSummary
+from korchestrator.models.state import RunStatus
 
 __all__ = ["KorchestratorClient"]
 
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_RETRIES = 3
+DEFAULT_POLL_INTERVAL_SECONDS = 2.0
 _RETRYABLE_STATUS_CODES = frozenset({429, 502, 503, 504})
 _BACKOFF_BASE_SECONDS = 0.5
+_TERMINAL_STATUSES = frozenset(
+    {RunStatus.COMPLETED, RunStatus.FAILED, RunStatus.CANCELLED, RunStatus.TIMED_OUT}
+)
+# The numeric->string status normalization spec 04 §7.4 documents explicitly (1/2/3/4/6); 0 and 5
+# are the two RunStatus values the table leaves implicit — "started" precedes "running" in the
+# lifecycle diagram, and "governance_paused" is the only status the table omits outright.
+_STATUS_BY_CODE: dict[int, RunStatus] = {
+    0: RunStatus.STARTED,
+    1: RunStatus.RUNNING,
+    2: RunStatus.COMPLETED,
+    3: RunStatus.FAILED,
+    4: RunStatus.CANCELLED,
+    5: RunStatus.GOVERNANCE_PAUSED,
+    6: RunStatus.TIMED_OUT,
+}
 
 
 class KorchestratorClient:
@@ -161,6 +181,405 @@ class KorchestratorClient:
         """Sleep with full-jitter exponential backoff before retry ``attempt + 1`` (spec §7.5)."""
         delay = _BACKOFF_BASE_SECONDS * (2**attempt)
         await asyncio.sleep(random.uniform(0, delay))  # noqa: S311 — retry jitter, not crypto
+
+    # --- run lifecycle (spec 04 §7.3/§7.4, P9.3) -------------------------------------------------
+
+    def run(
+        self,
+        objective: str,
+        *,
+        max_supersteps: int = 10,
+        mock_mode: bool = False,
+        tenant_id: str | None = None,
+        timeout: float | None = None,
+    ) -> RemoteRunResult:
+        """Start a run; the engine plans the graph (``POST /v1/run/auto``).
+
+        Returns as soon as the engine has accepted the run — typically ``status="started"`` or
+        ``"running"``, not necessarily terminal. Use :meth:`wait` or :meth:`run_and_wait` to block
+        until a terminal state.
+
+        Args:
+            objective: The goal, at least 10 characters.
+            max_supersteps: Hard halt bound for the run.
+            mock_mode: Run with a deterministic mock model (spec 04 §7.1).
+            tenant_id: Overrides the tenant derived from the API key, when the caller is
+                authorized to act cross-tenant.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The run's initial :class:`~korchestrator.models.remote.RemoteRunResult`.
+
+        Raises:
+            ApiError: The engine rejected or failed the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.run("Summarize the quarterly incident reports")  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(
+            self._run_async(
+                objective,
+                max_supersteps=max_supersteps,
+                mock_mode=mock_mode,
+                tenant_id=tenant_id,
+                timeout=timeout,
+            )
+        )
+
+    async def _run_async(
+        self,
+        objective: str,
+        *,
+        max_supersteps: int,
+        mock_mode: bool,
+        tenant_id: str | None,
+        timeout: float | None,
+    ) -> RemoteRunResult:
+        body: dict[str, object] = {
+            "objective": objective,
+            "max_supersteps": max_supersteps,
+            "mock_mode": mock_mode,
+        }
+        if tenant_id is not None:
+            body["tenant_id"] = tenant_id
+        response = await self._request("POST", "/v1/run/auto", json=body, timeout=timeout)
+        return _parse_remote_run_result(response)
+
+    def run_swarm(
+        self,
+        agents: Sequence[AgentConfig],
+        edges: Sequence[tuple[str, str]] = (),
+        *,
+        objective: str,
+        max_supersteps: int = 10,
+        tenant_id: str | None = None,
+        timeout: float | None = None,
+    ) -> RemoteRunResult:
+        """Start a run with an explicit graph (``POST /v1/run/swarm``).
+
+        Args:
+            agents: The declared agents, as the same :class:`AgentConfig` shape ``Swarm`` uses.
+            edges: ``(source_id, target_id)`` pairs; empty means every agent is independent.
+            objective: The goal, at least 10 characters.
+            max_supersteps: Hard halt bound for the run.
+            tenant_id: Overrides the tenant derived from the API key, when authorized.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The run's initial :class:`~korchestrator.models.remote.RemoteRunResult`.
+
+        Raises:
+            ApiError: The engine rejected or failed the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.models import AgentConfig, AgentPersona
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> agent = AgentConfig(id="lead", persona=AgentPersona(role="lead"))
+            >>> client.run_swarm([agent], objective="Review this PR")  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(
+            self._run_swarm_async(
+                agents,
+                edges,
+                objective=objective,
+                max_supersteps=max_supersteps,
+                tenant_id=tenant_id,
+                timeout=timeout,
+            )
+        )
+
+    async def _run_swarm_async(
+        self,
+        agents: Sequence[AgentConfig],
+        edges: Sequence[tuple[str, str]],
+        *,
+        objective: str,
+        max_supersteps: int,
+        tenant_id: str | None,
+        timeout: float | None,
+    ) -> RemoteRunResult:
+        body: dict[str, object] = {
+            "objective": objective,
+            "agents": [agent.model_dump(mode="json") for agent in agents],
+            "edges": [list(edge) for edge in edges],
+            "max_supersteps": max_supersteps,
+        }
+        if tenant_id is not None:
+            body["tenant_id"] = tenant_id
+        response = await self._request("POST", "/v1/run/swarm", json=body, timeout=timeout)
+        return _parse_remote_run_result(response)
+
+    def get_run(self, run_id: str, *, timeout: float | None = None) -> RemoteRunResult:
+        """Fetch a run's full live state (``GET /v1/run/{id}``).
+
+        Args:
+            run_id: The run to fetch.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The run's current :class:`~korchestrator.models.remote.RemoteRunResult`.
+
+        Raises:
+            ApiError: The engine rejected the request or the run does not exist.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.get_run("r1")  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._get_run_async(run_id, timeout=timeout))
+
+    async def _get_run_async(self, run_id: str, *, timeout: float | None) -> RemoteRunResult:
+        response = await self._request("GET", f"/v1/run/{run_id}", timeout=timeout)
+        return _parse_remote_run_result(response)
+
+    def wait(
+        self,
+        run_id: str,
+        *,
+        poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
+        timeout: float | None = None,
+    ) -> RemoteRunResult:
+        """Block until ``run_id`` reaches a terminal state, polling :meth:`get_run`.
+
+        A ``governance_paused`` run is not terminal — it stays pending until an operator calls
+        :meth:`resume`/``cancel``/``edit_resume`` (P9.4), so this keeps polling through it rather
+        than returning early.
+
+        Args:
+            run_id: The run to wait for.
+            poll_interval: Seconds between polls.
+            timeout: Per-request timeout passed to each poll; does not bound the total wait.
+
+        Returns:
+            The terminal :class:`~korchestrator.models.remote.RemoteRunResult`.
+
+        Raises:
+            ApiError: The engine rejected the request or the run does not exist.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: A poll request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.wait("r1")  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._wait_async(run_id, poll_interval=poll_interval, timeout=timeout))
+
+    async def _wait_async(
+        self, run_id: str, *, poll_interval: float, timeout: float | None
+    ) -> RemoteRunResult:
+        while True:
+            result = await self._get_run_async(run_id, timeout=timeout)
+            if result.status in _TERMINAL_STATUSES:
+                return result
+            await asyncio.sleep(poll_interval)
+
+    def run_and_wait(
+        self,
+        objective: str,
+        *,
+        max_supersteps: int = 10,
+        mock_mode: bool = False,
+        tenant_id: str | None = None,
+        poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
+        timeout: float | None = None,
+    ) -> RemoteRunResult:
+        """Start a run and block until it reaches a terminal state (``run`` + ``wait``).
+
+        Args:
+            objective: The goal, at least 10 characters.
+            max_supersteps: Hard halt bound for the run.
+            mock_mode: Run with a deterministic mock model.
+            tenant_id: Overrides the tenant derived from the API key, when authorized.
+            poll_interval: Seconds between polls while waiting.
+            timeout: Per-request timeout passed to the start call and every poll.
+
+        Returns:
+            The terminal :class:`~korchestrator.models.remote.RemoteRunResult`.
+
+        Raises:
+            ApiError: The engine rejected or failed the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: A request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.run_and_wait("Summarize Q3 incident reports")  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(
+            self._run_and_wait_async(
+                objective,
+                max_supersteps=max_supersteps,
+                mock_mode=mock_mode,
+                tenant_id=tenant_id,
+                poll_interval=poll_interval,
+                timeout=timeout,
+            )
+        )
+
+    async def _run_and_wait_async(
+        self,
+        objective: str,
+        *,
+        max_supersteps: int,
+        mock_mode: bool,
+        tenant_id: str | None,
+        poll_interval: float,
+        timeout: float | None,
+    ) -> RemoteRunResult:
+        started = await self._run_async(
+            objective,
+            max_supersteps=max_supersteps,
+            mock_mode=mock_mode,
+            tenant_id=tenant_id,
+            timeout=timeout,
+        )
+        return await self._wait_async(started.run_id, poll_interval=poll_interval, timeout=timeout)
+
+    def list_runs(
+        self, *, tenant_id: str | None = None, timeout: float | None = None
+    ) -> tuple[RunSummary, ...]:
+        """List runs visible to the caller (``GET /v1/runs``).
+
+        Args:
+            tenant_id: Overrides the tenant derived from the API key, when authorized.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The visible runs as :class:`~korchestrator.models.remote.RunSummary`.
+
+        Raises:
+            ApiError: The engine rejected the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.list_runs()  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._list_runs_async(tenant_id=tenant_id, timeout=timeout))
+
+    async def _list_runs_async(
+        self, *, tenant_id: str | None, timeout: float | None
+    ) -> tuple[RunSummary, ...]:
+        params = {"tenant_id": tenant_id} if tenant_id is not None else None
+        response = await self._request("GET", "/v1/runs", params=params, timeout=timeout)
+        payload = _parse_json_body(response)
+        if isinstance(payload, list):
+            items: object = payload
+        elif isinstance(payload, Mapping) and "runs" in payload:
+            items = payload["runs"]
+        else:
+            items = None
+        if not isinstance(items, list):
+            raise ApiError(
+                f"The engine returned an unexpected /v1/runs response shape: {payload!r}.",
+                status=response.status_code,
+            )
+        return tuple(_parse_run_summary(item, response.status_code) for item in items)
+
+    def get_run_summary(self, run_id: str, *, timeout: float | None = None) -> RunSummary:
+        """Fetch a run's summary (``GET /v1/runs/{id}/summary``).
+
+        Args:
+            run_id: The run to summarize.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The run's :class:`~korchestrator.models.remote.RunSummary`.
+
+        Raises:
+            ApiError: The engine rejected the request or the run does not exist.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.get_run_summary("r1")  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._get_run_summary_async(run_id, timeout=timeout))
+
+    async def _get_run_summary_async(self, run_id: str, *, timeout: float | None) -> RunSummary:
+        response = await self._request("GET", f"/v1/runs/{run_id}/summary", timeout=timeout)
+        return _parse_run_summary(_parse_json_body(response), response.status_code)
+
+
+def _parse_json_body(response: httpx.Response) -> object:
+    """Parse ``response``'s JSON body, wrapping a malformed body as an :class:`ApiError`."""
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ApiError(
+            f"The engine returned a non-JSON response for {response.request.url}.",
+            status=response.status_code,
+        ) from exc
+
+
+def _normalize_status_field(payload: Mapping[str, object]) -> dict[str, object]:
+    """Apply spec 04 §7.4's numeric->string run-status normalization, if ``status`` is numeric."""
+    normalized = dict(payload)
+    status = normalized.get("status")
+    if isinstance(status, int) and not isinstance(status, bool):
+        try:
+            normalized["status"] = _STATUS_BY_CODE[status].value
+        except KeyError as exc:
+            raise ApiError(
+                f"The engine returned an unrecognised numeric run status {status!r}.", status=502
+            ) from exc
+    return normalized
+
+
+def _parse_remote_run_result(response: httpx.Response) -> RemoteRunResult:
+    """Parse a run-result response body, normalizing its status (spec 04 §7.4)."""
+    payload = _parse_json_body(response)
+    if not isinstance(payload, Mapping):
+        raise ApiError(
+            f"The engine returned an unexpected run response shape: {payload!r}.",
+            status=response.status_code,
+        )
+    try:
+        return RemoteRunResult.model_validate(_normalize_status_field(payload))
+    except PydanticValidationError as exc:
+        raise ApiError(
+            f"The engine's response did not match the expected run shape: {exc}",
+            status=response.status_code,
+        ) from exc
+
+
+def _parse_run_summary(payload: object, status_code: int) -> RunSummary:
+    """Parse one run-summary item, normalizing its status (spec 04 §7.4)."""
+    if not isinstance(payload, Mapping):
+        raise ApiError(
+            f"The engine returned an unexpected run-summary shape: {payload!r}.",
+            status=status_code,
+        )
+    try:
+        return RunSummary.model_validate(_normalize_status_field(payload))
+    except PydanticValidationError as exc:
+        raise ApiError(
+            f"The engine's response did not match the expected run-summary shape: {exc}",
+            status=status_code,
+        ) from exc
 
 
 def _api_error(method: str, path: str, response: httpx.Response) -> ApiError:
