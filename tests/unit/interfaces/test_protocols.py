@@ -1,13 +1,13 @@
 """Structural-conformance tests for the ARI ports and supporting protocols (P1.3/P1.4).
 
-Protocols carry no behaviour, so these tests lock the *shape*: the eight names are exported, each
-is a runtime-checkable Protocol, a conforming implementation satisfies ``isinstance``, and a
+Protocols carry no behaviour, so these tests lock the *shape*: the exported names, each a
+runtime-checkable Protocol, a conforming implementation satisfies ``isinstance``, and a
 non-conforming class does not. Renaming a protocol method breaks the matching fake below.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import datetime
 
 from korchestrator import interfaces
@@ -19,6 +19,7 @@ from korchestrator.interfaces import (
     IExecutionSandbox,
     IIdentityProvider,
     IModelGateway,
+    IToolInvoker,
     TenantStore,
 )
 from korchestrator.models.context_graph import GraphNode
@@ -37,6 +38,7 @@ EXPECTED = {
     "IExecutionSandbox",
     "IIdentityProvider",
     "IModelGateway",
+    "IToolInvoker",
     "TenantStore",
 }
 
@@ -130,6 +132,21 @@ class _Connector:
         raise NotImplementedError
 
 
+class _ToolInvoker:
+    async def invoke_tool(
+        self,
+        tool: str,
+        args: Mapping[str, JSONValue],
+        *,
+        tenant_id: str,
+        mounted: Collection[str],
+    ) -> ToolResult:
+        raise NotImplementedError
+
+    def describe_tool(self, tool: str) -> str:
+        raise NotImplementedError
+
+
 CONFORMING = [
     (_Gateway(), IModelGateway),
     (_Identity(), IIdentityProvider),
@@ -139,6 +156,7 @@ CONFORMING = [
     (_Tenants(), TenantStore),
     (_Router(), BaseRouter),
     (_Connector(), AUBConnector),
+    (_ToolInvoker(), IToolInvoker),
 ]
 
 

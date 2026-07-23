@@ -10,6 +10,102 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P10.2] Wire the ReAct tool-calling loop into WorkerAgent — v0.1.0
+
+**Type:** feature · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
+
+**What.** Writing P10.2's tool-calling integration suite surfaced that `WorkerAgent` never called
+`invoke_tool`: `AgentConfig.tools`/`max_react_steps` existed as typed fields with zero runtime
+effect, despite spec 12's P4.6 requiring a bounded ReAct loop and both P4 and P6 being marked
+complete. Implemented the loop for real:
+
+- New port `IToolInvoker` (`interfaces/tool_invoker.py`) — `invoke_tool(tool, args, *, tenant_id,
+  mounted) -> ToolResult` and `describe_tool(tool) -> str`. Mirrors `IModelGateway` exactly, so
+  `agents/` never imports `tools/` directly (spec 05's allowed-imports table for `agents/` does not
+  list it).
+- One implementation, `RegistryToolInvoker` (`tools/bridge.py`), binding a `ConnectorRegistry` and
+  delegating to the existing `invoke_tool` — the mount gate, schema validation, timeout, rate
+  limiting, and redaction all still apply unchanged.
+- `Agent.bind()` gained an optional `tool_invoker` parameter alongside `gateway`.
+- `WorkerAgent._reason` now branches: no `tools` mounted runs the original single-predict path
+  unchanged (`_reason_single`); `tools` non-empty runs a new bounded loop (`_reason_with_tools`)
+  against a new `ReActWorkerSignature` (`thought`/`tool_name`/`tool_args` outputs alongside
+  `answer`/`is_final`), up to `max_react_steps` times, feeding each tool's formatted result back
+  into the next step's context. A malformed `tool_args` JSON payload becomes an observation fed
+  back to the model, never a crash. `think()` now emits one `kind="tool"` message per tool call
+  ahead of the final `kind="answer"` message.
+- `Korch`/`Swarm` gained a `connectors: Sequence[Connector] | ConnectorRegistry | None = None`
+  constructor parameter (mirroring `model_gateway`); `services/_composition.py` resolves it to a
+  `RegistryToolInvoker` (or `None` if never passed) and threads it through `graph_from_configs`/
+  `graph_from_agents` into every agent's `bind()` call — the only place a `ConnectorRegistry` is
+  constructed, per ADR 0015.
+- **Kernel fix required to make the above observable end-to-end:** `PregelRunner._route_messages`
+  previously accumulated only `kind == "answer"` messages into the run's message log
+  (`AgentState.messages` / `RunResult.messages`); every other kind was routed to inboxes but
+  dropped from the log. Invisible before this change because every existing `StateUpdate` carried
+  exactly one message, always `kind="answer"`. A ReAct step now emits `"tool"` messages ahead of
+  its `"answer"` in the same `StateUpdate`, so the log now accumulates every message regardless of
+  kind; `build_result`'s `final_answer` is unaffected — it already filters the log to
+  `kind == "answer"` before joining.
+
+See ADR 0018 for the full design rationale and alternatives considered.
+
+**Why.** Spec 12 P4.6 explicitly required "TypedPredictor + bounded ReAct loop (≤3)"; this closes a
+real, previously undetected gap between the documented-complete state (P4/P6) and actual behavior,
+discovered while building P10.2's integration suite (per the user's explicit direction to implement
+the loop now rather than defer or test around the gap).
+
+**Design decisions.** Dependency-inversion via a new ARI-style port rather than letting `agents/`
+import `tools/` directly — preserves the inward-only layering (`services → agents → core →
+interfaces/models`) and keeps `agents/` free of tool-execution machinery (rate limiters, redactors)
+it has no reason to construct. The kernel's message log was widened to every `Message.kind`
+(`"thought"`, `"tool"`, `"answer"`, `"handoff"`) rather than singling out `"tool"` — `Message.kind`'s
+own type already modeled four kinds, and the log should hold the full reasoning trace, not a second
+answer-only projection (that projection already exists in `build_result.final_answer`).
+
+**Architecture changes.** New port in `interfaces/`; new implementation in `tools/bridge.py`; new
+constructor parameter on `Korch`/`Swarm`; composition-root wiring in `services/_composition.py`.
+Verified with `mypy --strict` (clean), `ruff check`/`ruff format` (clean), the isolation gate (`OK`),
+and `lint-imports` (4/4 contracts kept: core-framework-free, inward-only layering, feature-modules-
+independent, httpx-confined) — the new cross-module wiring does not cross any boundary it shouldn't.
+
+**Files/modules affected.** `interfaces/tool_invoker.py` (new), `interfaces/__init__.py`,
+`tools/bridge.py`, `tools/__init__.py`, `agents/signatures.py`, `agents/base.py`, `agents/worker.py`
+(rewritten), `core/pregel.py`, `services/_composition.py`, `services/korch.py`, `services/swarm.py`,
+`tests/unit/agents/test_worker.py`, `tests/unit/interfaces/test_protocols.py`,
+`tests/integration/test_tools_integration.py` (new), `docs/adr/0018-*.md` (new).
+
+**Breaking changes.** None to the public API surface (additive: a new optional `connectors=`
+parameter, a new `IToolInvoker` protocol). Behavioral: `RunResult.messages` now includes `"tool"`-
+and other non-`"answer"`-kind messages for any run using tools, where it previously held only
+answers — existing callers already filtered by `kind == "answer"` (no test regression); noted in
+CHANGELOG since it is user-visible.
+
+**Feature version / revision.** `0.1.0` (pre-release; 0.x MINOR may break per policy — documented
+loudly per the compatibility rule).
+
+**Migration notes.** N/A — additive for library consumers; any code reading `RunResult.messages`
+without filtering by `kind` should filter to `kind == "answer"` to preserve prior behavior.
+
+**Testing status.** 14/14 tests in `tests/unit/agents/test_worker.py` (8 pre-existing single-shot +
+6 new ReAct: mounted-tool-call-then-answer, max-step bounding, no-tools-never-touches-invoker,
+no-invoker-raises-ConfigurationError, invalid-JSON graceful degradation, failing-tool-result
+feedback) pass. New `tests/integration/test_tools_integration.py` (2 tests: a real
+`FilesystemConnector` read through the full `Swarm.run()` path; a mount-gate denial reaching the
+model as an ordinary observation) passes. Full suite: `pytest tests/unit tests/integration tests/e2e`
+— 792 passed, 97.04% coverage; the only 13 failures are `tests/integration/test_temporal_runtime.py`
+and `tests/e2e/test_runtime_equivalence.py`, all failing identically on the pre-change commit
+(confirmed via `git stash`) with the same pre-existing, already-documented local `beartype`/Temporal-
+sandbox `ImportError` (see P10.1's entry and `PROJECT_STATE.md`'s Blocking line) — unrelated to this
+change, not a regression.
+
+**Known limitations / future improvements.** `_reason_with_tools` calls one tool per ReAct step
+(matches spec 12 P4.6's "bounded ReAct loop"); parallel/multi-tool-per-step calling is not in scope.
+`tests/integration/test_mcp_integration.py` (MCP end-to-end) and a routing-strategies integration
+test are still outstanding for the rest of P10.2.
+
+---
+
 ## 2026-07-23 · [P10.1] Coverage sweep — v0.1.0
 
 **Type:** test · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)

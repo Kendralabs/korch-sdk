@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P10 — Testing, benchmarks & quality gates — **in progress** (P10.1 done) on branch `feat/p10-testing-benchmarks-quality` (off `develop`, not yet pushed). Phase 9 is complete and merged. |
-| **Last completed milestone** | **P10.1 — coverage sweep.** Closed real gaps in 8 modules to 100% (semantic routing's untested `[routing]`-extra embedder, a reducer's most-common real path (`current=None`) that had no test, an environment-dependent test rewritten to be deterministic, and more) — "convert incidental coverage into meaningful assertions," not just line-hitting. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s 59% coverage is this same gap, left untouched). Next: P10.2 (integration suite), then P10.3–P10.6. |
-| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1 committed locally, not yet pushed. |
+| **Active phase** | P10 — Testing, benchmarks & quality gates — **in progress** (P10.1 done; P10.2's ReAct-loop gap fix done, integration suite partial) on branch `feat/p10-testing-benchmarks-quality` (off `develop`, not yet pushed). Phase 9 is complete and merged. |
+| **Last completed milestone** | **P10.2 (partial) — `WorkerAgent` ReAct tool-calling loop.** Writing P10.2's integration suite surfaced that `AgentConfig.tools` never actually ran a tool — a real gap left open since P4.6/P6. Implemented the bounded ReAct loop via a new `IToolInvoker` port (mirrors `IModelGateway`), wired `Korch`/`Swarm(connectors=[...])` through the composition root, and fixed a kernel bug (`PregelRunner` was silently dropping every non-`answer`-kind message from the run's message log). See ADR 0018. Two integration tests (`tests/integration/test_tools_integration.py`) pass end-to-end against a real `FilesystemConnector`. |
+| **Blocking** | Nothing for this work. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s coverage gap is this same issue, left untouched; re-confirmed via `git stash` that these 13 failures are identical on the pre-ReAct commit). Next: finish P10.2 (MCP + routing integration tests), then P10.3–P10.6. |
+| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1 committed locally; P10.2's ReAct work is staged, not yet committed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (104 source files), `pytest` (dspy + non-dspy paths; **783 passed**,
-96.82% cov, 16 Temporal excluded; 86 files at 100% cov, up from 79), import-linter (**4 contracts
+ruff-format, `mypy --strict` (105 source files), `pytest` (dspy + non-dspy paths; **792 passed**,
+97.04% cov, 13 Temporal/e2e excluded — all confirmed pre-existing), import-linter (**4 contracts
 kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
 single-sourcing. `import korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry`
 stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, and
@@ -55,15 +55,15 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `config/` | Leaf utility | **tested** (full spec 08 §1.3 `Settings` — 28 fields incl. `SecretStr`; opt-in `.env`; `configure`/`get_settings`) | P0, P8.1 |
 | `constants/` · `exceptions/` | Leaf utility | **tested** (`KorchError` tree + error codes, frozen) | P1 |
 | `types/` · `models/` | Contract | **tested** (`JSONValue` + frozen domain models, frozen) | P1 |
-| `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen) | P1 |
+| `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen; `IToolInvoker` added P10.2) | P1 |
 | `services/` | Façade | **tested** (`Korch.run`/`Swarm.run` wired to the kernel via `_composition`; first end-to-end run) | P1, P4 |
-| `core/` | Kernel (L1) | **tested** (reducers + laws, AgentGraph, ChannelSchema, PregelRunner; determinism-locked; ≥97% cov) | P2 |
+| `core/` | Kernel (L1) | **tested** (reducers + laws, AgentGraph, ChannelSchema, PregelRunner; determinism-locked; ≥97% cov; message log now carries every `Message.kind`, not just `answer` — P10.2) | P2 |
 | `runtime/` | Adapter | **tested** (LocalRuntime + resolve_runtime; TemporalRuntime PregelMaster/SuperstepActivity, retry/rollover, HITL signals; equivalence/replay/crash/rollover verified) | P3 |
 | `providers/` | Adapter | **tested** (MockLM; local identity + subprocess sandbox; OpenAI gateway + `get_lm`; 99% cov) | P4 |
-| `agents/` | Cognitive (L2) | **tested** (unified `Agent`; lazy DSPy `Signature`s; `WorkerAgent` + `ArchitectAgent` over a shared gateway bridge; 97% cov) | P4 |
+| `agents/` | Cognitive (L2) | **tested** (unified `Agent`; lazy DSPy `Signature`s; `WorkerAgent` + `ArchitectAgent` over a shared gateway bridge; `WorkerAgent` now runs a real bounded ReAct tool-calling loop when `tools` is mounted, via the injected `IToolInvoker` — P10.2, ADR 0018, closes a P4.6 gap; 97% cov) | P4 |
 | `taxonomy/` | Cognitive (L2) | **tested** (`TaxonomyClassifier` + agent descriptors; 100% cov) | P4 |
 | `routing/` | Cognitive (L2) | **tested** (explicit+fallback default, algorithmic, semantic `[routing]`, composite, user-function behind one `BaseRouter`; `get_router`/`resolve_router`; model-card catalogue; wired into execution) | P5 |
-| `tools/` | Integration (L4) | **tested** (AUB `invoke_tool` + `ConnectorRegistry` + `Connector` contract; schema/timeout/rate-limit/access gate/redaction seam; filesystem + mock-search connectors; ADR 0015) | P6 |
+| `tools/` | Integration (L4) | **tested** (AUB `invoke_tool` + `ConnectorRegistry` + `Connector` contract; schema/timeout/rate-limit/access gate/redaction seam; filesystem + mock-search connectors; ADR 0015; `RegistryToolInvoker` — the `IToolInvoker` implementation `agents/` calls through, P10.2/ADR 0018) | P6 |
 | `mcp/` | Integration (L4) | **tested** (`MCPClient.discover` → `Connector`s; stdio/sse descriptor; fake-session testable; real transport `[mcp]`) | P6 |
 | `context/` | Context (L3) | **tested** (`ContextCompiler` MVC extraction, off the hot loop, graceful summariser degradation) | P6 |
 | `a2a/` | Integration (L4) | **tested** (`directed_message`, `HandoffTransformer`) | P6 |

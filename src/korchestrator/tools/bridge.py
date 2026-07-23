@@ -25,7 +25,7 @@ from korchestrator.tools._schema import validate_args
 from korchestrator.tools.registry import ConnectorRegistry
 from korchestrator.types import JSONValue
 
-__all__ = ["Redactor", "invoke_tool"]
+__all__ = ["Redactor", "RegistryToolInvoker", "invoke_tool"]
 
 _logger = logging.getLogger("korchestrator.tools")
 
@@ -128,6 +128,71 @@ async def invoke_tool(
         ) from exc
 
     return finish(_redact(result, redactor))
+
+
+class RegistryToolInvoker:
+    """The one :class:`~korchestrator.interfaces.IToolInvoker` implementation (P10.2).
+
+    Binds a :class:`ConnectorRegistry` (and the bridge's optional cross-cutting seams) so
+    ``agents/`` can call a tool without importing ``tools/`` directly — spec 05's allowed-imports
+    table names only ``core``/``interfaces``/``models``/``exceptions``/``logging``/``dspy`` for
+    that layer. The composition root constructs one per run and injects it via
+    ``Agent.bind(tool_invoker=...)``, exactly like it injects the model gateway.
+
+    Example:
+        >>> import asyncio
+        >>> from korchestrator.tools import ConnectorRegistry, RegistryToolInvoker
+        >>> async def shout(args):
+        ...     return str(args["text"]).upper()
+        >>> registry = ConnectorRegistry().register_tool(
+        ...     "shout", {"type": "object", "properties": {"text": {"type": "string"}}}, shout
+        ... )
+        >>> invoker = RegistryToolInvoker(registry)
+        >>> result = asyncio.run(
+        ...     invoker.invoke_tool("shout", {"text": "hi"}, tenant_id="default", mounted={"shout"})
+        ... )
+        >>> result.output
+        'HI'
+    """
+
+    def __init__(
+        self,
+        registry: ConnectorRegistry,
+        *,
+        timeout_seconds: float = 30.0,
+        rate_limiter: RateLimiter | None = None,
+        redactor: Redactor | None = None,
+    ) -> None:
+        """Bind ``registry`` and the bridge's optional per-call defaults."""
+        self._registry = registry
+        self._timeout_seconds = timeout_seconds
+        self._rate_limiter = rate_limiter
+        self._redactor = redactor
+
+    async def invoke_tool(
+        self,
+        tool: str,
+        args: Mapping[str, JSONValue],
+        *,
+        tenant_id: str,
+        mounted: Collection[str],
+    ) -> ToolResult:
+        """Delegate to :func:`invoke_tool`, bound to this invoker's registry and seams."""
+        return await invoke_tool(
+            self._registry,
+            tool,
+            args,
+            tenant_id=tenant_id,
+            mounted=mounted,
+            timeout_seconds=self._timeout_seconds,
+            rate_limiter=self._rate_limiter,
+            redactor=self._redactor,
+        )
+
+    def describe_tool(self, tool: str) -> str:
+        """Return ``tool``'s registered description, or ``""`` if it is not registered."""
+        connector = self._registry.resolve(tool)
+        return connector.description if connector is not None else ""
 
 
 def _failure(tool: str, error_code: str, reason: str) -> ToolResult:
