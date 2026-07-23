@@ -10,6 +10,63 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P10.2] Integration suite: tools, MCP, routing strategies — v0.1.0
+
+**Type:** test · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
+
+**What.** Completed P10.2's remaining named coverage (spec 12: "Runtime swap, routing strategies,
+tools, MCP, governance pause/resume") on top of the ReAct loop landed in the previous entry:
+
+- `tests/integration/test_mcp_integration.py` (new, 2 tests): a fake, deterministic `MCPSession`'s
+  advertised tool is discovered via `MCPClient.discover`, passed straight into
+  `Swarm(connectors=[...])`, and called by a `WorkerAgent`'s ReAct loop through a full
+  `Swarm.run()` — proving `MCPClient.discover` → `Connector` → `ConnectorRegistry` →
+  `RegistryToolInvoker` → the ReAct loop are actually wired together, not just each unit-tested in
+  isolation. A second test proves a server that fails to connect contributes no connectors and the
+  run still completes normally (the existing skip-on-failure unit behaviour, now proven not to
+  break the run it's part of).
+- `tests/integration/test_routing_integration.py` (new, 2 tests): the built-in `AlgorithmicRouter`
+  (not the user-function escape hatch already covered by
+  `tests/unit/services/test_run.py::test_custom_router_influences_the_run`) is weighted purely on
+  cost vs. purely on quality and both reach the gateway with a **different** model
+  (`gpt-4o-mini` vs. `gpt-4o` from the built-in model-card catalogue) through a full `Swarm.run()`
+  — proving the strategy's actual ranking decision reaches execution, not just that routing is
+  consulted at all.
+
+**Why.** Closes P10.2's two remaining named integration surfaces after the ReAct-loop work; "runtime
+swap" and "governance pause/resume" were confirmed already covered by the existing
+`tests/integration/test_temporal_runtime.py` (pause/resume/cancel/HITL-timeout/low-trust-autopause
+tests) — no new test needed there.
+
+**Design decisions.** Used a hand-written fake `MCPSession` rather than the real `[mcp]` transport
+(T1: no test touches the network or a real external service) — matches the existing unit-test
+pattern in `tests/unit/mcp/`. Chose `AlgorithmicRouter` over `SemanticRouter`/`CompositeRouter` for
+the routing integration test because it needs no extra (`[routing]`'s embedder) and its
+weighted-ranking behaviour is easy to make assert a *specific, different* model per weighting,
+which is a stronger proof than "some router ran."
+
+**Architecture changes.** None — test-only.
+
+**Files/modules affected.** `tests/integration/test_mcp_integration.py` (new),
+`tests/integration/test_routing_integration.py` (new).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** All 4 new tests pass. Full suite (excluding the pre-existing Temporal/e2e
+environment gap): `pytest tests/unit tests/integration --ignore=tests/integration/
+test_temporal_runtime.py` green; `ruff check`, `ruff format --check`, `mypy --strict` (105 files)
+all clean.
+
+**Known limitations / future improvements.** P10.2 is now complete. Next: P10.3 (E2E suite — full
+swarm on local *and* Temporal, HITL round trip, streaming consumption), P10.4 (regression harness),
+P10.5 (benchmarks), P10.6 (coverage/benchmark ratchet).
+
+---
+
 ## 2026-07-23 · [P10.2] Wire the ReAct tool-calling loop into WorkerAgent — v0.1.0
 
 **Type:** feature · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
