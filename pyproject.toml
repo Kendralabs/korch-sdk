@@ -156,7 +156,12 @@ branch = true
 parallel = true
 
 [tool.coverage.report]
-fail_under = 80
+# Ratcheted from 80 at P10.6 — actually achieved is ~97% (excluding the local Temporal-environment
+# gap tracked in PROJECT_STATE.md); floor set with headroom below that, not pinned to it, since the
+# CI matrix (3.10-3.13) and the Temporal-marked tests (which don't run in every local dev
+# environment) can shift the exact number. Ratchet up again as the achieved level rises; never down
+# to make a change pass (testing.md T8).
+fail_under = 90
 show_missing = true
 skip_covered = true
 exclude_lines = [

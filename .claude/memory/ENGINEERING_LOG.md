@@ -10,6 +10,72 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-24 · [P10.6] Ratchet coverage floors + wire benchmark regression detection — v0.1.0
+
+**Type:** feature · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
+
+**What.** The last P10.6 checklist item, closing Phase 10:
+
+- **Ratcheted coverage floors** (spec 09 §7's own rule: "when sustained coverage exceeds a floor by
+  five points or more, raise the floor"): global 80% → **90%**, `core/` 95% → **97%**, `models/` 95%
+  → **99%**, in `pyproject.toml`'s `fail_under` and `.github/workflows/ci.yml`'s per-package
+  `coverage report --fail-under` steps. Measured locally: ~97% global, ~98% `core/`, 100% `models/`
+  (excluding the pre-existing local Temporal-environment gap tracked in `PROJECT_STATE.md`) — each
+  new floor keeps deliberate headroom below the measured number rather than pinning to it, since
+  real CI's exact figure differs (it runs more of `runtime/temporal_runtime.py`'s Temporal-marked
+  tests than this dev environment can, across a 3.10–3.13 matrix). Updated spec 09 §7's table and
+  `.claude/rules/testing.md`'s condensed restatement to match — floors are documented facts, not
+  just enforced numbers.
+- **Wired benchmark regression detection into CI**: a new `benchmarks` job
+  (`.github/workflows/ci.yml`) runs on `workflow_dispatch` or a push to `main` only — never on a PR
+  — matching spec 09 §8 ("run on manual dispatch and on release branches... never block a merge").
+  It saves the committed `benchmarks/baseline.json`, runs `pytest benchmarks -m benchmark` (which
+  overwrites that file with fresh numbers), then runs the new `scripts/check_benchmark_regression.py`
+  to diff the two and print a `::warning::` annotation for any of three watched metrics
+  (`bench_import`'s import cost, `bench_superstep`'s N=100 concurrency ratio,
+  `bench_telemetry_overhead`'s off-vs-bare ratio) that regressed past a 1.5x threshold. The script
+  always exits `0` — informational, never fails the job (`continue-on-error: true` on the job too, as
+  a second layer) — matching spec 09 §8's "triaged as a defect, not a broken build."
+
+**Why.** Spec 12 P10.6's exact two-part task, and the last item before Phase 10 is complete.
+
+**Design decisions.** (1) **The regression check never auto-commits the freshly-measured
+`baseline.json` back to the repo** — spec 09 §8 says updating the committed baseline is "a
+deliberate PR that explains the change," a human decision; CI only compares and warns, and the
+workflow doesn't push. (2) **Only three metrics are watched**, not every nested field in
+`baseline.json` — the one number per benchmark that most directly answers "did this get worse"
+(import cost, N=100 concurrency ratio, telemetry-off overhead ratio), keeping the noise-vs-signal
+tradeoff the same way the benchmarks themselves do (spec 09 §8: don't over-tighten against noise the
+runner can't control). (3) **The comparator (`compare()`) is unit-tested directly** (6 tests,
+`tests/unit/test_benchmark_regression_check.py`), matching the existing pattern for
+`scripts/check_env_reads.py`'s `find_offenders` — one canonical implementation exercised by both the
+standalone CLI script and the normal `pytest` run, not two that could drift apart.
+
+**Architecture changes.** None to `src/korchestrator`.
+
+**Files/modules affected.** `pyproject.toml` (`fail_under`), `.github/workflows/ci.yml`
+(per-package floors, new `benchmarks` job), `scripts/check_benchmark_regression.py` (new),
+`tests/unit/test_benchmark_regression_check.py` (new), `docs/specs/09-testing-and-quality.md` §7,
+`.claude/rules/testing.md`.
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** New `test_benchmark_regression_check.py`: 6/6 pass. Manually verified the full
+CI-job sequence locally (save baseline → run benchmarks → compare) against both an unchanged
+baseline (no warning) and a synthetically regressed one (correctly warns, still exits 0). `ruff
+check`/`ruff format --check` clean over the spec-09 gate-1/2 file set; `mypy --strict
+src/korchestrator` clean (105 files); isolation gate `OK`; import-linter 4/4 contracts kept.
+
+**Known limitations / future improvements.** **Phase 10 is now complete (P10.1–P10.6).** Per the
+standing autonomous-progression authorization: commit → push → merge `feat/p10-testing-benchmarks-
+quality` into `develop` → push `develop` → begin Phase 11 (Documentation, examples & DX).
+
+---
+
 ## 2026-07-23 · [P10.5] Benchmarks — v0.1.0
 
 **Type:** feature · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
