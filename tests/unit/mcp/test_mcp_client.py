@@ -67,6 +67,26 @@ async def test_mcp_tool_error_becomes_ok_false() -> None:
     assert result.error_code == "TOOL_EXECUTION_FAILED"
 
 
+async def test_mcp_call_raising_becomes_ok_false_execution_failed() -> None:
+    class RaisingSession(FakeSession):
+        async def call_tool(self, name: str, args: Mapping[str, JSONValue]) -> MCPCallResult:
+            raise RuntimeError("transport dropped")
+
+    connectors = await _client(RaisingSession()).discover(_CONFIG)
+    result = await invoke_tool(ConnectorRegistry(connectors), "echo", {"text": "x"})
+    assert result.ok is False
+    assert result.error_code == "TOOL_EXECUTION_FAILED"
+    assert result.error is not None
+    assert "transport dropped" in result.error
+
+
+async def test_connector_exposes_the_discovered_name_description_and_schema() -> None:
+    (connector,) = await _client(FakeSession()).discover(_CONFIG)
+    assert connector.name == "echo"
+    assert connector.description == "echo back the text"
+    assert connector.schema == {"type": "object", "properties": {"text": {"type": "string"}}}
+
+
 async def test_discovery_failure_is_skipped_not_fatal() -> None:
     async def failing_factory(config: MCPServerConfig) -> object:
         raise RuntimeError("cannot connect")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
+from types import ModuleType
 from unittest import mock
 
 import pytest
@@ -68,6 +69,18 @@ async def test_precomputed_task_embedding_is_used() -> None:
     assert result.model_name == "summarizer"
 
 
+async def test_a_zero_vector_embedding_scores_zero_similarity_rather_than_dividing_by_zero() -> (
+    None
+):
+    ctx = RoutingContext(
+        agent_id="w",
+        task=TaskSemantics(intent="x", difficulty="moderate", embedding=(0.0, 0.0)),
+        candidates=(_CODER, _SUMMARIZER),
+    )
+    result = await SemanticRouter(FakeEmbedder()).select_model(ctx)
+    assert "cosine 0.000" in result.reason  # zero norm short-circuits to 0.0, never 0/0
+
+
 async def test_no_candidates_raises() -> None:
     ctx = RoutingContext(agent_id="w", task=TaskSemantics(intent="code", difficulty="moderate"))
     with pytest.raises(RoutingError) as info:
@@ -113,3 +126,52 @@ def test_get_router_semantic_without_the_extra_raises_missing_extra() -> None:
         pytest.raises(MissingExtraError),
     ):
         get_router(Settings(routing_strategy="semantic"))
+
+
+# --- the real, [routing]-extra-backed embedder (P10.1 coverage sweep) --------------------------
+#
+# sentence-transformers is a heavy ML dependency this dev environment doesn't install; loading a
+# real model would also violate T1 (no test touches a real model). A fake module standing in for
+# the extra exercises make_embedder's happy path and _SentenceTransformerEmbedder's lazy-load/
+# caching/vector-conversion logic deterministically, without either problem.
+
+
+def _fake_sentence_transformers_module(instances: list[str]) -> ModuleType:
+    class _FakeSentenceTransformer:
+        def __init__(self, model_name: str) -> None:
+            instances.append(model_name)
+
+        def encode(self, texts: Sequence[str]) -> list[list[float]]:
+            return [[float(len(t)), 0.0] for t in texts]
+
+    module = ModuleType("sentence_transformers")
+    module.SentenceTransformer = _FakeSentenceTransformer  # type: ignore[attr-defined]
+    return module
+
+
+def test_make_embedder_with_the_extra_returns_a_working_embedder() -> None:
+    module = _fake_sentence_transformers_module([])
+    with mock.patch.dict(sys.modules, {"sentence_transformers": module}):
+        embedder = make_embedder(Settings())
+        vectors = embedder.embed(["hello"])
+    assert vectors == [(5.0, 0.0)]
+
+
+def test_make_embedder_uses_the_configured_provider_over_the_default() -> None:
+    instances: list[str] = []
+    module = _fake_sentence_transformers_module(instances)
+    with mock.patch.dict(sys.modules, {"sentence_transformers": module}):
+        embedder = make_embedder(Settings(embedding_provider="my-org/my-model"))
+        embedder.embed(["x"])
+    assert instances == ["my-org/my-model"]
+
+
+def test_sentence_transformer_embedder_loads_the_model_lazily_and_caches_it() -> None:
+    instances: list[str] = []
+    module = _fake_sentence_transformers_module(instances)
+    with mock.patch.dict(sys.modules, {"sentence_transformers": module}):
+        embedder = make_embedder(Settings())
+        assert instances == []  # not loaded at construction time
+        embedder.embed(["a"])
+        embedder.embed(["b"])
+    assert len(instances) == 1  # constructed exactly once despite two embed() calls

@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P9 — Remote client — **complete** (P9.1–P9.8 done) on branch `feat/p9-remote-client` (off `develop`, not yet pushed). Phase 8 is complete and merged. |
-| **Last completed milestone** | **P9.8 — TypeScript parity matrix (closes Phase 9).** `docs/parity-matrix.md` — every `KorchestratorClient` method/model marked `TS: planned` per ADR 0008, with three Python-vs-original-sketch discrepancies resolved and labelled. Docs-only. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: push `feat/p9-remote-client`, merge `--no-ff` into `develop`, then start Phase 10 (Testing, benchmarks & quality gates). |
-| **Pushed / merged** | `develop` (P0–P8) is pushed to `origin`. `feat/p9-remote-client` has P9.1–P9.8 committed locally, not yet pushed. |
+| **Active phase** | P10 — Testing, benchmarks & quality gates — **in progress** (P10.1 done) on branch `feat/p10-testing-benchmarks-quality` (off `develop`, not yet pushed). Phase 9 is complete and merged. |
+| **Last completed milestone** | **P10.1 — coverage sweep.** Closed real gaps in 8 modules to 100% (semantic routing's untested `[routing]`-extra embedder, a reducer's most-common real path (`current=None`) that had no test, an environment-dependent test rewritten to be deterministic, and more) — "convert incidental coverage into meaningful assertions," not just line-hitting. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s 59% coverage is this same gap, left untouched). Next: P10.2 (integration suite), then P10.3–P10.6. |
+| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (104 source files), `pytest` (dspy + non-dspy paths; **766 passed**,
-95.93% cov, 16 Temporal excluded; `clients/client.py` 99.75%), import-linter (**4 contracts
+ruff-format, `mypy --strict` (104 source files), `pytest` (dspy + non-dspy paths; **783 passed**,
+96.82% cov, 16 Temporal excluded; 86 files at 100% cov, up from 79), import-linter (**4 contracts
 kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
 single-sourcing. `import korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry`
 stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, and
@@ -40,7 +40,7 @@ stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, a
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
 | P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
 | P9 | Remote client (Python only — TS deferred) | **Complete** (P9.1–P9.8; not yet pushed/merged to `develop`) |
-| P10 | Testing, benchmarks & quality gates | Not started |
+| P10 | Testing, benchmarks & quality gates | **In progress** (P10.1 done; P10.2–P10.6 next) |
 | P11 | Documentation, examples & DX | Not started |
 | P12 | CI/CD, packaging & publishing | Not started |
 | P13 | External backend adapter | **Out of scope** — separate repository |

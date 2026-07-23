@@ -10,6 +10,79 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P10.1] Coverage sweep — v0.1.0
+
+**Type:** test · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
+
+**What.** Closed real coverage gaps in eight modules, bringing each to 100% (from `routing/
+semantic.py` 83%, `tools/connectors/filesystem.py` 93%, `mcp/client.py` 94%, `core/reducers.py`
+95%, `runtime/__init__.py` 89%, `agents/architect.py` 95%, `tools/bridge.py` 95%, plus a smaller
+gain elsewhere): (1) `_SentenceTransformerEmbedder`'s lazy-load/caching/vector-conversion logic
+(the `[routing]`-extra-backed embedder) was entirely untested — a fake `sentence_transformers`
+module now exercises it deterministically, without the heavy real dependency and without
+violating T1 (no test touches a real model). (2) `_cosine`'s zero-vector short-circuit (division-
+by-zero guard). (3) `FilesystemConnector`'s generic `OSError` path (triggered via reading a
+directory — portable, no platform-specific permission tricks). (4) The MCP connector's `.
+description` property and its `call_tool` **raising** path (previously only its `is_error=True`
+non-raising path was tested). (5) Both `_as_list`/`_as_dict` coercion branches in the reducers —
+including the single most common real path, a channel's first-ever write seeing `current=None`,
+which had no test at all despite being far more than a defensive edge case. (6) `resolve_runtime`'s
+`MissingExtraError` branch, whose existing test **branched on whether `temporalio` actually
+happened to be installed in this dev environment** rather than asserting deterministically —
+rewritten into two unconditional tests. (7) `ArchitectAgent`'s "structured reply parsed but
+produced zero valid roles" fallback and the full `_normalise_difficulty` match (only "moderate"
+and "complex" were ever exercised; "trivial" and the unrecognised-value default were not).
+(8) `invoke_tool`'s "redactor ran but found nothing to redact" branch and a connector raising
+`ToolError` directly (propagated unwrapped, distinct from the already-tested generic-exception
+wrapping path).
+
+**Why.** P10.1 — "Fill unit gaps to the floors; convert any incidental coverage into meaningful
+assertions" (spec 11 Phase 10, spec 12 P10.1) — the first task of Phase 10.
+
+**Design decisions.** (1) **The documented floors (80% global, 95% `core/`+`models/`) were already
+met before this task** (95.93% overall; `models/` at 100%; `core/`'s three files at 95-99%) — so
+"fill gaps to the floors" was, on inspection, already satisfied, and this task's real value was
+the second half of its own mandate: converting *incidental* coverage (a line executed without a
+meaningful assertion, or worse, a test whose coverage depends on environment happenstance) into
+real regression tests. Item 6 above is the clearest instance — a test that only exercises one of
+two branches depending on whether an optional dependency happens to be installed is not testing
+the code, it's testing the environment. (2) **`runtime/temporal_runtime.py` (59%) was
+deliberately left untouched** — its gap is the pre-existing, already-documented `beartype`/
+site-packages conflict that blocks `pytest -m temporal` in this dev environment (P7.4 engineering-
+log entry), not a genuine coverage gap; the code those lines exercise is covered by the
+`@pytest.mark.temporal` suite that exists but cannot run here. Chasing that number in this
+environment would mean writing tests that can't be verified to pass, which is worse than leaving
+the known gap documented. (3) **Stopped the per-file sweep at eight modules, not all ~20 files
+sitting at 95-99%** — each fix above closed a real, previously-undetected gap (a missing branch,
+an unexercised error path, or a non-deterministic test); the remaining files in the 95-99% range
+were spot-checked (`security/redactor.py`'s `_luhn_ok` non-digit guard, in particular) and judged
+lower-value/harder-to-reach without deeper investigation than the phase's remaining tasks
+(P10.2-P10.6) warrant spending more time on right now — a judgment call, not an oversight; they
+remain open for a future pass if the ratchet in P10.6 wants them.
+
+**Architecture changes.** None — test-only; no `src/` changes.
+
+**Files/modules affected.** `tests/unit/routing/test_semantic.py`; `tests/unit/tools/
+test_connectors.py`; `tests/unit/mcp/test_mcp_client.py`; `tests/unit/core/test_reducers.py`;
+`tests/unit/runtime/test_local_runtime.py`; `tests/unit/agents/test_architect.py`; `tests/unit/
+tools/test_tool_bridge.py`.
+
+**Breaking changes.** None.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files, tests
+outside its scope). Full non-Temporal suite: **781 passed** (up from 766), overall coverage
+**96.74%** (up from 95.93%; 85 files now at complete coverage, up from 79). All 98 package
+doctests still pass. Import-linter, isolation gate, env-confinement, and version-validate all
+re-verified `OK`.
+
+**Known limitations / future improvements.** `runtime/temporal_runtime.py`'s 59% remains the one
+large, tracked, environment-caused gap (see Design decision 2). A handful of 95-99% files were
+spot-checked but not exhaustively swept — candidates for P10.6's ratchet pass if warranted.
+
 ## 2026-07-23 · [P9.8] TypeScript parity matrix — v0.1.0 (closes Phase 9)
 
 **Type:** docs · **Phase:** P9 (remote client, final task) · **Author:** Claude (agent)

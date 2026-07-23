@@ -90,6 +90,32 @@ async def test_reasoning_failure_falls_back_to_a_single_agent_plan() -> None:
     assert "Fallback" in plan.rationale
 
 
+async def test_a_structured_reply_with_no_valid_roles_falls_back_to_a_single_agent_plan() -> None:
+    # _reason_plan raises ValidationError internally when roles parse to nothing, but plan()'s
+    # own `except Exception` catches everything non-MissingExtraError and falls back — the same
+    # observable outcome as a raising gateway (test_reasoning_failure_falls_back_...), just
+    # reached through the "reply parsed but was unusable" path instead of a hard failure.
+    pytest.importorskip("dspy")
+    empty_roles = "[[ ## roles ## ]]\n!!!\n\n[[ ## rationale ## ]]\nnone\n\n[[ ## completed ## ]]"
+    architect = ArchitectAgent().bind(gateway=MockLM(responses={"korch-default": empty_roles}))
+    plan = await architect.plan(OBJECTIVE)
+    assert [c.id for c in plan.agents] == ["worker"]
+    assert "Fallback" in plan.rationale
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [("trivial", "trivial"), ("complex", "complex"), ("nonsense", "moderate")],
+)
+async def test_difficulty_normalises_known_values_and_falls_back_to_moderate(
+    given: str, expected: str
+) -> None:
+    pytest.importorskip("dspy")
+    architect = ArchitectAgent().bind(gateway=MockLM(responses={"korch-default": _STRUCTURED}))
+    plan = await architect.plan(OBJECTIVE, difficulty=given)
+    assert plan.difficulty == expected
+
+
 async def test_planning_is_deterministic_under_mock() -> None:
     pytest.importorskip("dspy")
     gateway = MockLM(responses={"korch-default": _STRUCTURED})
