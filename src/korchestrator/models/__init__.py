@@ -5,6 +5,7 @@ models exchanged across every boundary. All models are frozen and forbid extra f
 """
 
 from korchestrator.models.agent import AgentConfig, AgentDescriptor, AgentPersona
+from korchestrator.models.context_graph import DecisionNode, EventNode, GraphNode
 from korchestrator.models.plan import ExecutionPlan, TaskDecomposition
 from korchestrator.models.result import RunResult
 from korchestrator.models.routing import (
@@ -28,7 +29,10 @@ __all__ = [
     "AgentDescriptor",
     "AgentPersona",
     "AgentState",
+    "DecisionNode",
+    "EventNode",
     "ExecutionPlan",
+    "GraphNode",
     "Message",
     "MessageRole",
     "ModelCard",
