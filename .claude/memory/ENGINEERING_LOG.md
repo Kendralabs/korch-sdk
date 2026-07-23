@@ -10,6 +10,61 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P10.3] E2E suite: streaming consumption — v0.1.0
+
+**Type:** test · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
+
+**What.** Closed P10.3's three named E2E surfaces (spec 12: "Full swarm on local **and** Temporal;
+HITL round trip; streaming consumption"):
+
+- **Full swarm on local and Temporal** — already covered by the existing
+  `tests/e2e/test_runtime_equivalence.py` (local/Temporal equivalence, history replay, worker
+  restart, event-cap rollover); no new test needed. Blocked from running in this dev environment by
+  the same pre-existing `beartype`/Temporal-sandbox conflict noted in every P10 entry so far.
+- **HITL round trip** — already covered by `tests/integration/test_temporal_runtime.py`'s
+  pause/resume/edit-resume/low-trust-autopause tests; confirmed the local runtime deliberately
+  raises `NotImplementedError` for pause (`tests/unit/services/test_hitl.py`) rather than silently
+  no-opping, so there is nothing to add on the local side. No new test needed.
+- **Streaming consumption** (new, genuinely uncovered): `tests/e2e/test_streaming_consumption.py`
+  — a real three-agent `Swarm.run()` with declared topology (`security`/`perf` → `lead`) registers
+  an `.on("superstep", handler)` that forwards each dispatched `Event` into a real
+  `EventPublisher`; a `Subscription` opened before the run drains exactly `result.supersteps`
+  events afterward, in strictly increasing `superstep` order, each carrying the run's `run_id`, and
+  each rendering as a well-formed SSE frame via `format_sse`. Proves the full local path — run →
+  `HookRegistry.dispatch` → `EventPublisher.publish` → `Subscription` → SSE rendering — is wired
+  together end to end, not just each piece unit-tested alone (`test_hooks.py`, `test_publisher.py`).
+
+**Why.** `EventPublisher`/`Subscription`/`format_sse` and the `.on(event, handler)` hook API existed
+and were each unit-tested individually, but nothing proved a real multi-superstep run's events
+actually flow through that pipeline in order — the gap P10.3 names.
+
+**Design decisions.** The test publishes and drains sequentially rather than concurrently across
+threads: the handler is `async def on_superstep(event): await publisher.publish(event)`, so
+`publish()` runs synchronously inside `HookRegistry.dispatch`, inside `Swarm.run()`'s own
+`asyncio.run()` — the events are already sitting in the subscriber's `asyncio.Queue` by the time
+`run()` returns, so draining them via a second, separate `asyncio.run(drain(...))` afterward needs
+no cross-thread coordination and stays deterministic (T2: no test uses sleep or relies on
+concurrent-completion order). `after_superstep` fires with the *post-increment* state, so the first
+event reports `superstep=1`, not `0` — documented inline where the test asserts on it, since it is
+easy to get backwards.
+
+**Architecture changes.** None — test-only; no public API added or changed.
+
+**Files/modules affected.** `tests/e2e/test_streaming_consumption.py` (new).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** New test passes. `ruff check`, `ruff format --check`, `mypy --strict` clean.
+
+**Known limitations / future improvements.** P10.3 is now complete. Next: P10.4 (regression
+harness), P10.5 (benchmarks), P10.6 (coverage/benchmark ratchet).
+
+---
+
 ## 2026-07-23 · [P10.2] Integration suite: tools, MCP, routing strategies — v0.1.0
 
 **Type:** test · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
