@@ -11,6 +11,7 @@ from __future__ import annotations
 from korchestrator.constants import error_codes as codes
 
 __all__ = [
+    "ApiError",
     "AuthError",
     "ConfigurationError",
     "GovernanceHaltError",
@@ -167,3 +168,42 @@ class MissingExtraError(KorchError):
     """
 
     default_code = codes.KORCH_MISSING_EXTRA
+
+
+class ApiError(KorchError):
+    """A :class:`~korchestrator.remote.KorchestratorClient` call failed (spec 04 §7.5).
+
+    Raised for any non-2xx response the remote engine returns after retries are exhausted —
+    ``status`` and ``trace_id`` let a caller correlate the failure with server-side logs and
+    support without parsing the message text.
+
+    Args:
+        message: An actionable description of the failure.
+        status: The HTTP status code the engine returned. Defaults to ``500`` so ``ApiError``
+            stays constructible like every other ``KorchError`` when the status genuinely isn't
+            known; real call sites always pass the response's actual status.
+        code: The stable error code — the engine's own code when its response body carries one,
+            else :attr:`default_code`.
+        trace_id: The engine's request trace id, when the response provided one.
+
+    Example:
+        >>> from korchestrator.exceptions import ApiError, KorchError
+        >>> err = ApiError("Run 'r1' not found.", status=404, trace_id="trace-abc")
+        >>> err.status, err.trace_id, isinstance(err, KorchError)
+        (404, 'trace-abc', True)
+    """
+
+    default_code = codes.KORCH_API_ERROR
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int = 500,
+        code: str | None = None,
+        trace_id: str | None = None,
+    ) -> None:
+        """Build the error with the engine's HTTP status and optional trace id."""
+        super().__init__(message, code=code)
+        self.status = status
+        self.trace_id = trace_id

@@ -15,6 +15,51 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- TypeScript parity matrix (Phase 9, **closes Phase 9**): `docs/parity-matrix.md` settles the
+  deferred TypeScript client's contract (ADR 0008) — every `KorchestratorClient` method, the
+  constructor, `ApiError`, and the `models.remote` types, each marked `TS: planned` with its
+  settled TypeScript name. Three discrepancies between an earlier TS-facing design sketch and the
+  shipped Python implementation are resolved in the Python implementation's favor and labelled.
+- Remote client discovery (Phase 9, **completes the `KorchestratorClient` method surface**):
+  `tools()`, `models()`, `swarm_templates()` (spec 04 §7.3). `models()` returns the existing
+  `korchestrator.models.routing.ModelCard`. New `korchestrator.models.remote.ToolDescriptor`
+  (`name`/`description`/`input_schema`) and `SwarmTemplate` (`name`/`description`/`agents`/
+  `edges`, reusing `AgentConfig` so a fetched template can be passed straight into `run_swarm`).
+- Remote client SSE streaming (Phase 9): `KorchestratorClient.stream(run_id)` (spec 04 §7.3/§7.5)
+  — a native async iterator yielding `korchestrator.models.remote.RunEvent`, the only method on
+  the client that isn't a sync wrapper. Reconnects automatically (full-jitter backoff, budget
+  reset on each successful reconnect) on a dropped connection; note that reconnecting resumes from
+  "now", not the last delivered event — the wire format carries no event id to resume from.
+- Remote client control + identity (Phase 9): `KorchestratorClient` gains `resume`, `cancel`,
+  `edit_resume` (mirrors the local kernel's own `edit_resume` signal shape), `me`, `my_quota`,
+  `my_runs`, and key management (`create_key`, `list_keys`, `revoke_key`) — spec 04 §7.3. New
+  `korchestrator.models.remote.CallerIdentity`/`Quota`/`ApiKey`/`ApiKeySummary`. `ApiKey.key` (the
+  secret, returned once at creation) is a `pydantic.SecretStr`, never a bare `str` — an accidental
+  `repr`/log can't leak it; call `.get_secret_value()` to use it. `list_keys` never returns the
+  secret at all.
+- Remote client run lifecycle (Phase 9): `KorchestratorClient` gains `run`, `run_swarm`,
+  `run_and_wait`, `get_run`, `wait`, `list_runs`, `get_run_summary` (spec 04 §7.3). Every numeric
+  run status the engine can return is normalized to the `RunStatus` string vocabulary before
+  validation (spec 04 §7.4). New `korchestrator.models.remote.RemoteRunResult`/`RunSummary` —
+  the client's own wire-facing result shapes, distinct from the local kernel's `RunResult` (no
+  nested `AgentState`). `wait`/`run_and_wait` poll; real-time SSE streaming lands in the next
+  Phase 9 task. The wire-format details (field names, list-response shape) are the SDK's own
+  documented assumption pending a full engine schema — see the P9.3 engineering-log entry.
+- Remote client credential safety (Phase 9): `KorchestratorClient.__repr__` shows `base_url` only,
+  never headers or the credential. Test-locked (spec 04 §7.2): the client's `repr`/`str`, and
+  every error `KorchestratorClient` can raise (`ApiError`, `NetworkError`, `TimeoutError`), never
+  contain the API key — including when a (misbehaving) engine response tries to echo the
+  `Authorization` header back. A static check asserts `clients/` performs no file I/O at all, so
+  "credentials are never written to disk" can't regress silently.
+- Remote client transport + auth (Phase 9): `korchestrator.remote.KorchestratorClient` (also
+  `korchestrator.clients.KorchestratorClient`) — the Tier 4 client's authenticated, retrying HTTP
+  transport, behind the `[remote]` extra (spec 04 §7). One `Authorization: Bearer` header for
+  both a static API key and a Keycloak/KIAM JWT; a 30s default timeout, overridable per call; up
+  to 3 retries with full-jitter exponential backoff on `429`/`502`/`503`/`504` and connection
+  failures, never on any other `4xx`. New `korchestrator.exceptions.ApiError` (`status`, `code`,
+  `trace_id`) is raised for a terminal non-2xx response. This first remote-client task ships the
+  transport only — `run`/`get_run`/`resume`/`stream`/etc. land in the following Phase 9 tasks, so
+  `KorchestratorClient` is not yet usable end-to-end.
 - Optional OpenTelemetry telemetry (Phase 8, **closes Phase 8**): `korchestrator.telemetry` gains
   `start_span(name, *, settings=None, **attributes)` and `record_metric(name, value, *, settings=
   None, **attributes)`, behind `KORCH_TELEMETRY_ENABLED` (default off) and the `[otel]` extra.

@@ -7,6 +7,17 @@ models exchanged across every boundary. All models are frozen and forbid extra f
 from korchestrator.models.agent import AgentConfig, AgentDescriptor, AgentPersona
 from korchestrator.models.context_graph import DecisionNode, EventNode, GraphNode
 from korchestrator.models.plan import ExecutionPlan, TaskDecomposition
+from korchestrator.models.remote import (
+    ApiKey,
+    ApiKeySummary,
+    CallerIdentity,
+    Quota,
+    RemoteRunResult,
+    RunEvent,
+    RunSummary,
+    SwarmTemplate,
+    ToolDescriptor,
+)
 from korchestrator.models.result import RunResult
 from korchestrator.models.routing import (
     ModelCard,
@@ -29,6 +40,9 @@ __all__ = [
     "AgentDescriptor",
     "AgentPersona",
     "AgentState",
+    "ApiKey",
+    "ApiKeySummary",
+    "CallerIdentity",
     "DecisionNode",
     "EventNode",
     "ExecutionPlan",
@@ -37,12 +51,18 @@ __all__ = [
     "MessageRole",
     "ModelCard",
     "Performative",
+    "Quota",
+    "RemoteRunResult",
     "RoutingContext",
     "RoutingResult",
+    "RunEvent",
     "RunResult",
     "RunStatus",
+    "RunSummary",
     "StateUpdate",
+    "SwarmTemplate",
     "TaskDecomposition",
     "TaskSemantics",
+    "ToolDescriptor",
     "ToolResult",
 ]

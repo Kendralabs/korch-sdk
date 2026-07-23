@@ -134,6 +134,40 @@ Zero-trust guardrails and long-term memory.
   first, and queries them back tenant-scoped with time-travel (`as_of`/`valid_at`). Nodes are
   immutable and append-only: a correction is always a new node, never an edit.
 
+## P8 — Cross-cutting foundations ✅
+
+Finalized the seven foundations every module depends on (spec 08).
+
+- ✅ **P8.1 — Settings finalized**: the full spec 08 §1.3 variable table (28 fields), secret fields
+  as `pydantic.SecretStr`. New `korchestrator.configure(**overrides)` builds, validates, and installs
+  a process-wide `Settings` (reads `.env` from the CWD by default); `get_settings()` returns it,
+  building the zero-config default lazily. Resolved the long-flagged `ConfigurationError` vs
+  `ValidationError` overlap (ADR 0016): `ValidationError` is structural (what `configure()` raises
+  on a bad value), `ConfigurationError` is a resolution/support failure, and it stays submodule-only.
+- ✅ **P8.2 — Config isolation test**: a test that fails the build if `os.environ`/`os.getenv`/
+  `.env` reading ever escapes `config/`.
+- ✅ **P8.3 — Logging**: `logging/` — one namespaced `korchestrator` logger, a `NullHandler` by
+  default (never touches the root logger, never calls `basicConfig()`), `enable_logging(level=
+  "INFO", stream=None)` / `disable_logging()`.
+- ✅ **P8.4 — Exception audit**: swept every third-party/I/O boundary; found and fixed the one real
+  gap — the Temporal client boundary (`start`/`wait`/`signal`) could leak a raw `temporalio`
+  exception — now wrapped into `RunFailedError`/`NetworkError`/`ProviderError`.
+- ✅ **P8.5 — Serialization**: `serializers/` — `to_json`/`from_json` round-trip `AgentState`,
+  `ExecutionPlan`, `ModelCard`, `RunResult` byte-for-byte (sorted keys, fixed separators, UTF-8),
+  every envelope version-tagged with a migration mechanism. `AgentGraph` is deliberately excluded —
+  its nodes carry live, non-serializable compute callables (ADR 0017).
+- ✅ **P8.6 — Validation**: `validators/` — the trust-boundary rules Pydantic can't express
+  (`validate_objective`, `validate_max_supersteps`, `validate_unique_agent_id`). Auditing spec 08
+  §7's full boundary table surfaced two real, previously-silent gaps, both fixed: `max_supersteps`
+  was never checked against its documented 1–100 bound, and adding a duplicate agent id to a
+  `Swarm` silently overwrote the earlier one instead of raising.
+- ✅ **P8.7 — Telemetry**: `telemetry/` — optional OpenTelemetry `start_span`/`record_metric`,
+  behind `KORCH_TELEMETRY_ENABLED` (default off) and the `[otel]` extra. Disabled, `start_span`
+  returns the same no-op singleton every call — no allocation, no OTel import. Wired the outer
+  `agent.run` span and the `korch.run.duration`/`korch.run.status` metrics into the composition
+  root; the rest of the documented span tree and the remaining four metrics are defined (correct
+  OTel instrument kind per name) but not yet wired into the kernel/tool/gateway call sites.
+
 ---
 
 ## Decisions recorded along the way (ADRs)
@@ -145,6 +179,9 @@ Short "why we chose this" notes live in `docs/adr/`. The most recent:
 - **0013** — reasoning needs the `[dspy]` extra; target DSPy 3.x.
 - **0014** — custom routers plug in by injection; no global registry.
 - **0015** — tools/connectors register on a registry + `Korch(connectors=…)`; no global.
+- **0016** — no `pydantic-settings`; `configure()` raises `ValidationError`, `ConfigurationError`
+  covers resolution failures and stays submodule-only.
+- **0017** — `AgentGraph` is excluded from `to_json`/`from_json` (live compute callables).
 
 ## How to verify everything is green
 
