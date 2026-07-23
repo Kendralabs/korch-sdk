@@ -80,7 +80,13 @@ class Swarm:
         self._edges: list[tuple[str, str]] = []
 
     def add(self, agent: Agent) -> Self:
-        """Add an agent to the swarm and return ``self`` for chaining."""
+        """Add an agent to the swarm and return ``self`` for chaining.
+
+        Raises:
+            ValidationError: If an agent with this ``id`` was already added — a duplicate would
+                otherwise silently overwrite the earlier agent (spec 08 §7).
+        """
+        comp.validate_unique_agent_id(agent.id, self._agents)
         self._agents[agent.id] = agent
         return self
 
@@ -109,8 +115,9 @@ class Swarm:
             The terminal :class:`RunResult`, including ``final_answer``.
 
         Raises:
-            ValidationError: If the objective is too short or the topology is invalid (no agents,
-                or an edge referencing an unknown agent).
+            ValidationError: If the objective is too short, ``max_supersteps`` is outside
+                1-100, or the topology is invalid (no agents, or an edge referencing an unknown
+                agent).
             MissingExtraError: If reasoning is used without the ``[dspy]`` extra.
 
         Example:
@@ -119,6 +126,7 @@ class Swarm:
             >>> swarm.run(max_supersteps=5)  # doctest: +SKIP
         """
         comp.validate_objective(self._objective)
+        comp.validate_max_supersteps(max_supersteps)
         settings = self._settings or Settings.from_env()
         gateway = comp.resolve_gateway(settings, self._model_gateway)
         clock = comp.wall_clock()

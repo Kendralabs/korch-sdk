@@ -12,17 +12,17 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P7 — Governance, security & context graph — **complete** (P7.1–P7.6) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
-| **Last completed milestone** | **P7.6 — bitemporal Context Graph client, closing Phase 7.** `korchestrator.persistence.ContextGraphClient` records `DecisionNode`/`EventNode`s (bitemporal — `valid_time` + `transaction_time`, plus `confidence`/`provenance`) through Shield redaction, and queries them tenant-scoped with `as_of`/`valid_at` time-travel. `GraphRepository` (P1) gained `record_node`/`query_nodes` — the extension its own docstring anticipated. Nodes are immutable/append-only (event sourcing); not yet auto-wired into a live run (flagged as future work). |
-| **Blocking** | Nothing for Phase 7 itself. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7 work — see the P7.4 engineering-log entry) — a residual risk for full CI confidence, not for merging. Next: push `feat/p7-governance-security`, merge `--no-ff` into `develop`, push `develop`, then start P8. |
-| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has all of P7.1–P7.6 committed locally, not yet pushed. |
+| **Active phase** | P8 — Cross-cutting foundations — **complete** (P8.1–P8.7 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
+| **Last completed milestone** | **P8.7 — optional OpenTelemetry telemetry (closes Phase 8).** New `korchestrator.telemetry` module: `start_span`/`record_metric`, zero-overhead no-op singleton when `KORCH_TELEMETRY_ENABLED` is off (the default), lazy `[otel]` import with `MissingExtraError` otherwise. Wired the outer `agent.run` span and `korch.run.duration`/`korch.run.status` metrics into `services/_composition.py::run_graph`. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: push `feat/p8-cross-cutting-foundations`, merge `--no-ff` into `develop`, then start Phase 9 (Remote client). |
+| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.7 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (96 source files), `pytest` (dspy + non-dspy paths; **525 passed**,
-94.61% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+ruff-format, `mypy --strict` (101 source files), `pytest` (dspy + non-dspy paths; **660 passed**,
+95.45% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
 confinement), the isolation gate, env-confinement, and version single-sourcing. `import
-korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
-`pydantic`-only.
+korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry` stay `dspy`/`[routing]`/
+`[otel]`-free; the base install stays `pydantic`-only.
 
 ## 2. Phase progress
 
@@ -35,8 +35,8 @@ korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the 
 | P4 | Cognitive layer (agents, signatures, taxonomy) | **Complete** (P4.1–P4.9; first end-to-end run) |
 | P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
-| P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merges to `develop` next) |
-| P8 | Cross-cutting foundations | Not started |
+| P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
+| P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; not yet pushed/merged to `develop`) |
 | P9 | Remote client (Python only — TS deferred) | Not started |
 | P10 | Testing, benchmarks & quality gates | Not started |
 | P11 | Documentation, examples & DX | Not started |
@@ -50,7 +50,7 @@ Every module is **not created**. Populate this table as modules land: `not creat
 
 | Module | Layer | Status | Phase |
 |---|---|---|---|
-| `config/` | Leaf utility | **tested** (minimal `Settings` + `from_env`; P8 finalizes) | P0, P8 |
+| `config/` | Leaf utility | **tested** (full spec 08 §1.3 `Settings` — 28 fields incl. `SecretStr`; opt-in `.env`; `configure`/`get_settings`) | P0, P8.1 |
 | `constants/` · `exceptions/` | Leaf utility | **tested** (`KorchError` tree + error codes, frozen) | P1 |
 | `types/` · `models/` | Contract | **tested** (`JSONValue` + frozen domain models, frozen) | P1 |
 | `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen) | P1 |
@@ -69,18 +69,26 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `governance/` | Governance (L5) | **tested** (`ControlTowerTelemetry`/`check_governance` — trust score read; `evaluate_policy`/`GovernanceDecision`/`AuditLog` — policy + audit, P7.3) | P7 |
 | `security/` | Leaf utility | **tested** (Shield redactor, P7.1) | P7 |
 | `persistence/` | Context (L3) | **tested** (`InMemoryGraphRepository` + `resolve_repository`, wired into `Korch`/`Swarm` via `_PersistenceMiddleware`; `ContextGraphClient` — bitemporal `DecisionNode`/`EventNode`, Shield-redacted, tenant-scoped, time-travel query, P7.6) | P7 |
-| `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
+| `logging/` | Leaf utility | **tested** (namespaced logger, `NullHandler` by default, `enable_logging`/`disable_logging`, P8.3) | P8.3 |
+| `serializers/` | Leaf utility | **tested** (`to_json`/`from_json` — `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult`, version-tagged, migration mechanism; `AgentGraph` excluded, ADR 0017) | P8.5 |
+| `validators/` | Leaf utility | **tested** (`validate_objective`/`validate_max_supersteps`/`validate_unique_agent_id`, wired into `Korch`/`Swarm`) | P8.6 |
+| `telemetry/` | Leaf utility | **tested** (`start_span`/`record_metric`, zero-overhead no-op off, lazy `[otel]`; `agent.run` span + `korch.run.duration`/`korch.run.status` wired into `_composition.run_graph`; rest of the span tree/metrics not yet wired — see known gaps) | P8.7 |
+| `clients/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P9 |
 
 ## 4. Public surface
 
-**Currently exported (frozen at P1):** 27 names — `Agent`, `AgentState`, `Korch`, `Swarm`, the 4 ARI
-ports (`IDurableRuntime`/`IExecutionSandbox`/`IIdentityProvider`/`IModelGateway`), the 13 top-level
+**Currently exported:** 31 names — `Agent`, `AgentState`, `Korch`, `Swarm`, `configure` (P8.1),
+`enable_logging` (P8.3), `from_json`/`to_json` (P8.5), the 4 ARI ports
+(`IDurableRuntime`/`IExecutionSandbox`/`IIdentityProvider`/`IModelGateway`), the 13 top-level
 `KorchError` subclasses, `Message`/`RunResult`/`RunStatus`/`StateUpdate`, `Settings`, and
-`__version__`. Full list in `tests/unit/public_surface.json`.
+`__version__`. Full list in `tests/unit/public_surface.json`. Frozen at P1 with 27 names; all four
+P8 additions are deliberate, ADR-considered (ADR 0016).
 
-**Grows in P8** by four names (`configure`, `enable_logging`, `from_json`, `to_json`) — each a MINOR
-addition that updates the golden snapshot. `korchestrator.exceptions.TimeoutError` is part of the
-compatibility surface but intentionally not top-level.
+**P8 additions are now complete** (`configure`, `enable_logging`, `from_json`, `to_json` — the
+four names anticipated since P1). `korchestrator.exceptions.TimeoutError` and `ConfigurationError`,
+`korchestrator.logging.disable_logging`, and `korchestrator.telemetry.{is_enabled,start_span,
+record_metric}` (P8.7) are all part of the compatibility surface but intentionally not top-level —
+matches spec 04 §6's `__init__.py` example exactly, which lists none of them.
 
 The surface is guarded by the golden-file snapshot test (`tests/unit/test_public_surface.py`).
 Changing it is a deliberate act requiring a CHANGELOG entry and a version decision in the same PR.
@@ -106,6 +114,8 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Cognitive layer needs `[dspy]` | One reasoning path (DSPy `WorkerAgent`); base install imports clean, `MissingExtraError` on run; target dspy 3.x (`dspy>=2.6,<4`) | 0013 |
 | Custom router registration | By injection (`Korch(router=)`/`resolve_router`); `ROUTING_STRATEGY` selects built-ins only; entry-point discovery deferred | 0014 |
 | Tool/connector registration | On a `ConnectorRegistry` + `Korch(connectors=)` + entry points; no process-global `register_*` (B8) | 0015 |
+| Settings finalization | No `pydantic-settings` (hand-written `.env` reader instead); `configure()` wraps into `korchestrator.ValidationError`, `ConfigurationError` covers resolution failures and stays submodule-only | 0016 |
+| `AgentGraph` serialization | Excluded from `to_json`/`from_json` — live compute callables have no safe JSON representation | 0017 |
 
 ## 6. Known gaps and open items
 
@@ -115,9 +125,10 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Coverage floor enforced | Global 80% is wired (`fail_under=80`) and green (100% at this size); `core/`+`models/` 95% checked in CI. Ratchet from P2 as behaviour lands. | P2+ |
 | `import-linter` contracts configured | `.importlinter` with 3 contracts (framework-free, layers, feature-independence); `lint-imports` reports 3 kept, 0 broken. `include_external_packages=True` added (import-linter requirement, omitted from spec §9 snippet). | ✔ P0 |
 | Manifest corrections during P0 | `--xfail-strict` → `xfail_strict=true` (spec named a nonexistent pytest flag); `import-linter` added to `[dev]`. Both recorded in the engineering log. | ✔ P0 |
-| `ConfigurationError` vs `ValidationError` overlap | Both nominally cover "invalid configuration". `ConfigurationError` now has call sites (env-parse failures, bad model-card source/file in P5), but is still not in top-level `__all__`; spec 08 §1.2 says `configure()` raises `ValidationError`. Resolve via ADR (specify which failures use which, and whether `ConfigurationError` joins `__all__`) **before `configure()` lands**. Raised by the P1 API review. | P8 |
+| ~~`ConfigurationError` vs `ValidationError` overlap~~ | **Resolved by ADR 0016 (P8.1).** `ValidationError` = structural (wraps pydantic, what `configure()` raises); `ConfigurationError` = resolution/support failures, stays submodule-only. | ✔ P8.1 |
 | `ToolError` default code is specific | `ToolError.default_code = TOOL_NOT_FOUND` — a raiser that omits `code=` gets a misleading "not found". No raiser exists until the tool bridge (P6); revisit then (generic default or required `code`). Raised by the P1 API review. | P6 |
-| Benchmark baseline not established | Committed baseline lands in P10. | P10 |
+| Benchmark baseline not established | Committed baseline lands in P10, incl. the telemetry-on/off delta regression spec 08 §4 requires. | P10 |
+| Telemetry span tree / metrics only partially wired | `telemetry/` (P8.7) built and tested `start_span`/`record_metric`; only the outer `agent.run` span + `korch.run.duration`/`korch.run.status` are actually called (from `_composition.run_graph`). `agent.superstep`/`agent.plan`/`tool.call`/`gen_ai.call` and `korch.superstep.duration`/`korch.agents.active`/`korch.tool.calls`/`korch.model.tokens` are defined but unwired — needs threading through `core/`, `agents/`, `tools/bridge.py`, `providers/`. | Follow-up (no phase assigned) |
 | TS parity matrix | Ships as documentation in P9 with every method marked `TS: planned`. | P9 |
 | Backlog capabilities deliberately unbuilt | Context Graph external backends, speculative execution, FinOps quotas, KL DSL. Interface-now/implement-minimally; revisit post-1.0 only with real demand. | Post-1.0 |
 
