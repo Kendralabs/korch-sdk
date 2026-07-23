@@ -120,6 +120,32 @@ async def test_redactor_masks_output() -> None:
     assert result.redacted is True
 
 
+async def test_redactor_that_finds_nothing_leaves_the_result_unmarked() -> None:
+    def redactor(output: JSONValue) -> tuple[JSONValue, bool]:
+        return output, False
+
+    result = await invoke_tool(
+        _registry(), "echo", {"text": "nothing sensitive"}, redactor=redactor
+    )
+    assert result.redacted is False
+
+
+async def test_a_connector_raising_tool_error_directly_propagates_unwrapped() -> None:
+    class RaisesToolError:
+        name = "raises"
+        description = ""
+        schema: ClassVar[dict[str, JSONValue]] = {"type": "object"}
+
+        async def execute(
+            self, tool: str, args: Mapping[str, JSONValue], *, tenant_id: str = "default"
+        ) -> ToolResult:
+            raise ToolError("deliberate", code="TOOL_ACCESS_DENIED")
+
+    with pytest.raises(ToolError) as info:
+        await invoke_tool(ConnectorRegistry([RaisesToolError()]), "raises", {})
+    assert info.value.code == "TOOL_ACCESS_DENIED"  # not re-wrapped as TOOL_EXECUTION_FAILED
+
+
 async def test_duration_is_stamped() -> None:
     clock = iter([0.0, 0.25])
     result = await invoke_tool(_registry(), "echo", {"text": "x"}, time_source=lambda: next(clock))

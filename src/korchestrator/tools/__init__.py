@@ -11,7 +11,7 @@ and re-exported here as the documented import path), ``Connector``, ``ConnectorR
 
 from korchestrator.interfaces import AUBConnector
 from korchestrator.tools._ratelimit import RateLimiter, TokenBucketRateLimiter
-from korchestrator.tools.bridge import Redactor, invoke_tool
+from korchestrator.tools.bridge import Redactor, RegistryToolInvoker, invoke_tool
 from korchestrator.tools.connectors import Connector, FilesystemConnector, MockSearchConnector
 from korchestrator.tools.registry import ENTRY_POINT_GROUP, ConnectorRegistry
 
@@ -24,6 +24,7 @@ __all__ = [
     "MockSearchConnector",
     "RateLimiter",
     "Redactor",
+    "RegistryToolInvoker",
     "TokenBucketRateLimiter",
     "invoke_tool",
 ]

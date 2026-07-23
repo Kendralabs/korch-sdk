@@ -66,9 +66,11 @@ jobs:
         # sandbox conflicts with import hooks (e.g. beartype) that observability extras can pull in.
         run: pytest tests -m "not temporal" --cov=korchestrator --cov-report=term-missing --cov-report=xml
       - name: Enforce per-package coverage floors
+        # Ratcheted at P10.6: core/ measured ~98%, models/ 100% locally (excl. the Temporal-
+        # environment gap tracked in PROJECT_STATE.md); floors set with headroom below that.
         run: |
-          coverage report --include="src/korchestrator/core/*" --fail-under=95
-          coverage report --include="src/korchestrator/models/*" --fail-under=95
+          coverage report --include="src/korchestrator/core/*" --fail-under=97
+          coverage report --include="src/korchestrator/models/*" --fail-under=99
 
   temporal:
     name: Temporal runtime suite ([temporal] extra)
@@ -200,3 +202,24 @@ jobs:
           cache: pip
       - run: python -m pip install -e ".[dev]"
       - run: mkdocs build --strict
+
+  benchmarks:
+    name: Benchmarks (informational)
+    # Manual dispatch or a push to main only (release branches) — never on a PR, and never
+    # blocking (spec 09 §8: "benchmark numbers on shared CI runners are too noisy to gate on").
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Save the committed baseline for comparison
+        run: cp benchmarks/baseline.json /tmp/baseline.before.json
+      - name: Run benchmarks
+        run: pytest benchmarks -m benchmark
+      - name: Compare against the committed baseline (never fails the job)
+        run: python scripts/check_benchmark_regression.py /tmp/baseline.before.json benchmarks/baseline.json

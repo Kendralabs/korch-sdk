@@ -15,6 +15,14 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Tool-calling for `WorkerAgent` (Phase 10, closes a gap left open since P4/P6): a mounted
+  `AgentConfig.tools` list now runs a real bounded ReAct loop (predict → optionally call one tool
+  → feed the result back → repeat, up to `max_react_steps`) instead of having no effect. `Korch`/
+  `Swarm` gain a `connectors: Sequence[Connector] | ConnectorRegistry | None = None` constructor
+  parameter (mirrors `model_gateway`); tools mounted on an agent with no `connectors` given raise
+  a `ConfigurationError` naming the missing tools. New `korchestrator.interfaces.IToolInvoker` port
+  and its one implementation, `korchestrator.tools.RegistryToolInvoker`. See
+  [ADR 0018](docs/adr/0018-worker-react-loop-via-itoolinvoker-port.md).
 - TypeScript parity matrix (Phase 9, **closes Phase 9**): `docs/parity-matrix.md` settles the
   deferred TypeScript client's contract (ADR 0008) — every `KorchestratorClient` method, the
   constructor, `ApiError`, and the `models.remote` types, each marked `TS: planned` with its
@@ -326,6 +334,12 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Changed
 
+- **`RunResult.messages` now includes every message kind** (`thought`/`tool`/`answer`/`handoff`),
+  not only `kind == "answer"` (Phase 10, alongside the ReAct loop above). Previously the kernel's
+  message log silently dropped every non-`answer` message; this was invisible before an agent could
+  emit more than one message per turn. `RunResult.final_answer` is unaffected — it already filters
+  to `kind == "answer"`. Code reading `.messages` without filtering by `kind` should now filter to
+  `kind == "answer"` to preserve the old behavior.
 - **`Agent` is now defined in `korchestrator.agents`** (its canonical home) and re-exported from
   `korchestrator.services` and the top level — all three import paths resolve to the same class
   (ADR 0012). The Tier-2 declarative constructor is unchanged, so this is additive and non-breaking;

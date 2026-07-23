@@ -79,21 +79,33 @@ def test_resolve_runtime_selects_local(make_clock: Callable[..., object]) -> Non
     assert isinstance(runtime, LocalRuntime)
 
 
-def test_resolve_runtime_temporal_depends_on_the_extra(
+def test_resolve_runtime_temporal_resolves_to_the_durable_adapter(
     make_clock: Callable[..., object],
 ) -> None:
-    import importlib.util
+    pytest.importorskip("temporalio")
+    runtime = resolve_runtime(Settings(korch_runtime="temporal"), _graph(), clock=make_clock())  # type: ignore[arg-type]
+    assert type(runtime).__name__ == "TemporalRuntime"
 
-    has_temporal = importlib.util.find_spec("temporalio") is not None
-    if has_temporal:
-        # With the extra installed, temporal resolves to the durable adapter.
-        runtime = resolve_runtime(Settings(korch_runtime="temporal"), _graph(), clock=make_clock())  # type: ignore[arg-type]
-        assert type(runtime).__name__ == "TemporalRuntime"
-    else:
-        # Without it, selecting temporal is an actionable missing-extra error.
-        with pytest.raises(MissingExtraError) as info:
-            resolve_runtime(Settings(korch_runtime="temporal"), _graph(), clock=make_clock())  # type: ignore[arg-type]
-        assert info.value.code == "KORCH_MISSING_EXTRA"
+
+def test_resolve_runtime_temporal_without_the_extra_raises_missing_extra(
+    make_clock: Callable[..., object],
+) -> None:
+    # Deterministic regardless of whether temporalio actually happens to be installed in this
+    # environment — simulates the extra being absent rather than depending on it. Also blanks
+    # korchestrator.runtime.temporal_runtime: once it's cached (e.g. an earlier test already
+    # imported it), `from ...temporal_runtime import TemporalRuntime` would resolve from the
+    # cache without re-running its top-level `import temporalio`, masking the blank-out.
+    import sys
+    from unittest import mock
+
+    with (
+        mock.patch.dict(
+            sys.modules, {"temporalio": None, "korchestrator.runtime.temporal_runtime": None}
+        ),
+        pytest.raises(MissingExtraError) as info,
+    ):
+        resolve_runtime(Settings(korch_runtime="temporal"), _graph(), clock=make_clock())  # type: ignore[arg-type]
+    assert info.value.code == "KORCH_MISSING_EXTRA"
 
 
 async def test_local_runtime_matches_a_direct_runner(make_clock: Callable[..., object]) -> None:
