@@ -21,6 +21,7 @@ from korchestrator.interfaces import (
     IModelGateway,
     TenantStore,
 )
+from korchestrator.models.context_graph import GraphNode
 from korchestrator.models.result import RunResult
 from korchestrator.models.routing import ModelCard, RoutingContext, RoutingResult
 from korchestrator.models.state import AgentState, Message
@@ -96,6 +97,19 @@ class _Repository:
         raise NotImplementedError
 
     async def load_state(self, run_id: str, *, tenant_id: str) -> AgentState | None:
+        raise NotImplementedError
+
+    async def record_node(self, node: GraphNode, *, tenant_id: str) -> None:
+        raise NotImplementedError
+
+    async def query_nodes(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str | None = None,
+        as_of: datetime | None = None,
+        valid_at: datetime | None = None,
+    ) -> tuple[GraphNode, ...]:
         raise NotImplementedError
 
 

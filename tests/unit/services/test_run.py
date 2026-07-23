@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from unittest import mock
 
@@ -133,6 +134,29 @@ def test_agent_model_map_reaches_the_gateway() -> None:
 
 
 # --- middleware / hooks (P6.8) ------------------------------------------------------------------
+
+
+# --- persistence checkpointing (P7.5) ------------------------------------------------------------
+
+
+def test_an_injected_repository_is_checkpointed_after_the_run() -> None:
+    from korchestrator.persistence import InMemoryGraphRepository
+
+    repo = InMemoryGraphRepository()
+    swarm = Swarm(objective="Count the words in this objective", repository=repo).add(
+        WordCountAgent(id="counter", role="counter")
+    )
+    result = swarm.run()
+
+    async def _load() -> AgentState | None:
+        return await repo.load_state(result.run_id, tenant_id="default")
+
+    saved = asyncio.run(_load())
+    assert saved is not None
+    assert saved.run_id == result.run_id
+    # The checkpoint is the kernel's own state as of the last superstep (RunStatus.RUNNING —
+    # COMPLETED is stamped by build_result() after the kernel loop, outside the observer's reach).
+    assert saved.halted is True
 
 
 def test_hooks_fire_around_supersteps_and_a_raising_hook_is_isolated() -> None:

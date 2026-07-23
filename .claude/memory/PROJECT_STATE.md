@@ -4,7 +4,7 @@
 log is chronological history; this file is the current snapshot. Update it whenever a phase advances,
 a module changes status, or the public surface moves — `/log` does both together.
 
-**Last updated:** 2026-07-22 · **Version:** `0.1.0` (unreleased) · **Branch model:** `main` / `develop`
+**Last updated:** 2026-07-23 · **Version:** `0.1.0` (unreleased) · **Branch model:** `main` / `develop`
 
 ---
 
@@ -12,16 +12,17 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P6 — Integration & observability — **complete** (P6.1–P6.8) on branch `feat/p6-integration-observability` (off `develop`). Tools/AUB, MCP, context, A2A, events, and the hook framework all landed. |
-| **Last completed milestone** | **P6.8 — the extension framework, wired.** The AUB bridge (`invoke_tool` + `ConnectorRegistry` + built-in connectors), the MCP client, the context compiler (MVC), A2A handoffs, an event stream, and `Middleware`/`HookRegistry` — hooks fire around each superstep on the local runtime via an injected `SuperstepObserver` with the spec 07 §9 ordering and error isolation (a raising hook can't fail a run). Registration is by injection/registry (ADR 0015). |
-| **Blocking** | Nothing. P7 (governance, security/Shield redaction, bitemporal Context Graph) is next. |
-| **Pushed / merged** | `develop` (P0–P5) is pushed to `origin` (autonomous phase progression). P6.1–P6.8 are committed on `feat/p6-integration-observability`; the completed phase merges to `develop` next. |
+| **Active phase** | P7 — Governance, security & context graph — **complete** (P7.1–P7.6) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
+| **Last completed milestone** | **P7.6 — bitemporal Context Graph client, closing Phase 7.** `korchestrator.persistence.ContextGraphClient` records `DecisionNode`/`EventNode`s (bitemporal — `valid_time` + `transaction_time`, plus `confidence`/`provenance`) through Shield redaction, and queries them tenant-scoped with `as_of`/`valid_at` time-travel. `GraphRepository` (P1) gained `record_node`/`query_nodes` — the extension its own docstring anticipated. Nodes are immutable/append-only (event sourcing); not yet auto-wired into a live run (flagged as future work). |
+| **Blocking** | Nothing for Phase 7 itself. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7 work — see the P7.4 engineering-log entry) — a residual risk for full CI confidence, not for merging. Next: push `feat/p7-governance-security`, merge `--no-ff` into `develop`, push `develop`, then start P8. |
+| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has all of P7.1–P7.6 committed locally, not yet pushed. |
 
-Every local gate is green: ruff, ruff-format, `mypy --strict` (73 source files), `pytest` (dspy +
-non-dspy paths; **368 passed**, 94.55% cov, 9 Temporal excluded), import-linter (**4 contracts
-kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
-single-sourcing. `import korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free;
-the base install stays `pydantic`-only.
+Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
+ruff-format, `mypy --strict` (96 source files), `pytest` (dspy + non-dspy paths; **525 passed**,
+94.61% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+confinement), the isolation gate, env-confinement, and version single-sourcing. `import
+korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
+`pydantic`-only.
 
 ## 2. Phase progress
 
@@ -34,7 +35,7 @@ the base install stays `pydantic`-only.
 | P4 | Cognitive layer (agents, signatures, taxonomy) | **Complete** (P4.1–P4.9; first end-to-end run) |
 | P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
-| P7 | Governance, security & context graph | Not started — next |
+| P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merges to `develop` next) |
 | P8 | Cross-cutting foundations | Not started |
 | P9 | Remote client (Python only — TS deferred) | Not started |
 | P10 | Testing, benchmarks & quality gates | Not started |
@@ -65,7 +66,10 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `context/` | Context (L3) | **tested** (`ContextCompiler` MVC extraction, off the hot loop, graceful summariser degradation) | P6 |
 | `a2a/` | Integration (L4) | **tested** (`directed_message`, `HandoffTransformer`) | P6 |
 | `events/` | Events | **tested** (`EventPublisher`/`Subscription`/`format_sse`; emits, does not serve HTTP) | P6 |
-| `persistence/` · `governance/` · `security/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P7–P9 |
+| `governance/` | Governance (L5) | **tested** (`ControlTowerTelemetry`/`check_governance` — trust score read; `evaluate_policy`/`GovernanceDecision`/`AuditLog` — policy + audit, P7.3) | P7 |
+| `security/` | Leaf utility | **tested** (Shield redactor, P7.1) | P7 |
+| `persistence/` | Context (L3) | **tested** (`InMemoryGraphRepository` + `resolve_repository`, wired into `Korch`/`Swarm` via `_PersistenceMiddleware`; `ContextGraphClient` — bitemporal `DecisionNode`/`EventNode`, Shield-redacted, tenant-scoped, time-travel query, P7.6) | P7 |
+| `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
 
 ## 4. Public surface
 
