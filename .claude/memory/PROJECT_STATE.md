@@ -12,13 +12,13 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P9 — Remote client — **in progress** (P9.1–P9.6 done) on branch `feat/p9-remote-client` (off `develop`, not yet pushed). Phase 8 is complete and merged. |
-| **Last completed milestone** | **P9.6 — remote client discovery (completes the method surface).** `KorchestratorClient.tools()`/`models()`/`swarm_templates()`. `models()` reuses `models.routing.ModelCard` directly (the first genuine cross-context model reuse in Phase 9). New `models.remote.ToolDescriptor`/`SwarmTemplate`. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: P9.7 (the full `respx` contract-conformance test suite), then P9.8 (TS parity matrix). |
-| **Pushed / merged** | `develop` (P0–P8) is pushed to `origin`. `feat/p9-remote-client` has P9.1–P9.6 committed locally, not yet pushed. |
+| **Active phase** | P9 — Remote client — **in progress** (P9.1–P9.7 done) on branch `feat/p9-remote-client` (off `develop`, not yet pushed). Phase 8 is complete and merged. |
+| **Last completed milestone** | **P9.7 — contract-conformance test suite.** A table-driven suite proving every one of the 20 `KorchestratorClient` methods (19 sync + `stream`) surfaces exactly `ApiError` on a non-2xx response, with a self-checking guard against a future method being added without a conformance entry. Test-only; `ApiError` itself was already complete from P9.1. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: P9.8 (TS parity matrix) — the last Phase 9 task. |
+| **Pushed / merged** | `develop` (P0–P8) is pushed to `origin`. `feat/p9-remote-client` has P9.1–P9.7 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (104 source files), `pytest` (dspy + non-dspy paths; **745 passed**,
+ruff-format, `mypy --strict` (104 source files), `pytest` (dspy + non-dspy paths; **766 passed**,
 95.93% cov, 16 Temporal excluded; `clients/client.py` 99.75%), import-linter (**4 contracts
 kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
 single-sourcing. `import korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry`
@@ -39,7 +39,7 @@ stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, a
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
 | P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
-| P9 | Remote client (Python only — TS deferred) | **In progress** (P9.1–P9.6 done; P9.7–P9.8 next) |
+| P9 | Remote client (Python only — TS deferred) | **In progress** (P9.1–P9.7 done; P9.8 next) |
 | P10 | Testing, benchmarks & quality gates | Not started |
 | P11 | Documentation, examples & DX | Not started |
 | P12 | CI/CD, packaging & publishing | Not started |

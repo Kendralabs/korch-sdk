@@ -10,6 +10,61 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P9.7] Remote client contract-conformance suite — v0.1.0
+
+**Type:** test · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `tests/unit/clients/test_contract_conformance.py` (new): a table-driven,
+cross-cutting suite that asks one question across *every* public `KorchestratorClient` method at
+once — does a non-2xx response surface exactly `ApiError` (`status`, `trace_id` populated
+correctly), the one documented error type for a failed call (spec 04 §7.5)? `CONFORMANCE_CASES`
+enumerates all 19 sync methods (each with its documented HTTP method + path and a minimal call);
+`stream()` gets its own async equivalent since it can't share the sync parametrization. A final
+guard test (`test_every_conformance_case_is_covered_exactly_once`) diffs the table against
+`dir(KorchestratorClient)`'s actual public methods, so a future method added without a
+conformance-table entry fails loudly instead of silently going untested.
+
+**Why.** P9.7 — "`ApiError(status, message, code, trace_id)` as a `KorchError`; full `respx` suite
+against the spec 04 §7 contract" (spec 11 Phase 9, spec 12 P9.7).
+
+**Design decisions.** (1) **`ApiError` itself needed no new code** — it was built complete in
+P9.1 (status/code/trace_id fields, `KorchError` subclass, a runnable docstring example asserting
+all three), and every test file since has exercised it against real failure shapes. P9.7's actual
+job, on inspection, was proving *uniformity* across the whole surface — a property no single
+existing test file could show, since each one only covers its own method group. (2) **Retry
+policy, the `Authorization` header, and timeout handling are deliberately NOT re-tested per
+endpoint in this file** — every method (including `stream`) routes through the one shared
+`_request` coroutine (or its own equivalent retry loop, itself directly tested), so those
+properties are already proven uniform by P9.1/P9.2's direct tests against `_request`; a per-
+endpoint repeat would inflate the test count without adding a genuinely different failure mode to
+catch — "assertions must be meaningful, not just line-hitting" (testing rules) cuts against it.
+(3) **`respx.route(method=..., url=...)`, not the per-verb `respx.get`/`.post`/`.delete`
+helpers** — the table drives the HTTP method as data, so a single generic route constructor was
+needed; confirmed to work identically to the verb-specific helpers by running the suite. (4) **The
+coverage-guard test uses `dir()` + a set difference, not a hand-maintained count** — a hardcoded
+"there are 20 methods" assertion would need updating every time the class grows and wouldn't say
+*which* method was missed; the set diff self-documents the gap in the assertion failure message.
+
+**Architecture changes.** None — test-only change, no `src/` modification.
+
+**Files/modules affected.** `tests/unit/clients/test_contract_conformance.py` (new, 21 tests).
+
+**Breaking changes.** None.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files, test
+files are outside its `files=` scope per `pyproject.toml`); import-linter 4/4 kept; the isolation
+gate, env-confinement check, and version-validate all `OK`. `tests/unit/clients`: **100 passed**,
+99.75% coverage on `clients/client.py` (unchanged from P9.6 — this task added conformance
+assertions, not new source lines). All 98 package doctests still pass.
+
+**Known limitations / future improvements.** The wire-format assumptions carried since P9.3
+remain unverified against a real engine (tracked there, not repeated per task). P9.8 — the
+TypeScript parity matrix document — is the last item in Phase 9.
+
 ## 2026-07-23 · [P9.6] Remote client discovery — v0.1.0 (closes the client-method surface)
 
 **Type:** feature · **Phase:** P9 (remote client) · **Author:** Claude (agent)
