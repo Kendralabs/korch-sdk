@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P7 — Governance, security & context graph — **complete** (P7.1–P7.6) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
-| **Last completed milestone** | **P7.6 — bitemporal Context Graph client, closing Phase 7.** `korchestrator.persistence.ContextGraphClient` records `DecisionNode`/`EventNode`s (bitemporal — `valid_time` + `transaction_time`, plus `confidence`/`provenance`) through Shield redaction, and queries them tenant-scoped with `as_of`/`valid_at` time-travel. `GraphRepository` (P1) gained `record_node`/`query_nodes` — the extension its own docstring anticipated. Nodes are immutable/append-only (event sourcing); not yet auto-wired into a live run (flagged as future work). |
-| **Blocking** | Nothing for Phase 7 itself. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7 work — see the P7.4 engineering-log entry) — a residual risk for full CI confidence, not for merging. Next: push `feat/p7-governance-security`, merge `--no-ff` into `develop`, push `develop`, then start P8. |
-| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has all of P7.1–P7.6 committed locally, not yet pushed. |
+| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
+| **Last completed milestone** | **P8.1 — Settings finalized.** The full spec 08 §1.3 variable table (16 new fields: gateway, kernel/runtime bounds, logging/telemetry toggles, remote engine client, Temporal), `SecretStr` for secrets, opt-in `.env` loading (`Settings.from_env(dotenv_path=...)`, `None` by default so no ambient `.env` affects internal callers), and the gateway-key-aware `mock_llm` default. New `configure()`/`get_settings()` (`config/process.py`); `configure` joins top-level `__all__`. ADR 0016 settles two questions: no `pydantic-settings` (reopened from ADR 0009, declined), and the `ConfigurationError`/`ValidationError` split (`ConfigurationError` stays submodule-only, matching spec 04 §6 exactly). |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.2 (config isolation test), P8.3 (logging), P8.4 (exception audit), P8.5 (serialization), P8.6 (validation), P8.7 (telemetry). |
+| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (96 source files), `pytest` (dspy + non-dspy paths; **525 passed**,
-94.61% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+ruff-format, `mypy --strict` (97 source files), `pytest` (dspy + non-dspy paths; **553 passed**,
+94.71% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
 confinement), the isolation gate, env-confinement, and version single-sourcing. `import
 korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
 `pydantic`-only.
@@ -35,8 +35,8 @@ korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the 
 | P4 | Cognitive layer (agents, signatures, taxonomy) | **Complete** (P4.1–P4.9; first end-to-end run) |
 | P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
-| P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merges to `develop` next) |
-| P8 | Cross-cutting foundations | Not started |
+| P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
+| P8 | Cross-cutting foundations | **In progress** (P8.1 Settings finalized; P8.2–P8.7 next) |
 | P9 | Remote client (Python only — TS deferred) | Not started |
 | P10 | Testing, benchmarks & quality gates | Not started |
 | P11 | Documentation, examples & DX | Not started |
@@ -50,7 +50,7 @@ Every module is **not created**. Populate this table as modules land: `not creat
 
 | Module | Layer | Status | Phase |
 |---|---|---|---|
-| `config/` | Leaf utility | **tested** (minimal `Settings` + `from_env`; P8 finalizes) | P0, P8 |
+| `config/` | Leaf utility | **tested** (full spec 08 §1.3 `Settings` — 28 fields incl. `SecretStr`; opt-in `.env`; `configure`/`get_settings`) | P0, P8.1 |
 | `constants/` · `exceptions/` | Leaf utility | **tested** (`KorchError` tree + error codes, frozen) | P1 |
 | `types/` · `models/` | Contract | **tested** (`JSONValue` + frozen domain models, frozen) | P1 |
 | `interfaces/` | Contract | **tested** (ARI ports + supporting protocols, frozen) | P1 |
@@ -73,14 +73,16 @@ Every module is **not created**. Populate this table as modules land: `not creat
 
 ## 4. Public surface
 
-**Currently exported (frozen at P1):** 27 names — `Agent`, `AgentState`, `Korch`, `Swarm`, the 4 ARI
-ports (`IDurableRuntime`/`IExecutionSandbox`/`IIdentityProvider`/`IModelGateway`), the 13 top-level
-`KorchError` subclasses, `Message`/`RunResult`/`RunStatus`/`StateUpdate`, `Settings`, and
-`__version__`. Full list in `tests/unit/public_surface.json`.
+**Currently exported:** 28 names — `Agent`, `AgentState`, `Korch`, `Swarm`, `configure` (P8.1), the
+4 ARI ports (`IDurableRuntime`/`IExecutionSandbox`/`IIdentityProvider`/`IModelGateway`), the 13
+top-level `KorchError` subclasses, `Message`/`RunResult`/`RunStatus`/`StateUpdate`, `Settings`, and
+`__version__`. Full list in `tests/unit/public_surface.json`. Frozen at P1 with 27 names;
+`configure` is the first deliberate, ADR-considered addition (ADR 0016).
 
-**Grows in P8** by four names (`configure`, `enable_logging`, `from_json`, `to_json`) — each a MINOR
-addition that updates the golden snapshot. `korchestrator.exceptions.TimeoutError` is part of the
-compatibility surface but intentionally not top-level.
+**Grows further in P8** by three more names (`enable_logging` — P8.3, `from_json`/`to_json` — P8.5)
+— each a MINOR addition that updates the golden snapshot. `korchestrator.exceptions.TimeoutError`
+and `ConfigurationError` are both part of the compatibility surface but intentionally not top-level
+(ADR 0016 for the latter — matches spec 04 §6's `__init__.py` example exactly).
 
 The surface is guarded by the golden-file snapshot test (`tests/unit/test_public_surface.py`).
 Changing it is a deliberate act requiring a CHANGELOG entry and a version decision in the same PR.
@@ -106,6 +108,7 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Cognitive layer needs `[dspy]` | One reasoning path (DSPy `WorkerAgent`); base install imports clean, `MissingExtraError` on run; target dspy 3.x (`dspy>=2.6,<4`) | 0013 |
 | Custom router registration | By injection (`Korch(router=)`/`resolve_router`); `ROUTING_STRATEGY` selects built-ins only; entry-point discovery deferred | 0014 |
 | Tool/connector registration | On a `ConnectorRegistry` + `Korch(connectors=)` + entry points; no process-global `register_*` (B8) | 0015 |
+| Settings finalization | No `pydantic-settings` (hand-written `.env` reader instead); `configure()` wraps into `korchestrator.ValidationError`, `ConfigurationError` covers resolution failures and stays submodule-only | 0016 |
 
 ## 6. Known gaps and open items
 
@@ -115,7 +118,7 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Coverage floor enforced | Global 80% is wired (`fail_under=80`) and green (100% at this size); `core/`+`models/` 95% checked in CI. Ratchet from P2 as behaviour lands. | P2+ |
 | `import-linter` contracts configured | `.importlinter` with 3 contracts (framework-free, layers, feature-independence); `lint-imports` reports 3 kept, 0 broken. `include_external_packages=True` added (import-linter requirement, omitted from spec §9 snippet). | ✔ P0 |
 | Manifest corrections during P0 | `--xfail-strict` → `xfail_strict=true` (spec named a nonexistent pytest flag); `import-linter` added to `[dev]`. Both recorded in the engineering log. | ✔ P0 |
-| `ConfigurationError` vs `ValidationError` overlap | Both nominally cover "invalid configuration". `ConfigurationError` now has call sites (env-parse failures, bad model-card source/file in P5), but is still not in top-level `__all__`; spec 08 §1.2 says `configure()` raises `ValidationError`. Resolve via ADR (specify which failures use which, and whether `ConfigurationError` joins `__all__`) **before `configure()` lands**. Raised by the P1 API review. | P8 |
+| ~~`ConfigurationError` vs `ValidationError` overlap~~ | **Resolved by ADR 0016 (P8.1).** `ValidationError` = structural (wraps pydantic, what `configure()` raises); `ConfigurationError` = resolution/support failures, stays submodule-only. | ✔ P8.1 |
 | `ToolError` default code is specific | `ToolError.default_code = TOOL_NOT_FOUND` — a raiser that omits `code=` gets a misleading "not found". No raiser exists until the tool bridge (P6); revisit then (generic default or required `code`). Raised by the P1 API review. | P6 |
 | Benchmark baseline not established | Committed baseline lands in P10. | P10 |
 | TS parity matrix | Ships as documentation in P9 with every method marked `TS: planned`. | P9 |

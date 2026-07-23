@@ -15,6 +15,19 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Settings finalized (Phase 8): the full spec 08 §1.3 variable table — 16 new fields covering the
+  model gateway, kernel/runtime bounds, logging/telemetry toggles, the remote engine client, and
+  the Temporal runtime (`TEMPORAL_ADDRESS`, `TEMPORAL_API_KEY`, etc.). Secret-bearing fields
+  (`kendra_gateway_api_key`, `korch_engine_api_key`, `temporal_api_key`) use `pydantic.SecretStr`
+  and never appear in `repr`/`str`. `Settings.from_env()` gains opt-in `.env` file support
+  (`dotenv_path=`, `None` by default — no ambient developer `.env` affects an unrelated
+  `from_env()` call). `mock_llm`, under `from_env()` only, now defaults to `False` when a gateway
+  key resolved. New top-level `korchestrator.configure(**overrides)` builds, validates, and
+  installs a process-wide `Settings` (reading `.env` from the CWD by default), raising
+  `korchestrator.ValidationError` on an invalid value; `korchestrator.config.get_settings()`
+  returns the installed instance, building the zero-config default lazily on first call. See
+  [ADR 0016](docs/adr/0016-settings-finalization-no-pydantic-settings-error-split.md) for why this
+  didn't require adopting `pydantic-settings`, and the `ConfigurationError`/`ValidationError` rule.
 - Bitemporal Context Graph client (Phase 7, **closes Phase 7**): `korchestrator.persistence` gains
   `ContextGraphClient` — `record_decision()`/`record_event()` write immutable, tenant-scoped
   `DecisionNode`/`EventNode`s (each carrying `valid_time`, `transaction_time`, `confidence`, and

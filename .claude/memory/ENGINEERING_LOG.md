@@ -10,6 +10,98 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P8.1] Settings finalized — full variable table, `.env`, `configure()` — v0.1.0
+
+**Type:** feature · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent) · **ADR:** 0016
+
+**What.** `config/settings.py`: added the 16 `Settings` fields spec 08 §1.3 lists that weren't
+already there — `kendra_ai_gateway_url`/`kendra_gateway_api_key` (gateway), `korch_max_supersteps`/
+`korch_plugins_enabled` (kernel/runtime), `korch_log_level`/`korch_telemetry_enabled`
+(logging/telemetry toggles consumed by P8.3/P8.7), `korch_engine_*` (the remote engine client,
+P9), and `temporal_*` (address/namespace/task-queue/API-key/HITL-timeout, consumed by
+`runtime/temporal_runtime.py`). Secret fields use `pydantic.SecretStr`. `Settings.from_env()`
+gains `dotenv_path` (opt-in, `None` default) and a small hand-written `.env` reader
+(`_read_dotenv_file`). `mock_llm`, under `from_env()` only, now defaults `False` when a gateway
+key resolved (spec's "true when no gateway key is present, else false"); bare `Settings()`
+construction is unaffected. `LLM_GATEWAY_URL` is wired as a fallback env-var *name* for
+`kendra_ai_gateway_url`, not a second field. `config/process.py` (new): `configure(**overrides)`
+builds+validates+installs a process-wide `Settings` (`.env` from the CWD by default, wraps
+`pydantic.ValidationError` into `korchestrator.ValidationError`) and `get_settings()` returns it,
+building the zero-config default lazily on first call — no import-time singleton (B8). `configure`
+joins top-level `korchestrator.__all__` (golden snapshot updated); `get_settings`/
+`ConfigurationError` stay submodule-only, matching spec 04 §6 exactly.
+
+**Why.** P8.1 — "Full variable table from spec 08, precedence arg > env > .env > default,
+configure(), zero-config MockLM default." ADR 0009 explicitly deferred `.env`/`SecretStr`/
+`configure()`/`get_settings()` to this phase and invited reopening the `pydantic-settings`
+question once `.env` support was actually needed — which it now is.
+
+**Design decisions.** (1) **No `pydantic-settings`** (ADR 0016) — `SecretStr` is already part of
+`pydantic` core, and a ~15-line hand-written `.env` reader covers everything this SDK needs, so
+ADR 0009's reopening condition ("a concrete requirement... justifies the dependency") isn't met;
+adding it would cost the base install's `pydantic`-only invariant (ADR 0004) for a convenience
+that's cheap to build directly. (2) **`.env` is opt-in on `Settings.from_env()`** (`dotenv_path=
+None` default) but **on by default in `configure()`** (`dotenv_path=".env"`) — this is the key
+test-isolation decision: `Korch`/`Swarm` (and most of the test suite) call bare `Settings.
+from_env()` internally, which must never risk picking up a developer's stray local `.env`;
+`configure()` is the deliberate, explicit "load my app's settings" entry point spec 08's
+precedence chain actually has in mind, so it is the one place `.env` reads automatically. (3)
+**`ConfigurationError`/`ValidationError` split** (ADR 0016): `ValidationError` is structural
+(type/range/enum — what `configure()` wraps pydantic's own error into, spec 08 §1.2's literal
+promise); `ConfigurationError` is "structurally fine but operationally unresolved/unsupported"
+(malformed JSON env var, an unresolvable model-card source, `PERSISTENCE_BACKEND=kcg`, a missing
+bound collaborator) — every existing call site already fit this rule without change. (4)
+**`ConfigurationError` stays out of top-level `__all__`**, deliberately not promoted despite being
+reachable from `configure()`, because spec 04 §6's `__init__.py` example is explicit and excludes
+it — the same treatment `TimeoutError` already gets. Promoting it was considered and rejected as
+unforced spec drift (§ ADR alternatives). (5) `configure()`/`get_settings()` share one
+module-level `_installed` variable (the sanctioned "lazily-resolved accessor" exception to B8, not
+an import-time singleton) — `tests/conftest.py` gained a `settings` fixture that resets it via
+`monkeypatch.setattr`, satisfying spec 08 §1.2's "restores the previous instance on teardown."
+
+**Architecture changes.** `config/process.py` (new) — imports only `config.settings` +
+`exceptions` + pydantic, no new boundary. `config/__init__.py` re-exports `configure`/
+`get_settings` alongside `Settings`. Top-level `korchestrator/__init__.py` imports `configure`
+from `korchestrator.config`. Import-linter 4/4 kept; env-confinement check still `OK` (`.env`
+reading stays inside `config/settings.py`, same as `os.environ`).
+
+**Files/modules affected.** `src/korchestrator/config/{settings,process,__init__}.py`;
+`src/korchestrator/__init__.py`; `tests/unit/public_surface.json`; `tests/conftest.py` (renamed
+the hypothesis import to `hypothesis_settings` to free the `settings` fixture name, added the
+fixture); `tests/unit/config/{test_settings,test_dotenv,test_configure}.py`
+(test_dotenv/test_configure new); `docs/adr/0016-*.md` (new); `docs/adr/README.md`; `CHANGELOG.md`.
+
+**Breaking changes.** None. All 16 new fields are additive with declared defaults.
+`Settings.from_env()` gains a keyword-only `dotenv_path` (non-breaking; existing callers are
+unaffected since the default is `None`, i.e. today's exact behaviour). `configure` added to
+top-level `__all__` (additive, MINOR — golden snapshot updated in this PR).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (97 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **553 passed**, 94.71% coverage (≥80 floor). New (49 tests across 3 config
+files): every new field's default and `from_env()` read; `korch_max_supersteps` bounds; `SecretStr`
+never appears in `repr`/`str` but is recoverable via `get_secret_value()`; the `mock_llm`
+gateway-key-aware default in all four precedence combinations; the `LLM_GATEWAY_URL` alias and its
+precedence under the primary name; `.env` parsing (values, quoting, comments/blank lines, a
+missing file, `os.environ`/override precedence over it) — all via `tmp_path`, never touching a
+real `.env`; `configure()`/`get_settings()` install/cache/override/wrap-on-failure/leave-prior-
+state-on-failure, plus its `.env`-by-default vs `dotenv_path=None` behavior. 4 doctests pass.
+
+**Known limitations / future improvements.** (1) None of the 16 new fields are wired into
+behaviour yet beyond being readable — `korch_log_level`/`korch_telemetry_enabled` await P8.3/P8.7,
+`korch_engine_*` await P9, and `temporal_*` await a production `Client.connect()` helper (a
+pre-existing gap noted in the P7.4 log entry, not newly introduced). `korch_max_supersteps` is not
+yet consulted by `Korch.run`/`Swarm.run`'s `max_supersteps` parameter default — worth revisiting
+alongside a later façade change. (2) The `.env` reader is intentionally minimal — no variable
+interpolation, no `export` syntax, no multi-line values — documented as an explicit, permanent
+scope limit in ADR 0016, not a gap to close.
+
+---
+
 ## 2026-07-23 · [P7.6] Bitemporal Context Graph client — v0.1.0 · closes P7
 
 **Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
