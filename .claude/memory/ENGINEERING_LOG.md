@@ -10,6 +10,584 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P9.8] TypeScript parity matrix — v0.1.0 (closes Phase 9)
+
+**Type:** docs · **Phase:** P9 (remote client, final task) · **Author:** Claude (agent)
+
+**What.** `docs/parity-matrix.md` (new): every `KorchestratorClient` method (20 total: 19 sync +
+`stream`), the constructor, `ApiError`'s shape and retry policy, and the nine `models.remote`
+types, each paired with its settled TypeScript name/signature and marked `TS: planned` (ADR
+0008). Three real discrepancies between the *original* TS-facing design sketch (summarized in ADR
+0008's context section, drawn from an earlier, pre-implementation version of spec 04 §7) and what
+the Python reference implementation actually does are called out explicitly, each resolved in
+favor of Python per ADR 0008's own reconciliation rule ("where the spec and the Python client
+disagree, the discrepancy is resolved and the spec updated"): (1) the constructor takes one
+`api_key` covering both a static key and a JWT, not two mutually exclusive options; (2) the retry
+policy is `429`/`502`/`503`/`504` (spec 04 §7.5, what P9.1 actually implemented), not the ADR
+context's paraphrase of "429 and 503"; (3) `ToolDescriptor`'s schema field is `input_schema` in
+Python (forced by a `pydantic.BaseModel` naming collision — §"P9.6" below) and should stay
+`inputSchema` in TS for cross-language consistency, not `schema`.
+
+**Why.** P9.8 — "docs/parity-matrix.md — every Python method marked TS: planned" (spec 11 Phase
+9, spec 12 P9.8) — the last task of Phase 9.
+
+**Design decisions.** (1) **Every ADR-0008-referencing hyperlink was converted to plain text** —
+`docs/adr/` is excluded from the published mkdocs site (`exclude_docs` in `mkdocs.yml`), so a
+markdown link to it would be a dead link on the live site; `mkdocs build --strict` confirmed this
+by emitting "contains a link to '...' which is excluded from the built site" before the fix, and
+building clean after. Matches the existing precedent in `docs/status/how-to-continue.md`, which
+already mentions ADR numbers as plain text for the same reason. (2) **The document is not added
+to `mkdocs.yml`'s `nav`** — the existing `nav` list has exactly one entry (`Home: index.md`) with
+a docstring stating the full site/nav is a Phase 11 deliverable; adding this one page to `nav`
+now would be inconsistent with that already-stated plan and is deferred to P11 rather than done
+piecemeal. The page still builds and is reachable directly (confirmed via `mkdocs build --strict`,
+which flags un-navigated pages as `INFO`, not a build failure). (3) **Discrepancies are resolved
+in the matrix itself, not silently absorbed** — ADR 0008 explicitly wants "planned gaps labelled";
+resolving a stale design detail without a visible note would look like the original sketch was
+simply repeated, and a future TS implementer would have no way to tell a deliberate reconciliation
+from an oversight.
+
+**Architecture changes.** None — a new documentation file only.
+
+**Files/modules affected.** `docs/parity-matrix.md` (new); `CHANGELOG.md`.
+
+**Breaking changes.** None.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `mkdocs build --strict` passes clean (no warnings). No `src/` or `tests/`
+changes in this task, so the full gate suite (`ruff`/`mypy`/`pytest`/import-linter/isolation) is
+unchanged from P9.7's last green run and was not re-run for this docs-only change.
+
+**Known limitations / future improvements.** This closes Phase 9's task list (P9.1–P9.8). The
+document itself carries its own forward-looking limitation by design: every wire-format detail it
+pins down is the Python client's own documented assumption (see the P9.3, P9.5, P9.6 entries),
+not a transcription of a published, engine-verified schema — the TS client, when eventually built,
+inherits whatever that reconciliation looks like by then, not necessarily this exact page verbatim.
+
+## 2026-07-23 · [P9.7] Remote client contract-conformance suite — v0.1.0
+
+**Type:** test · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `tests/unit/clients/test_contract_conformance.py` (new): a table-driven,
+cross-cutting suite that asks one question across *every* public `KorchestratorClient` method at
+once — does a non-2xx response surface exactly `ApiError` (`status`, `trace_id` populated
+correctly), the one documented error type for a failed call (spec 04 §7.5)? `CONFORMANCE_CASES`
+enumerates all 19 sync methods (each with its documented HTTP method + path and a minimal call);
+`stream()` gets its own async equivalent since it can't share the sync parametrization. A final
+guard test (`test_every_conformance_case_is_covered_exactly_once`) diffs the table against
+`dir(KorchestratorClient)`'s actual public methods, so a future method added without a
+conformance-table entry fails loudly instead of silently going untested.
+
+**Why.** P9.7 — "`ApiError(status, message, code, trace_id)` as a `KorchError`; full `respx` suite
+against the spec 04 §7 contract" (spec 11 Phase 9, spec 12 P9.7).
+
+**Design decisions.** (1) **`ApiError` itself needed no new code** — it was built complete in
+P9.1 (status/code/trace_id fields, `KorchError` subclass, a runnable docstring example asserting
+all three), and every test file since has exercised it against real failure shapes. P9.7's actual
+job, on inspection, was proving *uniformity* across the whole surface — a property no single
+existing test file could show, since each one only covers its own method group. (2) **Retry
+policy, the `Authorization` header, and timeout handling are deliberately NOT re-tested per
+endpoint in this file** — every method (including `stream`) routes through the one shared
+`_request` coroutine (or its own equivalent retry loop, itself directly tested), so those
+properties are already proven uniform by P9.1/P9.2's direct tests against `_request`; a per-
+endpoint repeat would inflate the test count without adding a genuinely different failure mode to
+catch — "assertions must be meaningful, not just line-hitting" (testing rules) cuts against it.
+(3) **`respx.route(method=..., url=...)`, not the per-verb `respx.get`/`.post`/`.delete`
+helpers** — the table drives the HTTP method as data, so a single generic route constructor was
+needed; confirmed to work identically to the verb-specific helpers by running the suite. (4) **The
+coverage-guard test uses `dir()` + a set difference, not a hand-maintained count** — a hardcoded
+"there are 20 methods" assertion would need updating every time the class grows and wouldn't say
+*which* method was missed; the set diff self-documents the gap in the assertion failure message.
+
+**Architecture changes.** None — test-only change, no `src/` modification.
+
+**Files/modules affected.** `tests/unit/clients/test_contract_conformance.py` (new, 21 tests).
+
+**Breaking changes.** None.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files, test
+files are outside its `files=` scope per `pyproject.toml`); import-linter 4/4 kept; the isolation
+gate, env-confinement check, and version-validate all `OK`. `tests/unit/clients`: **100 passed**,
+99.75% coverage on `clients/client.py` (unchanged from P9.6 — this task added conformance
+assertions, not new source lines). All 98 package doctests still pass.
+
+**Known limitations / future improvements.** The wire-format assumptions carried since P9.3
+remain unverified against a real engine (tracked there, not repeated per task). P9.8 — the
+TypeScript parity matrix document — is the last item in Phase 9.
+
+## 2026-07-23 · [P9.6] Remote client discovery — v0.1.0 (closes the client-method surface)
+
+**Type:** feature · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient.tools()`/`models()`/`swarm_templates()` (`GET /v1/tools`,
+`/v1/models`, `/v1/swarm-templates`, spec 04 §7.3). `models()` reuses the existing
+`korchestrator.models.routing.ModelCard` — the local kernel's own model-capability catalogue —
+verbatim, since it's the same concept over the wire with no kernel-internal-state issue. Two new
+`models.remote` types: `ToolDescriptor` (`name`/`description`/`input_schema` — the wire twin of
+the local `Connector` protocol's `name`/`description`/`schema`) and `SwarmTemplate` (`name`/
+`description`/`agents`/`edges`, reusing `AgentConfig` so a fetched template can be passed straight
+into `run_swarm`). This completes the client's method surface — P9.7/P9.8 are documentation and
+test-hardening tasks, not new endpoints.
+
+**Why.** P9.6 — "tools, models, swarm_templates" (spec 11 Phase 9, spec 12 P9.6).
+
+**Design decisions.** (1) **`ModelCard` is reused directly — the first genuine model reuse across
+Phase 9**, breaking with P9.3/P9.5's pattern of purpose-built wire models. The distinction: a
+`ModelCard` is a pure capability/cost/latency description with no kernel-internal state (unlike
+`RunResult`'s nested `AgentState`, or `events.Event` being the LOCAL streaming primitive) — the
+SAME concept whether a caller asks the local router or a remote engine "what models exist," so
+reuse is the one-canonical-implementation call here, not a debatable cross-layer import (`clients/`
+already imports `korchestrator.models.routing` freely — models/ is `clients/`'s one documented
+allowed import). (2) **`ToolDescriptor.input_schema`, not `.schema`** — pydantic v2's `BaseModel`
+still exposes a deprecated `.schema()` method, and a field literally named `schema` collides with
+it (mypy caught this immediately: "Incompatible types in assignment... base class BaseModel
+defined the type as Callable"). `input_schema` was chosen over an alias workaround because it
+matches an already-established real-world vocabulary (Anthropic's own tool-use API), not because
+it was the only name available. (3) **"Discovery" (P9.6) deliberately excludes
+`POST /v1/tools/register`** — spec 04 §7.3's endpoint table lists it, but the P9.4–P9.6 task
+breakdown never names it, and it doesn't fit "discovery" (a read-only capability), so it's treated
+as intentionally out of this implementation's scope, the same call already made for the raw-
+`AgentState` `POST /v1/run` endpoint in P9.3.
+
+**Architecture changes.** `models/remote.py` gains `ToolDescriptor`, `SwarmTemplate` (both
+re-exported from `korchestrator.models`); `clients/client.py` imports
+`korchestrator.models.routing.ModelCard` (new for this file, already an allowed `models`
+sub-import) and gains `tools`/`models`/`swarm_templates` + their async cores, using the existing
+`_extract_list`/`_validate_model` helpers — no new parsing pattern. `KorchestratorClient`'s class
+docstring updated to describe the now-complete method surface (run lifecycle, control/identity,
+discovery, streaming) in one place. No new import-linter-relevant dependency.
+
+**Files/modules affected.** `src/korchestrator/models/{remote,__init__}.py`;
+`src/korchestrator/clients/client.py`; `tests/unit/clients/test_discovery.py` (new, 7 tests);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. Additive only; `tests/unit/public_surface.json` untouched (same
+reasoning as P9.1–P9.5).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients`: **79 passed**, 99.75% coverage on `clients/client.py` (the one uncovered
+branch is the same loop-continuation artifact noted in P9.5, unrelated to this task). New:
+`tools()`/`models()`/`swarm_templates()` each parsing both a wrapped-object and (for `tools`) a
+bare-array response, rejecting an unexpected shape, and `swarm_templates()` round-tripping a real
+`AgentConfig` through the nested `agents` field. All 98 package doctests (up from 95) pass.
+
+**Known limitations / future improvements.** Same wire-format caveat as P9.3–P9.5: the exact JSON
+shapes are this task's own documented assumption, not a transcription of a published schema.
+`POST /v1/tools/register` remains unimplemented (Design decision 3). P9.7 (the full `respx`
+contract-conformance suite covering every method built P9.1–P9.6) and P9.8 (the TS parity matrix)
+are what's left in Phase 9.
+
+## 2026-07-23 · [P9.5] Remote client SSE streaming — v0.1.0
+
+**Type:** feature · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient.stream(run_id, *, timeout=None) -> AsyncIterator[RunEvent]`
+(`GET /v1/run/{id}/stream`, spec 04 §7.3/§7.5) — the one method on this class that is a **native
+async generator**, not a sync wrapper: SSE is inherently incremental, and buffering the whole
+stream behind `asyncio.run()` would defeat the point. Parses the response body frame-by-frame
+(`event:`/`data:` lines, blank-line-terminated, the inverse of `korchestrator.events.format_sse`'s
+own frame shape) via a new `_iter_sse_events`/`_parse_sse_data` pair, yielding one new
+`models.remote.RunEvent` (`run_id`, `name`, `payload`) per frame. A dropped connection (timeout or
+any `httpx.HTTPError`) triggers an automatic reconnect — up to `max_retries` *consecutive*
+failures, the same full-jitter backoff `_request` already uses, with the retry budget reset every
+time a connection is actually (re-)established. A non-2xx response is wrapped as `ApiError`, same
+as every other method.
+
+**Why.** P9.5 — "SSE stream as an async iterator; reconnect semantics" (spec 11 Phase 9, spec 12
+P9.5).
+
+**Design decisions.** (1) **`RunEvent` is a new model in `models/remote.py`, not a reuse of
+`korchestrator.events.Event`** — even though the two shapes are nearly identical (`name`/
+`payload`/`run_id`), `events.Event` is the LOCAL kernel's own streaming primitive (`EventPublisher`
+fans it out inside a local run; `format_sse`'s own docstring says "the caller serves it; the SDK
+does not" — i.e. an application embedding the SDK locally, not this remote client parsing an
+*external* engine's stream), and `clients/`'s spec 05 allowed-imports table doesn't authorize
+importing `events/`. This is the exact same call P9.3 already made for `RemoteRunResult` vs the
+local `RunResult` — a purpose-built wire model over a debatable cross-layer reuse — applied
+consistently rather than re-litigated. (2) **Reconnection is honestly scoped to "keep the
+connection alive," not "resume exactly where it left off."** True SSE resumption needs a
+`Last-Event-ID` the server can replay from; `format_sse`'s wire frames (and therefore `RunEvent`)
+carry no event id at all, so there is no resumption token to send. Silently claiming full
+"reconnect semantics" would overstate what's implemented; the docstring and this entry are
+explicit that a reconnect resumes from "now" and events emitted during the outage are not
+replayed — an honest limitation, not a hidden one. (3) **The retry budget resets on every
+successful (re-)connection**, not once per `stream()` call — a long-lived stream over a flaky-but-
+generally-working network should be able to survive many reconnects over its life, not exhaust a
+fixed budget of 3 total. This mirrors treating "attempt" as *consecutive* failures, the same
+semantics `_request`'s own retry loop already has within a single call.
+
+**Architecture changes.** `models/remote.py` gains `RunEvent` (re-exported from
+`korchestrator.models`). `clients/client.py` gains `stream()`, `_iter_sse_events()`,
+`_parse_sse_data()`. No new import-linter-relevant dependency — `clients/` still only reaches
+`models`, `exceptions`, `httpx`, stdlib (`json` newly, for parsing `data:` payloads).
+
+**Files/modules affected.** `src/korchestrator/models/{remote,__init__}.py`;
+`src/korchestrator/clients/client.py`; `tests/unit/clients/test_streaming.py` (new, 11 tests);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. Additive only; `tests/unit/public_surface.json` untouched (same
+reasoning as P9.1–P9.4).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients`: **72 passed**, 99.73% coverage on `clients/client.py` (one uncovered branch
+is a loop-continuation artifact, not a behavioral gap). New: multi-frame parsing, the stream ending
+cleanly when the engine closes the connection, a non-2xx response wrapped as `ApiError`, malformed
+`data:` payloads (non-JSON, non-object JSON) rejected, an empty `data:` payload treated as `{}`, a
+frame with no `event:` line defaulting to `"message"`, direct `_iter_sse_events` frame-parsing
+tests against a fake response double, a dropped-then-recovered connection actually reconnecting
+(backoff mocked — T2), and giving up with `NetworkError`/`TimeoutError` after `max_retries`
+consecutive connection failures. All 95 package doctests (up from 94) pass — `stream`'s own
+example defines an async demo function (harmless — defining a function doesn't execute its body)
+and skips only the line that would actually call it.
+
+**Known limitations / future improvements.** No `Last-Event-ID`-based resumption (see Design
+decision 2) — a real engine implementation that wants gap-free delivery across reconnects would
+need the wire format extended with an event id, which is out of this task's scope (it would touch
+`events/format_sse` too, a P6-shipped module). P9.6 (discovery: tools/models/swarm-templates) and
+P9.7 (the full `respx` contract suite) remain.
+
+## 2026-07-23 · [P9.4] Remote client control + identity — v0.1.0
+
+**Type:** feature/refactor · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient` gains `resume`, `cancel`, `edit_resume` (spec 04 §7.3's
+`POST /v1/run/{id}/{resume,cancel,edit-resume}`), `me`/`my_quota`/`my_runs`
+(`GET /v1/me`, `/v1/me/quota`, `/v1/me/runs`), and key management — `create_key`/`list_keys`/
+`revoke_key` (`POST`/`GET /v1/keys`, `DELETE /v1/keys/{id}`). `edit_resume(run_id, *, updates=,
+trust_delta=)` mirrors the local kernel's own `Korch.edit_resume` signal shape exactly. Four new
+`models.remote` types: `CallerIdentity`, `Quota`, `ApiKey` (the creation response — `key:
+SecretStr`, shown once), `ApiKeySummary` (list response — no secret field at all). Alongside the
+new methods, `_parse_remote_run_result`/`_parse_run_summary` were generalized into one shared
+`_validate_model(model_cls, payload, status_code)` + `_extract_list(payload, key, status_code)`
+pair, since `me`/`my_quota`/`create_key`/`list_keys` needed the identical "validate one JSON
+object into a model, wrapping shape/validation failures as `ApiError`" and "extract a list from a
+bare array or a `{key: [...]}` wrapper" logic `get_run`/`list_runs` already had — refactored the
+three P9.1–P9.3 call sites onto the shared helpers rather than adding a fourth near-duplicate.
+
+**Why.** P9.4 — "resume, cancel, edit_resume, me, my_quota, my_runs, key management" (spec 11
+Phase 9, spec 12 P9.4).
+
+**Design decisions.** (1) **`ApiKey.key` is a `pydantic.SecretStr`, not a plain `str`** — spec 08
+§1.3's rule ("every secret-bearing field MUST be typed `SecretStr`") applies just as much to a
+key the ENGINE hands back as to one the SDK reads from `Settings`; a bare `str` field would defeat
+P9.2's whole credential-safety effort the moment someone `repr()`s or logs the creation response.
+The caller still gets the real value via `.get_secret_value()` — the point is making an accidental
+leak require a deliberate call, not an accident. (2) **Key-management method names
+(`create_key`/`list_keys`/`revoke_key`) are this task's own choice, not a spec quote** — unlike
+`resume`/`cancel`/`edit_resume`/`me`/`my_quota`/`my_runs`, which spec 12's P9.4 bullet names
+explicitly, "key management" is named as a capability, not a method list; the chosen names follow
+ordinary Python convention and the same create/list/revoke shape the rest of the SDK uses
+elsewhere (e.g. `ConnectorRegistry`). (3) **The shared-helper refactor happened because a fourth
+near-identical parsing function would have been the third or fourth instance of the same "shape
+check, then model_validate, then wrap the failure as ApiError" logic** — the architecture rule is
+one canonical implementation per concern; four functions that differ only by which model class
+they validate against is the concern duplicated, not four different concerns. `_normalize_status_
+field` staying inside `_validate_model` is harmless for the three new models (none has a `status`
+field, so it's a no-op), keeping one code path instead of a status-aware and a status-unaware
+variant.
+
+**Architecture changes.** `models/remote.py` gains `CallerIdentity`, `Quota`, `ApiKey`,
+`ApiKeySummary` (all re-exported from `korchestrator.models`). `clients/client.py`'s two
+run-result parsing functions were replaced by the generalized `_validate_model`/`_extract_list`;
+every P9.1–P9.4 call site updated accordingly, no behavioural change to any already-shipped
+method (all 61 pre-existing + new `tests/unit/clients` tests pass unmodified against the
+refactor). No new import-linter-relevant dependency.
+
+**Files/modules affected.** `src/korchestrator/models/{remote,__init__}.py`;
+`src/korchestrator/clients/client.py`; `tests/unit/clients/test_control_identity.py` (new, 11
+tests); `CHANGELOG.md`.
+
+**Breaking changes.** None. Additive only; `tests/unit/public_surface.json` untouched (same
+reasoning as P9.1–P9.3).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients`: **61 passed**, **100% coverage** on `clients/client.py` and
+`models/remote.py` combined. New: `resume`/`cancel` request+response; `edit_resume`'s exact wire
+body (`{"updates": {...}, "trust_delta": ...}`, including the empty-updates default); `me`/
+`my_quota` parsing; `my_runs` parsing a bare array and rejecting an unexpected shape;
+`create_key`'s request body and that the returned `ApiKey.key` is retrievable via
+`get_secret_value()` but never appears in `repr(key)`; `list_keys` never carries a secret field;
+`revoke_key` sends the `DELETE` and returns `None`. All 94 package doctests (up from 85) pass.
+
+**Known limitations / future improvements.** Same wire-format caveat as P9.3: the JSON shapes for
+`CallerIdentity`/`Quota`/`ApiKey`/`ApiKeySummary` are this task's own documented assumption, not a
+transcription of a published engine schema (none exists yet). P9.5 (streaming) and P9.6
+(discovery — tools/models/swarm-templates) remain.
+
+## 2026-07-23 · [P9.3] Remote client run lifecycle — v0.1.0
+
+**Type:** feature · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient` gains the run-lifecycle surface (spec 04 §7.3/§7.4): `run`,
+`run_swarm`, `get_run`, `wait`, `run_and_wait`, `list_runs`, `get_run_summary` — all sync,
+each a thin `asyncio.run(...)` wrapper around a private `_..._async` coroutine built on P9.1's
+`_request`. `run` (`POST /v1/run/auto`) and `run_swarm` (`POST /v1/run/swarm`, taking the same
+`AgentConfig`/edges shape `Swarm` uses) return the run's initial state; `get_run`
+(`GET /v1/run/{id}`) fetches current state; `wait` polls `get_run` until a terminal status
+(`completed`/`failed`/`cancelled`/`timed_out` — explicitly *not* `governance_paused`, which stays
+pending for an operator); `run_and_wait` composes `run` + `wait` in one event loop; `list_runs`
+(`GET /v1/runs`) and `get_run_summary` (`GET /v1/runs/{id}/summary`) return the new, lighter
+`models.remote.RunSummary`. Every numeric run status the engine can return (`0`-`6`) is normalized
+to the `RunStatus` string vocabulary before model validation (spec 04 §7.4).
+
+**Why.** P9.3 — "run, run_swarm, run_and_wait, get_run, wait, list_runs, get_run_summary;
+numeric→string status normalization" (spec 11 Phase 9, spec 12 P9.3).
+
+**Design decisions.** (1) **New `models.remote.RemoteRunResult`/`RunSummary`, not a reuse of the
+local kernel's `RunResult`.** `RunResult.state: AgentState` is a required nested field (`run_id`,
+`objective` ≥10 chars, `transaction_time`, …) that the remote wire contract has no basis for —
+spec 04 §7 documents *concepts* and the status vocabulary, not a full JSON schema, and there is no
+engine response that plausibly reconstructs a full kernel `AgentState`. Fabricating one to satisfy
+`RunResult`'s validation would be actively misleading (inventing data the engine never sent), so
+this task defines two purpose-built, wire-facing models instead — matching the codebase's existing
+pattern of one model per genuinely distinct concept (`AgentConfig` vs `AgentState` is the same
+kind of split), not two names for one thing. (2) **Every wire-shape decision this task makes
+(field names, the `{"runs": [...]}` vs bare-array `list_runs` body, the error-body fields) is an
+assumption, not a transcription** — spec 04 §7 doesn't pin a JSON schema beyond §7.1's concept
+table and §7.4's status/webhook fields. The chosen shapes reuse the SDK's own established
+vocabulary (spec 04 §3.1) everywhere a name was available (`run_id`, `status`, `final_answer`,
+`supersteps`, `trust_score`) so the client is at least internally consistent and is the executable
+specification of the wire format until a real engine or a fuller schema doc exists — exactly the
+same kind of documented assumption P9.1 made for `ApiError`'s error-body shape. (3) **Numeric
+status 0 and 5 are filled in, not left unhandled** — spec 04 §7.4's table only lists `1/2/3/4/6`;
+`0` (`started`, preceding `running` in the lifecycle diagram) and `5` (`governance_paused`, the
+only `RunStatus` value the table omits) are the two values needed to make the mapping total over
+all seven `RunStatus` members, and are called out as an inference in the code comment, not
+presented as a literal spec quote. An unrecognised numeric code is rejected as an `ApiError`
+(`502`) rather than silently passed through or defaulted — a genuine engine/client vocabulary
+mismatch should fail loudly, not produce a `RunResult` with a status nobody chose. (4) **`wait`
+polls, it does not stream** — SSE streaming is P9.5's job; `wait` is documented as the simple,
+inefficient-but-correct baseline every engine implementation supports, consistent with `run_and_
+wait`'s composition. (5) **Every public method is sync** (`asyncio.run(self._..._async(...))`),
+continuing the P9.1 design commitment that `client.run_and_wait(...)` in spec 04 §7's own Tier-4
+example is called with no `await` — `run_and_wait`'s async core awaits `_run_async` then `_wait_
+async` inside ONE event loop (not two stacked `asyncio.run` calls), so the sync/async split costs
+nothing beyond the one wrapper line per public method.
+
+**Architecture changes.** `models/remote.py` (new): `RemoteRunResult`, `RunSummary`; both
+re-exported from `korchestrator.models` (not top-level `korchestrator.__all__` — the whole
+`clients`/`remote` surface stays outside that golden file, per the P9.1 precedent).
+`clients/client.py` grows substantially (7 public methods + 7 private async cores + 4 module-level
+parsing helpers); no new import-linter-relevant dependency (still only `models`, `exceptions`,
+`httpx`, stdlib).
+
+**Files/modules affected.** `src/korchestrator/models/{remote,__init__}.py`;
+`src/korchestrator/clients/client.py`; `tests/unit/clients/test_run_lifecycle.py` (new, 27 tests);
+one added test in `tests/unit/clients/test_client.py`; `CHANGELOG.md`.
+
+**Breaking changes.** None. Additive only; `tests/unit/public_surface.json` untouched (same
+reasoning as P9.1 — `korchestrator.remote` is a separate, optional import path).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients`: **44 passed** (P9.1+P9.2+P9.3 combined). New in this task: `run`/`run_swarm`
+request-body shape (including tenant_id omission and `AgentConfig`/edges serialization); every one
+of the seven documented numeric statuses normalizes correctly (parametrized); an already-string
+status is accepted as-is; an unrecognised numeric status raises; a malformed or non-JSON body
+raises; `wait` polls through `running` and explicitly through `governance_paused` before returning
+on a terminal status, backoff-sleep mocked (no real waiting — T2); `run_and_wait` composes both
+calls; `list_runs` parses both a bare array and a `{"runs": [...]}` wrapper, rejects anything else,
+and passes `tenant_id` as a query parameter; `get_run_summary` parses the summary shape. All
+package doctests (85, up from 78) still pass, including two new runnable (non-skipped)
+construct-and-close examples backing each `# doctest: +SKIP` network-touching example line.
+
+**Known limitations / future improvements.** The wire-format assumptions in Design decision (2)
+are unverified against any real engine — when a real Korchestrator engine (or a fuller schema doc)
+exists, P9.7's full `respx` contract suite (or a follow-up) should reconcile them, and any
+divergence is a documentation/implementation fix, not a breaking-change decision, since nothing
+here is part of a released compatibility surface yet. The raw-`AgentState` start path
+(`POST /v1/run` in spec 04 §7.3's endpoint table) is not implemented — it's absent from the P9.1-
+P9.8 task breakdown entirely, so it's being treated as out of scope for this implementation rather
+than an oversight.
+
+## 2026-07-23 · [P9.2] Remote client credential safety — v0.1.0
+
+**Type:** feature/test · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient.__repr__` (new): shows `base_url` only, never headers or the
+credential — the class previously fell back to Python's default `object.__repr__` (a bare memory
+address, already safe, but implicit rather than engineered). `tests/unit/clients/
+test_credential_safety.py` (new, 7 tests) locks the spec 04 §7.2 mandate ("credentials MUST never
+be logged, never written to disk by the SDK, and MUST be redacted from exception messages and
+telemetry") as executable regression tests: the client's `repr`/`str` never contain the API key;
+`httpx.Headers.__repr__`'s built-in `authorization` redaction (`'[secure]'`) is pinned as a
+load-bearing assumption so a future `httpx` upgrade that changed it would fail loudly here; every
+error path P9.1 can already raise (`ApiError`, `NetworkError`, the `TimeoutError` alias) is
+exercised with a real-shaped secret key and asserted never to leak it, including a pathological
+case where the engine's own response body tries to echo the `Authorization` header back (proving
+`_api_error()` only ever reads `message`/`code`/`trace_id`, never blindly stringifies the whole
+body); and a static AST scan of every `clients/*.py` file asserts no `open(...)` call exists at
+all — "never written to disk" isn't just true today, it's guarded against regressing silently.
+
+**Why.** P9.2 — "Redaction from logs, exceptions, telemetry; test asserting credentials never
+appear in any output or on disk" (spec 11 Phase 9, spec 12 P9.2).
+
+**Design decisions.** (1) **No redaction *code* was needed for logs or telemetry, because
+`clients/` doesn't call either yet** — P9.1 built the transport with zero logging calls and no
+telemetry spans. Auditing that (rather than assuming) is the actual P9.2 work: everywhere a
+credential *could* leak today (repr, exception messages) is now tested; where it *could* leak in
+the future (a P9.3+ endpoint method adding a debug log line or an `http.request` telemetry span)
+is called out explicitly in Known limitations below, so the constraint isn't lost between tasks.
+(2) **Relied on `httpx`'s own `Authorization` redaction rather than re-implementing it** — `httpx.
+Headers.__repr__` already masks known-sensitive header names to `'[secure]'`; duplicating that
+logic in `korchestrator` would be a second implementation of the same concern. The risk (an
+`httpx` upgrade silently changing or dropping that behavior) is covered by pinning it as an
+explicit assertion in this task's test suite, so a regression is caught here rather than assumed
+away. (3) **The pathological echoed-header test is deliberate, not paranoid** — `_api_error()`
+(P9.1) already only reads three named fields (`message`/`code`/`trace_id`) out of the response
+body rather than dumping it wholesale, so this test is a regression guard proving that design
+choice holds, not evidence a new defense was added this task.
+
+**Architecture changes.** None — `clients/client.py` gained one dunder method (`__repr__`); no
+new module, no new dependency, no `.importlinter` change.
+
+**Files/modules affected.** `src/korchestrator/clients/client.py` (`__repr__`);
+`tests/unit/clients/test_credential_safety.py` (new); `CHANGELOG.md`.
+
+**Breaking changes.** None. `KorchestratorClient` had no prior custom `__repr__` to change
+behavior away from — the default was a bare memory address, so this is a pure improvement.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (103 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients` (P9.1 + P9.2 combined): **22 passed**. All 78 package doctests still pass.
+
+**Known limitations / future improvements.** This task audited and tested the surface `clients/`
+exposes *today* (transport only). P9.3–P9.6 add real endpoint methods and P9.5 adds streaming;
+whoever adds the first logging call or telemetry span in `clients/` must route request/response
+data through Shield (`korchestrator.security`) before it reaches a log record or a span attribute
+— spec 08 §5's "redaction applies... before anything reaches persistence, telemetry, logs" —
+and must never pass `self._client.headers` (or anything derived from it) into a log/span
+attribute even redacted-looking, since the whole point is that credential is never even eligible
+to leak, not that it's masked after the fact. This is now an explicit carry-forward, not an
+assumption.
+
+## 2026-07-23 · [P9.1] Remote client transport + auth — v0.1.0
+
+**Type:** feature · **Phase:** P9 (remote client, first task) · **Author:** Claude (agent)
+
+**What.** `clients/client.py` (new): `KorchestratorClient` — the Tier 4 remote client's
+authenticated, retrying HTTP transport (spec 04 §7, `[remote]` extra). Constructor takes
+`base_url`, an optional `api_key` (rides one `Authorization: Bearer` header, per ADR 0005), a
+30s default `timeout`, and `max_retries=3`. Internal `_request(method, path, ...)` retries
+429/502/503/504 and connection failures with full-jitter exponential backoff, raising `ApiError`
+(new `KorchError` subclass, `status`/`code`/`trace_id`) for a terminal non-2xx response, `
+NetworkError`/`TimeoutError` for a connection/timeout failure that outlasts retries — and never
+retries any other 4xx. `aclose()`/`close()` and `async with` support. `korchestrator/remote.py`
+(new, top-level, sibling of `clients/`) re-exports `KorchestratorClient` — never imported by
+`korchestrator/__init__.py`, so the base install stays `httpx`-free (spec 04 §7 intro). This
+task builds the transport only; the actual endpoint methods (`run`, `get_run`, `resume`, `stream`,
+etc.) land in P9.3–P9.6.
+
+**Why.** P9.1 — "clients/ — httpx async+sync base, Authorization: Bearer, timeout 30s, retries 3
+with jittered backoff, retry 429/502/503/504 only," the first task of Phase 9 (spec 11 Phase 9,
+spec 12 P9.1).
+
+**Design decisions.** (1) **`httpx` is imported at module top level in `clients/client.py`**, not
+function-lazily — unlike `providers/gateway_openai.py`, which must defer the import because
+`providers/` sits on the base-install path. `clients/`/`remote.py` are never imported by
+`korchestrator/__init__.py` at all (confirmed by a new static-AST test,
+`tests/unit/test_remote.py::test_the_base_package_source_never_imports_clients_or_remote`), so
+the confinement here is by-never-being-imported, the same pattern `runtime/temporal_runtime.py`
+already uses for `temporalio` — not a second style, a second instance of the one already-accepted
+pattern. (2) **One async core, sync convenience wrapper — mirrors `Korch.run()`'s own
+`asyncio.run(_flow())` pattern exactly**, since spec 04 §7's own Tier-4 example calls
+`client.run_and_wait(...)` with no `await`. `_request` is `async def`; `close()` wraps `aclose()`
+in `asyncio.run()`. Streaming (P9.5) is documented to be a native async iterator, so this class
+will end up with both sync-convenience and genuinely-async public methods — intentional, not an
+inconsistency, since SSE benefits from real incremental awaiting. (3) **`ApiError` is one new
+`KorchError` subclass, not five** — spec 04 §7.5 names exactly one error type carrying
+`status`/`message`/`code`/`trace_id` for the whole remote contract, so a 401/402/403/404/429/5xx
+API-level failure (a response WAS received) all become `ApiError`, while a connection failure (no
+response at all) becomes `NetworkError`/`TimeoutError` — reusing the existing tree exactly where
+the semantics already fit, matching how `gateway_openai.py` already wraps `httpx` transport
+failures. `ApiError` lives in the one canonical `exceptions/errors.py` (not a second, `clients/`
+-local error base) — no other module in this codebase has ever defined its own `KorchError`
+subclass outside that file, and this doesn't start now. `status` defaults to `500` (not
+required-only) purely so `ApiError` stays constructible like every sibling for the existing
+generic cross-cutting test (`test_error_wrapping.py`'s `_korch_error_subclasses()` parametrization
+calls `error_cls("boundary test")` uniformly); real call sites always pass the actual status. (4)
+**The error-body schema is undocumented in spec 04 §7.5**, so `_api_error()` parses defensively:
+a JSON object with `message`/`code`/`trace_id` is preferred, anything else falls back to the raw
+response text as the message with no `code`/`trace_id` — never raises while building the error
+itself. (5) **Retry backoff uses `random.uniform(0, base * 2**attempt)`** (the well-known
+"full jitter" algorithm) rather than inventing a bespoke formula, and is tested by patching
+`korchestrator.clients.client.asyncio.sleep` (no real sleeping — T2), asserting both the retry
+count and that a non-retryable 4xx never calls sleep at all.
+
+**Architecture changes.** `clients/client.py` (new) and `clients/__init__.py` (re-exports
+`KorchestratorClient`); `remote.py` (new, top-level). `exceptions/errors.py` gains `ApiError`;
+`constants/error_codes.py` gains `KORCH_API_ERROR`. Neither `clients/` nor `remote.py` is added
+to the `layers` import-linter contract (they sit outside the services→agents→core→interfaces→
+models inward chain, same as `providers/`/`runtime/`); the existing `httpx-confined-to-http-owners`
+contract already names `clients/` as an approved owner, so no `.importlinter` edit was needed.
+
+**Files/modules affected.** `src/korchestrator/clients/{client,__init__}.py`;
+`src/korchestrator/remote.py` (new); `src/korchestrator/exceptions/{errors,__init__}.py`;
+`src/korchestrator/constants/error_codes.py`; `tests/unit/clients/test_client.py` (new, 15 tests);
+`tests/unit/test_remote.py` (new); `tests/unit/exceptions/test_errors.py` and
+`tests/unit/constants/test_error_codes.py` (golden-list additions for `ApiError`/
+`KORCH_API_ERROR`); `CHANGELOG.md`.
+
+**Breaking changes.** None — `ApiError`/`KORCH_API_ERROR` and the whole `clients`/`remote`
+surface are additive; nothing existing changed shape. `korchestrator.remote.KorchestratorClient`
+is a genuinely new public surface (spec 04 §7), but it's incomplete this task (transport only) —
+`tests/unit/public_surface.json` is untouched, since `korchestrator.remote` is a separate,
+optional import path from `korchestrator.__all__` (mirroring how `korchestrator.config`,
+`korchestrator.logging`, etc. already work) and the P8-established pattern only updates that
+golden file for `korchestrator/__init__.py`'s own top-level `__all__`.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (103 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **681 passed**, 95.55% coverage (≥80 floor; `clients/client.py` 99%,
+`remote.py` 100%). New: Bearer-header presence/absence, default timeout, a successful request, a
+non-retryable 4xx raising `ApiError` immediately (asserted via `respx` call count) with both a
+JSON and a non-JSON error body, each of the four retryable statuses retried exactly `max_retries`
+times then raising, a mid-retry recovery returning the eventual 200, a connection error and a
+timeout each retried then wrapped, `async with` closing the connection pool, and the
+never-imported-by-the-base-package static check. All 4 new/updated doctests pass offline.
+
+**Known limitations / future improvements.** `KorchestratorClient` currently has no public
+endpoint methods (`run`, `get_run`, `resume`, `stream`, etc.) — only the private `_request`
+transport; those land in P9.3 (run lifecycle), P9.4 (control + identity), P9.5 (streaming), and
+P9.6 (discovery). Credential redaction from logs/exceptions/telemetry (P9.2) has not been audited
+yet — `_api_error()`'s message currently includes the response body's `message` field verbatim,
+which is server-controlled and assumed not to echo the caller's own credentials, but this should
+be revisited explicitly in P9.2 rather than assumed.
+
 ## 2026-07-23 · [P8.7] Optional OpenTelemetry telemetry — v0.1.0 (closes Phase 8)
 
 **Type:** feature · **Phase:** P8 (cross-cutting foundations, final task) · **Author:** Claude (agent)

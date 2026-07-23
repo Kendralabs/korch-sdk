@@ -12,17 +12,19 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P8 — Cross-cutting foundations — **complete** (P8.1–P8.7 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
-| **Last completed milestone** | **P8.7 — optional OpenTelemetry telemetry (closes Phase 8).** New `korchestrator.telemetry` module: `start_span`/`record_metric`, zero-overhead no-op singleton when `KORCH_TELEMETRY_ENABLED` is off (the default), lazy `[otel]` import with `MissingExtraError` otherwise. Wired the outer `agent.run` span and `korch.run.duration`/`korch.run.status` metrics into `services/_composition.py::run_graph`. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: push `feat/p8-cross-cutting-foundations`, merge `--no-ff` into `develop`, then start Phase 9 (Remote client). |
-| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.7 committed locally, not yet pushed. |
+| **Active phase** | P9 — Remote client — **complete** (P9.1–P9.8 done) on branch `feat/p9-remote-client` (off `develop`, not yet pushed). Phase 8 is complete and merged. |
+| **Last completed milestone** | **P9.8 — TypeScript parity matrix (closes Phase 9).** `docs/parity-matrix.md` — every `KorchestratorClient` method/model marked `TS: planned` per ADR 0008, with three Python-vs-original-sketch discrepancies resolved and labelled. Docs-only. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: push `feat/p9-remote-client`, merge `--no-ff` into `develop`, then start Phase 10 (Testing, benchmarks & quality gates). |
+| **Pushed / merged** | `develop` (P0–P8) is pushed to `origin`. `feat/p9-remote-client` has P9.1–P9.8 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (101 source files), `pytest` (dspy + non-dspy paths; **660 passed**,
-95.45% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
-confinement), the isolation gate, env-confinement, and version single-sourcing. `import
-korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry` stay `dspy`/`[routing]`/
-`[otel]`-free; the base install stays `pydantic`-only.
+ruff-format, `mypy --strict` (104 source files), `pytest` (dspy + non-dspy paths; **766 passed**,
+95.93% cov, 16 Temporal excluded; `clients/client.py` 99.75%), import-linter (**4 contracts
+kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
+single-sourcing. `import korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry`
+stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, and
+`korchestrator.clients`/`korchestrator.remote` are never imported by
+`korchestrator/__init__.py` (statically checked, `test_remote.py`).
 
 ## 2. Phase progress
 
@@ -36,8 +38,8 @@ korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry` stay `ds
 | P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
-| P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; not yet pushed/merged to `develop`) |
-| P9 | Remote client (Python only — TS deferred) | Not started |
+| P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
+| P9 | Remote client (Python only — TS deferred) | **Complete** (P9.1–P9.8; not yet pushed/merged to `develop`) |
 | P10 | Testing, benchmarks & quality gates | Not started |
 | P11 | Documentation, examples & DX | Not started |
 | P12 | CI/CD, packaging & publishing | Not started |
@@ -73,7 +75,7 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `serializers/` | Leaf utility | **tested** (`to_json`/`from_json` — `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult`, version-tagged, migration mechanism; `AgentGraph` excluded, ADR 0017) | P8.5 |
 | `validators/` | Leaf utility | **tested** (`validate_objective`/`validate_max_supersteps`/`validate_unique_agent_id`, wired into `Korch`/`Swarm`) | P8.6 |
 | `telemetry/` | Leaf utility | **tested** (`start_span`/`record_metric`, zero-overhead no-op off, lazy `[otel]`; `agent.run` span + `korch.run.duration`/`korch.run.status` wired into `_composition.run_graph`; rest of the span tree/metrics not yet wired — see known gaps) | P8.7 |
-| `clients/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P9 |
+| `clients/` | Client | **tested** (`KorchestratorClient`: Bearer auth transport, retry/backoff, `ApiError`, credential-safe `repr`, full run lifecycle, control, identity, key management, discovery, SSE `stream()` — the whole method surface, contract-conformance tested; re-exported as `korchestrator.remote`) | P9.1–P9.7 |
 
 ## 4. Public surface
 
@@ -92,6 +94,13 @@ matches spec 04 §6's `__init__.py` example exactly, which lists none of them.
 
 The surface is guarded by the golden-file snapshot test (`tests/unit/test_public_surface.py`).
 Changing it is a deliberate act requiring a CHANGELOG entry and a version decision in the same PR.
+
+**`korchestrator.remote` (Phase 9, complete) is a separate, optional import path — not part of
+`korchestrator.__all__`, never imported by `korchestrator/__init__.py`.** It exports
+`KorchestratorClient` (20 methods: full run lifecycle, control, identity, key management,
+discovery, SSE streaming) plus its own `ApiError` and nine `models.remote` types. `docs/parity-
+matrix.md` (P9.8) settles its TypeScript equivalent per ADR 0008, marked `TS: planned` throughout
+— no TypeScript client exists in this repository.
 
 ## 5. Settled decisions
 
