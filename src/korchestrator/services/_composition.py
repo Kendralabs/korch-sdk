@@ -8,41 +8,71 @@ workflow scope — injected inward so the kernel stays deterministic (spec 03 §
 
 from __future__ import annotations
 
+import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 
 from korchestrator.agents import Agent, WorkerAgent
 from korchestrator.config import Settings
 from korchestrator.core.graph import AgentGraph, Edge, Node
 from korchestrator.core.pregel import Clock, SuperstepObserver
-from korchestrator.exceptions import ValidationError
-from korchestrator.interfaces import BaseRouter, IModelGateway
+from korchestrator.exceptions import MissingExtraError, ValidationError
+from korchestrator.interfaces import BaseRouter, GraphRepository, IDurableRuntime, IModelGateway
 from korchestrator.models.agent import AgentConfig
 from korchestrator.models.result import RunResult
 from korchestrator.models.routing import ModelCard, RoutingContext, TaskSemantics
 from korchestrator.models.state import AgentState
+from korchestrator.persistence import resolve_repository as resolve_repository
 from korchestrator.providers import get_lm
 from korchestrator.routing import load_model_cards, resolve_router
 from korchestrator.runtime import resolve_runtime
 from korchestrator.services.hooks import EventHandler, HookRegistry, Middleware
 from korchestrator.taxonomy import TaxonomyClassifier
+from korchestrator.types import JSONValue
 
 _MIN_OBJECTIVE_CHARS = 10
 
 
+class _PersistenceMiddleware(Middleware):
+    """Checkpoint ``AgentState`` after each superstep via an injected ``GraphRepository``.
+
+    The local runtime has no built-in durability (a crash loses the run); this gives it a
+    best-effort checkpoint so the latest state is recoverable via ``GraphRepository.load_state``.
+    Hooks never run in Temporal workflow scope (spec 07 §9) — Temporal's own event history is
+    already the durable checkpoint there, so this middleware's practical effect is local-only.
+    """
+
+    def __init__(self, repository: GraphRepository, *, tenant_id: str) -> None:
+        """Store the repository and the tenant every checkpoint is scoped to."""
+        self._repository = repository
+        self._tenant_id = tenant_id
+
+    async def after_superstep(self, state: AgentState) -> None:
+        """Persist ``state`` under its own ``run_id`` within the bound tenant."""
+        await self._repository.save_state(state, tenant_id=self._tenant_id)
+
+
 def build_observer(
-    middleware: Sequence[Middleware], handlers: Sequence[tuple[str, EventHandler]]
+    middleware: Sequence[Middleware],
+    handlers: Sequence[tuple[str, EventHandler]],
+    *,
+    repository: GraphRepository | None = None,
+    tenant_id: str = "default",
 ) -> SuperstepObserver | None:
-    """Build a :class:`HookRegistry` from middleware and handlers, or ``None`` if there are none.
+    """Build a :class:`HookRegistry` from middleware, handlers, and persistence, or ``None``.
 
     Returning ``None`` when nothing is registered keeps the zero-overhead path — the runtime skips
-    observer dispatch entirely.
+    observer dispatch entirely. When ``repository`` is given (``PERSISTENCE_BACKEND`` resolved to
+    something other than ``"none"``), a :class:`_PersistenceMiddleware` checkpoint is appended.
     """
-    if not middleware and not handlers:
+    all_middleware = list(middleware)
+    if repository is not None:
+        all_middleware.append(_PersistenceMiddleware(repository, tenant_id=tenant_id))
+    if not all_middleware and not handlers:
         return None
     registry = HookRegistry()
-    for item in middleware:
+    for item in all_middleware:
         registry.register_middleware(item)
     for event, handler in handlers:
         registry.on(event, handler)
@@ -205,3 +235,70 @@ async def run_graph(
     runtime = resolve_runtime(settings, graph, clock=clock, observer=observer)
     run_id = await runtime.start(state, max_supersteps=max_supersteps)
     return await runtime.wait(run_id)
+
+
+def _edit_resume_payload(
+    updates: Mapping[str, JSONValue] | None, trust_delta: float
+) -> dict[str, str]:
+    """Encode an ``edit_resume`` body as the ``Mapping[str, str]`` ``IDurableRuntime.signal`` takes.
+
+    Mirrors ``runtime.temporal_runtime.EditResumePayload``'s shape without importing that module
+    at call time for a signal that might not even be ``edit_resume`` — ``send_control_signal``
+    only pays the lazy Temporal import when the runtime actually needs it.
+    """
+    body = json.dumps({"updates": dict(updates or {}), "trust_delta": trust_delta})
+    return {"state_update": body}
+
+
+async def send_control_signal(
+    settings: Settings,
+    run_id: str,
+    name: str,
+    *,
+    runtime: IDurableRuntime | None = None,
+    updates: Mapping[str, JSONValue] | None = None,
+    trust_delta: float = 0.0,
+) -> None:
+    """Deliver a durable HITL control signal (``pause``/``resume``/``cancel``/``edit_resume``).
+
+    Building the full agent graph just to signal an already-running Temporal workflow is
+    unnecessary — ``signal()`` only needs a client and the ``run_id``, not the graph (its live
+    callables never cross the workflow boundary anyway). ``updates``/``trust_delta`` are only used
+    for ``edit_resume``; other signal names ignore them.
+
+    Args:
+        settings: Resolved settings; ``korch_runtime`` selects the adapter when ``runtime`` is
+            not injected.
+        run_id: The run to signal.
+        name: ``"pause"``, ``"resume"``, ``"cancel"``, or ``"edit_resume"``.
+        runtime: An already-constructed runtime to signal through (e.g. one the caller is also
+            using to run graphs). Resolved fresh, graph-less, when omitted.
+        updates: ``edit_resume`` only — context-channel values to merge (last-value) into the
+            paused run's state.
+        trust_delta: ``edit_resume`` only — folded into ``trust_score`` via the same clamp the
+            kernel's barrier uses.
+
+    Raises:
+        NotImplementedError: On the local runtime, which is synchronous and has no in-flight run
+            to signal — durable HITL needs ``KORCH_RUNTIME=temporal``.
+        MissingExtraError: If the Temporal runtime is selected without the ``[temporal]`` extra.
+    """
+    payload = _edit_resume_payload(updates, trust_delta) if name == "edit_resume" else {}
+    if runtime is not None:
+        await runtime.signal(run_id, name, payload)
+        return
+    if settings.korch_runtime == "local":
+        raise NotImplementedError(
+            "The local runtime is synchronous and does not support control signals. "
+            "Use the Temporal runtime (KORCH_RUNTIME=temporal) for durable HITL."
+        )
+    try:
+        from korchestrator.runtime.temporal_runtime import TemporalRuntime
+    except ImportError as exc:
+        raise MissingExtraError(
+            "The 'temporal' runtime requires the 'temporal' extra. "
+            "Install it with: pip install 'korchestrator[temporal]'",
+            code="KORCH_MISSING_EXTRA",
+        ) from exc
+    control = TemporalRuntime(None, clock=wall_clock())
+    await control.signal(run_id, name, payload)

@@ -10,6 +10,485 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P7.6] Bitemporal Context Graph client — v0.1.0 · closes P7
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Three pieces, closing Phase 7. `models/context_graph.py`: `GraphNode` (the shared
+bitemporal shape — `id`, `tenant_id`, `run_id`, `content`, `provenance`, `confidence`,
+`valid_time`, `transaction_time`) with two thin subclasses, `DecisionNode` (+ `rationale`) and
+`EventNode` (+ `event_type`), both frozen. `interfaces/repository.py`: `GraphRepository` (P1) gains
+`record_node(node, *, tenant_id)` and `query_nodes(*, tenant_id, run_id=None, as_of=None,
+valid_at=None)` — the extension its own docstring had anticipated ("layered on this protocol when
+it lands"). `persistence/repository.py`: `InMemoryGraphRepository` implements both, append-only,
+tenant-scoped. `persistence/context_graph.py`: `ContextGraphClient` — `record_decision()`/
+`record_event()` redact `content` through `Shield` before building a node and writing it via the
+repository; `query()` reads tenant-scoped nodes back with `as_of`/`valid_at` time-travel and an
+optional `run_id` filter.
+
+**Why.** P7.6, the last Phase 7 task — "`ContextGraphClient` — bitemporal decision/event nodes,
+valid+transaction time, confidence, provenance, event sourcing, tenant scoping, time-travel query"
+(spec 12), depending on P7.5 (the repository to sit behind) and P7.1 (Shield, since "governance
+audit and trace ingestion depend on redaction existing").
+
+**Design decisions.** (1) **`GraphRepository` is extended, not duplicated** — spec 05's own P1
+docstring already said the bitemporal node API "is layered on this protocol when it lands"; adding
+`record_node`/`query_nodes` to the existing `Protocol` (rather than inventing a second repository
+type) is the anticipated, sanctioned evolution, and it's additive (existing `save_state`/
+`load_state` callers are unaffected). The structural-conformance test's `_Repository` fake needed
+the two new methods to keep satisfying `isinstance(..., GraphRepository)` — updated alongside. (2)
+**`persistence` importing `security` (Shield) is legal** — `security` is a *leaf utility*
+(CLAUDE.md §3: "config, exceptions, logging, telemetry, serializers, validators, security"), not a
+sibling feature module, so it has no upward dependencies and anything may depend on it; the
+`.importlinter` `features-are-independent` contract doesn't list `security` at all. Documented on
+`persistence/__init__.py`'s "Allowed imports" line, which previously omitted it. (3) **Nodes are
+immutable and append-only** — `record_decision`/`record_event` always create a brand-new node
+(`uuid4()` id, matching the existing `run_id=uuid.uuid4().hex` precedent in `_composition.py`'s
+composition root); there is no update/delete method. A correction is a new node with a later
+`transaction_time`; the old node is never touched, so `as_of`/`valid_at` time-travel queries stay
+meaningful — the entire point of bitemporal event sourcing. (4) `ContextGraphClient` takes
+`valid_time`/`transaction_time` as **required, caller-supplied** parameters rather than reading a
+wall clock internally, mirroring the discipline `AgentState`/`Message`/`StateUpdate` already hold
+to everywhere else in the codebase (even though `persistence/` isn't strict workflow-path code, the
+same discipline avoids `datetime.now()` creeping in and keeps every timestamp traceable to an
+injected clock). (5) Kept deliberately **standalone, not auto-wired** into every run's message/
+governance-decision stream — deciding which run-time events become recorded `EventNode`s is a real
+design question the task list doesn't scope, and P7.3's `AuditLog` docstring already flagged this
+as a *future* composition-root wiring, not this phase's job (§ known limitations).
+
+**Architecture changes.** `models/context_graph.py` (new, re-exported from `models/__init__.py`);
+`interfaces/repository.py` (`GraphRepository` gains two methods — no new import-linter contract
+needed, `interfaces` already depends on `models`); `persistence/repository.py` (`InMemoryGraphRepository`
+extended) and `persistence/context_graph.py` (new); `persistence/__init__.py`'s allowed-imports
+line now names `security`. Import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/models/{context_graph,__init__}.py`;
+`src/korchestrator/interfaces/repository.py`;
+`src/korchestrator/persistence/{repository,context_graph,__init__}.py`;
+`tests/unit/persistence/{test_repository,test_context_graph}.py` (node/client tests, new);
+`tests/unit/interfaces/test_protocols.py` (`_Repository` fake extended); `CHANGELOG.md`.
+
+**Breaking changes.** None. `GraphRepository` gains two protocol methods (additive — existing
+callers of `save_state`/`load_state` are unaffected; a hypothetical third-party implementation that
+only had the P1 methods would newly fail `isinstance` against the *widened* protocol, which is why
+this is called out explicitly here and in the CHANGELOG rather than treated as silent). New
+`korchestrator.models`/`korchestrator.persistence` names are additive; top-level `__all__`
+untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (96 source files);
+import-linter 4/4 kept; the isolation gate and env-confinement check both `OK`. New: node
+recording/round-trip/tenant-isolation/run_id-filter/time-travel-on-both-clocks at the repository
+level; `ContextGraphClient` decision/event recording, tenant scoping, time-travel, **redaction on
+the ingest path** (an email in `content` comes back masked), and that two recordings of identical
+content produce two distinct, coexisting nodes (event sourcing, not an overwrite). 3 doctests pass.
+Full gate results land in the P7 phase-close summary once the branch merges.
+
+**Known limitations / future improvements.** (1) Not wired into any run automatically — no code
+path yet turns a `Message`/`GovernanceDecision`/tool call into a recorded node; a future composition-
+root change would add this (P7.3's `AuditLog` docstring already anticipated forwarding entries
+here). (2) External backends (Neo4j/Postgres, per the background spec) remain post-1.0 —
+`PERSISTENCE_BACKEND=kcg` still raises the P7.5 `ConfigurationError`. (3) No pagination or size
+bound on `query_nodes` — fine for the in-memory/test scope; worth revisiting alongside a real
+backend. **Phase 7 is functionally complete**: governance trust scoring, policy + audit, durable
+HITL, and the bitemporal Context Graph are all usable from the SDK, and the default install still
+needs no external services.
+
+---
+
+## 2026-07-23 · [P7.5] Graph repository — in-memory GraphRepository, wired into the façade — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** `persistence/repository.py`: `InMemoryGraphRepository` — implements the P1
+`GraphRepository` protocol (`save_state`/`load_state`) structurally, tenant-scoped
+(`dict[tenant_id, dict[run_id, AgentState]]`), guarded by an `asyncio.Lock` for the protocol's
+concurrency requirement. `persistence/factory.py`: `resolve_repository(settings, repository=None)`
+— the one place `PERSISTENCE_BACKEND` becomes a concrete repository: an injected instance wins;
+`"none"` returns `None` (fully standalone); `"memory"` (the default) returns a fresh
+`InMemoryGraphRepository`; `"kcg"` raises an actionable `ConfigurationError` (external backends are
+post-1.0). Wired into the façade: `services/_composition.py` gains `_PersistenceMiddleware` (an
+`after_superstep` hook that checkpoints `AgentState` via the repository) and `build_observer` grows
+a `repository=`/`tenant_id=` pair that appends it when a repository resolves. `Korch.run`/
+`Swarm.run` now actually resolve and pass their `repository` — previously accepted but never
+consulted (a gap flagged since the P4.9 log entry).
+
+**Why.** P7.5 — "in-memory `GraphRepository` (default), `PERSISTENCE_BACKEND=none` runs fully
+standalone." The `GraphRepository` protocol has existed since P1 with nothing behind it; this is
+the default implementation plus the wiring that makes it real.
+
+**Design decisions.** (1) **Checkpointing rides the existing `SuperstepObserver`/`Middleware` seam**
+(P6.8) rather than a new extension point — `_PersistenceMiddleware.after_superstep` is exactly the
+shape `Middleware` already supports, so no core or runtime change was needed. (2) Hooks "never run
+in Temporal workflow scope" (spec 07 §9), so this checkpointing is **local-runtime-only in
+practice** — intentional: the local runtime has no built-in durability of its own ("a crash loses
+the run"), while Temporal's event history is already the durable checkpoint for that path.
+Documented on the middleware's own docstring rather than silently assumed. (3) `resolve_repository`
+follows the same factory pattern as `resolve_router`/`get_lm`: a pure function in the owning
+feature module (`persistence/`), called from the composition root — not a class the façade
+constructs inline. (4) `"kcg"` fails fast with a clear, actionable message pointing at `"memory"`/
+`"none"`, mirroring `MODELCARD_URL`'s deferred-with-guidance pattern from P5.2, rather than a bare
+`NotImplementedError`. (5) The checkpoint's `tenant_id` defaults to `"default"` in `run_graph`'s
+existing default — no new multi-tenancy wiring introduced; `Korch`/`Swarm` don't yet expose a
+`tenant_id` parameter (a pre-existing gap, not this phase's scope).
+
+**Architecture changes.** `persistence/` gains its first real implementation (was an empty stub);
+imports `interfaces`, `models`, `config`, `exceptions` — within its declared allowance, no
+`serializers` dependency needed (plain in-memory dict storage, no round-trip serialization required
+yet). `services/_composition.py` gains one `Middleware` subclass and a `repository`/`tenant_id`
+extension to `build_observer` — legal at the composition root, which already wires everything.
+Import-linter 4/4 kept (`persistence` stays independent of the other feature modules).
+
+**Files/modules affected.** `src/korchestrator/persistence/{repository,factory,__init__}.py`
+(repository/factory new, `__init__` re-exports); `src/korchestrator/services/_composition.py`
+(`_PersistenceMiddleware`, `build_observer`); `src/korchestrator/services/{korch,swarm}.py`
+(resolve + pass `repository`); `tests/unit/persistence/{test_repository,
+test_repository_factory}.py` (new); `tests/unit/services/test_run.py` (one new checkpointing test);
+`CHANGELOG.md`. (`test_factory.py` would have collided with the existing
+`tests/unit/providers/test_factory.py` module name under pytest's no-`__init__.py` layout — named
+`test_repository_factory.py` instead.)
+
+**Breaking changes.** None. `build_observer` gains two keyword-only parameters with defaults
+(`repository=None`, `tenant_id="default"`); behavioural change only when a non-`None` repository is
+actually resolved (previously silently ignored). New `korchestrator.persistence` surface; top-level
+`__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (94 source files);
+import-linter 4/4 kept; the isolation gate and env-confinement check both `OK`. Non-Temporal suite:
+**511 passed**, 94.48% coverage (≥80 floor). New: protocol conformance; save/load round-trip;
+overwrite-on-resave; tenant isolation; multiple runs coexisting within a tenant; `resolve_repository`
+for `none`/`memory`/`kcg`/an injected override/a fresh instance per call; an end-to-end `Swarm.run()`
+with an injected repository asserting the checkpointed state matches the run (checked against
+`halted=True` rather than `RunStatus.COMPLETED`, since the observer only ever sees the kernel's own
+`RUNNING` status — `COMPLETED` is stamped by `build_result()` after the loop, outside the observer's
+reach). 2 doctests pass.
+
+**Known limitations / future improvements.** (1) Checkpointing is best-effort and only fires on the
+local runtime in practice (§ design decisions) — Temporal hook dispatch remains deferred. (2) No
+`tenant_id` parameter on `Korch`/`Swarm` yet; every run checkpoints under `"default"`. (3) The
+bitemporal `ContextGraphClient` (decision/event nodes, confidence, provenance, event sourcing,
+time-travel queries) that layers on top of this `GraphRepository` is P7.6, next.
+
+---
+
+## 2026-07-23 · [P7.4] HITL controls — governance auto-pause, edit_resume, façade signals — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Wires governance's threshold decision into the runtime's actual pause mechanism, and
+exposes HITL on the façade. `runtime/temporal_runtime.py`: `PregelMaster` now checks, after every
+superstep, whether the resulting `trust_score` breaches any active node's effective HITL threshold
+(`_should_intervene`/`_effective_threshold`, pure) — if so it sets the same internal flag an
+operator's `pause` signal sets, so governance intervention and an operator pause share one
+mechanism (`governance_paused`, 24h deadline, `resume`/`edit_resume`/`cancel`). A new `edit_resume`
+signal carries an `EditResumePayload` (context `updates` + `trust_delta`, JSON-encoded) that the
+workflow applies — last-value context merge, the same clamped trust fold the barrier uses — then
+resumes. A new `status` query (`@workflow.query`) reports the run's current `RunStatus` without
+blocking, since `TemporalRuntime.wait()` blocks until the workflow's *terminal* return, not a
+mid-run pause. `TemporalRuntime` can now be constructed signal-only (`graph=None`) since delivering
+a control signal needs only a client and a `run_id`, not the graph; `start()` raises
+`ConfigurationError` on a signal-only instance. `resolve_runtime()` now threads
+`settings.governance_trust_threshold` into `TemporalRuntime` (the HITL fallback), and `start()`
+builds each node's `hitl_thresholds` from the graph's `AgentConfig`s (the graph, with its live
+callables, never crosses the workflow boundary, so this has to happen client-side). `services/
+_composition.py` gains `send_control_signal()` — delivers `pause`/`resume`/`cancel`/`edit_resume`
+via an injected runtime, or a fresh graph-less `TemporalRuntime`; raises the local runtime's
+existing `NotImplementedError` when `korch_runtime="local"`. `Korch`/`Swarm` gain
+`pause`/`resume`/`cancel`/`edit_resume(*, updates, trust_delta)` methods delegating to it.
+
+**Why.** P7.4 — "Intervention → runtime pause signal; `pause`/`resume`/`cancel`/`edit_resume` on the
+façade." This is the piece that makes P7.2's trust score and P7.3's policy threshold actually *do*
+something: a run now genuinely auto-pauses below threshold and resumes on signal (spec 06 §7, the
+stated Phase 7 acceptance criterion).
+
+**Design decisions.** (1) **The threshold check is pure arithmetic inside `runtime/`, not a
+`governance/` import** — `runtime` and `governance` are sibling feature modules (B2, no sideways
+imports; confirmed by `.importlinter`'s `features-are-independent` contract, which lists both).
+`_should_intervene` duplicates one line of `governance.evaluate_policy`'s comparison logic; the
+alternative (importing `governance` from `runtime`) would violate the architecture, so this mirrors
+P7.2's precedent of keeping kernel/runtime bookkeeping self-contained arithmetic. (2) **Any active
+agent's own threshold breach pauses the whole run** — `trust_score` is one run-wide value, not
+per-agent (P1's frozen `AgentState` shape), so "an agent's trust score is below hitl_threshold"
+(spec 06 §7) is read as the most conservative interpretation: the strictest active agent's bar
+governs. (3) `EditResumePayload` is **deliberately narrower than a full `StateUpdate`** — context
+updates and `trust_delta` only, no messages. Message routing needs the graph's edges, which never
+cross the Temporal workflow boundary (only serialisable data does); an operator editing context/
+trust needs neither the graph nor message semantics. (4) The **`status` query** is a new, small
+addition beyond the literal task list — without it, testing (and any real caller) has no reliable
+way to know a run has reached `governance_paused` before signalling `resume`/`edit_resume`, since
+`wait()` only returns on a truly terminal state. A non-blocking Temporal query is the idiomatic
+fix; it doesn't touch `IDurableRuntime`'s frozen protocol (it's Temporal-specific, used directly via
+the raw workflow handle). (5) **`TemporalRuntime(graph=None, ...)`** avoids requiring a full
+`AgentGraph` just to deliver a signal to an already-running workflow — `signal()` and `wait()` never
+touch `self._graph`; only `start()` does, and now raises a clear `ConfigurationError` without one.
+
+**Architecture changes.** `runtime/temporal_runtime.py` grows `EditResumePayload`,
+`_effective_threshold`, `_should_intervene`, `PregelMaster.status`/`.edit_resume`, and
+`TemporalRuntime`'s optional graph + `global_threshold`; no new imports beyond what P7.2/P7.3 already
+established (still `core`, `interfaces`, `models`, `config`, `exceptions`, `logging`, lazy
+`temporalio`). `runtime/__init__.py`'s `resolve_runtime` reads one more `Settings` field — legal,
+it already reads `korch_runtime` (the one place a config value becomes a concrete runtime). `services/
+_composition.py` gains `send_control_signal`; `Korch`/`Swarm` gain four methods each. Import-linter
+4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/runtime/temporal_runtime.py`,
+`src/korchestrator/runtime/__init__.py`, `src/korchestrator/services/{_composition,korch,swarm}.py`;
+`tests/integration/test_temporal_runtime.py` (new HITL/auto-pause/edit_resume/signal-only tests);
+`tests/unit/services/test_hitl.py` (new — façade + `send_control_signal` unit tests against a fake
+runtime, no `[temporal]` extra needed); `CHANGELOG.md`.
+
+**Breaking changes.** None. `TemporalRuntime.__init__`'s `graph` parameter widens from `AgentGraph`
+to `AgentGraph | None` (widening an accepted type — non-breaking per the compatibility table); it
+gains a keyword-only `global_threshold` with a default. `PregelMaster` gains a query and a signal
+(additive). `Korch`/`Swarm` gain four new methods each (additive). Top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (92 source files);
+import-linter 4/4 kept; isolation gate, env-confinement, and version-validate all `OK`. Non-Temporal
+suite: **498 passed**, 94.49% coverage (≥80 floor); `tests/unit/services/test_hitl.py` (13 tests)
+covers façade delegation, JSON payload encoding, the local-runtime `NotImplementedError` path, and
+the missing-extra/no-client paths — all without needing `[temporal]`.
+**`pytest -m temporal` did not run successfully in this environment** — `build_worker`'s sandboxed
+workflow validation fails with `RuntimeError: Failed validating workflow korch_pregel_master`
+(root cause: `ImportError: cannot import name 'claw_state' from partially initialized module
+'beartype.claw._clawstate'`). Confirmed via `git stash` that this reproduces identically against
+the unmodified, previously-merged P3 code — it is **not a regression from P7.4**, but a pre-existing
+conflict between Temporal's sandboxed workflow runner and `beartype` (pulled into this machine's
+user-level `site-packages` by unrelated globally-installed packages — `fastmcp-slim`/`mcp`/
+`py-key-value-aio` — not a `korchestrator` dependency). To verify the actual HITL logic despite
+this, I ran all four new scenarios (auto-pause→timeout, auto-pause→resume→completes,
+auto-pause→edit_resume→completes with correct context+trust merge, signal-only graph-less cancel)
+through a throwaway script using Temporal's `UnsandboxedWorkflowRunner` instead of `build_worker`
+— all four passed, confirming the logic is correct; the script was not committed (diagnostic only,
+never touches production `build_worker`, which keeps the sandboxed runner). The committed
+integration tests mirror those exact scenarios and should pass in a clean CI environment without
+this site-packages conflict. One additional test-only finding: `TemporalRuntime.wait()`'s
+freshly-refetched `client.get_workflow_handle_for(...)` pattern fails to retrieve a completion
+event specifically after a *long* time-skip (`WorkflowEnvironment.start_time_skipping()`'s 24h HITL
+timeout) — confirmed this is a test-server-only quirk (short waits and the *original* `start_workflow`
+handle both work fine); `test_low_trust_auto_pauses_and_times_out` therefore uses the raw handle,
+matching the existing `test_temporal_pause_without_resume_times_out` convention, with a comment
+explaining why.
+
+**Known limitations / future improvements.** (1) The `pytest -m temporal` gate is blocked in *this*
+dev environment by the pre-existing beartype/site-packages conflict above — a residual risk until
+either the environment is cleaned up (an isolated venv without the unrelated global packages) or CI
+confirms it clean. (2) `TemporalRuntime.wait()`'s fresh-handle-after-a-real-long-timeout limitation
+(found while testing this phase) is undocumented elsewhere and unfixed — it did not block P7.4
+(worked around in the one affected test) but is worth a follow-up if `wait()` is ever called from a
+separate process after a real multi-hour pause. (3) No production Temporal `Client.connect()`
+helper exists yet (`KORCH_ENGINE_*` env vars from spec 08 §1.3 are unwired) — a pre-existing gap,
+not introduced here; `send_control_signal`'s graph-less `TemporalRuntime` still needs an injected
+`client` to do anything real. (4) `edit_resume` is scoped to context/trust only, not full
+`StateUpdate` messages — documented as intentional (§ design decisions).
+
+---
+
+## 2026-07-23 · [P7.3] Policy engine + audit log — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Two additions to `governance/`, plus one new setting. `policy.py`: `GovernanceAction`
+(`ALLOW`/`INTERVENE`), `GovernanceDecision` (agent id, trust score, effective threshold, action,
+reason), and `evaluate_policy(check, *, agent_id, hitl_threshold, global_threshold)` — a pure
+function comparing a `GovernanceCheck`'s trust score against the agent's own `hitl_threshold` when
+set, else `global_threshold`; below-threshold is `INTERVENE`. `audit.py`: `AuditEntry` (a frozen
+telemetry+decision+`recorded_at` record) and `AuditLog` — an append-only, in-memory trail with
+`record()`, `entries`, and `for_run(run_id)`. `config/Settings` gains `governance_trust_threshold`
+(env `GOVERNANCE_TRUST_THRESHOLD`, default `0.5`, spec 08 §1.3) — the composition root's source for
+`evaluate_policy`'s `global_threshold`. `korchestrator.governance.__all__` grows to nine names.
+
+**Why.** P7.3 — "Policy engine, audit log, per-agent `hitl_threshold` with `GOVERNANCE_TRUST_THRESHOLD`
+fallback" (spec 12). This is the threshold/decision layer P7.2's `check_governance` was deliberately
+left without; P7.4 wires an `INTERVENE` verdict into the runtime's pause signal.
+
+**Design decisions.** (1) `evaluate_policy` stays **config-free and pure** — it takes an already-
+resolved `global_threshold: float` rather than importing `Settings` itself, so `governance/` needs no
+`config` coupling beyond what P7.2 already declared, and the function is trivially testable without
+constructing a `Settings`. The composition root (P7.4, when it wires governance into a run) is the
+one place that reads `Settings.governance_trust_threshold` and an agent's
+`AgentConfig.hitl_threshold` and passes them in — matching B7 (wiring only at the façade). (2) A
+per-agent `hitl_threshold` **always wins over the global fallback** when set, in both directions — it
+can be stricter (a lower bar for intervention) or more lenient than the global default; the fallback
+only applies when an agent declares none (`AgentConfig.hitl_threshold` is already `float | None`
+since P1). (3) `AuditLog` is **in-memory and non-durable by design** — the standalone default that
+works under `PERSISTENCE_BACKEND=none`; it never reads the wall clock (`recorded_at` is always
+supplied by the caller), so nothing about it depends on process time. It is deliberately not the
+bitemporal Context Graph (P7.6) — that is the durable, queryable trail a composition root
+additionally forwards entries to; `AuditLog` is governance's own lightweight, always-available
+record. (4) `GovernanceAction` follows the existing `str, Enum` convention (`RunStatus`,
+`MessageRole`) rather than a bare `Literal`, for parity with the rest of `models/state.py`.
+
+**Architecture changes.** `governance/policy.py` and `governance/audit.py` added (L5); imports stay
+within the module's declared allowance (`models`-adjacent via `governance.trust`, stdlib, pydantic —
+`audit.py` additionally imports `governance.policy`/`governance.telemetry`, both same-package).
+`config/settings.py` gains one field + one `_ENV_TO_FIELD` entry — no new leaf-utility imports.
+Import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/governance/{policy,audit,__init__}.py` (policy/audit
+new, `__init__` re-exports); `src/korchestrator/config/settings.py`
+(`governance_trust_threshold`); `tests/unit/governance/{test_policy,test_audit}.py` (new);
+`tests/unit/config/test_settings_governance.py` (new); `CHANGELOG.md`.
+
+**Breaking changes.** None. New `korchestrator.governance` names (`GovernanceAction`,
+`GovernanceDecision`, `evaluate_policy`, `AuditEntry`, `AuditLog`) are additive; `Settings` gains an
+optional, defaulted field; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (92 source files);
+import-linter 4/4 kept; the isolation gate and env-confinement check both `OK`. New: threshold
+allow/intervene at the boundary; a per-agent `hitl_threshold` overriding the global fallback in both
+the stricter and the more lenient direction; the decision carries the score and names the agent;
+`AuditLog` starts empty, appends in order, filters `for_run`, and its entries are frozen;
+`Settings.governance_trust_threshold` defaults to `0.5`, reads from `GOVERNANCE_TRUST_THRESHOLD`, an
+explicit argument wins over the environment, and out-of-bounds values are rejected. 9 doctests pass
+(2 new in `policy.py`, 1 new in `audit.py`, plus existing governance/config doctests).
+
+**Known limitations / future improvements.** No runtime wiring yet — nothing calls `evaluate_policy`
+or writes to an `AuditLog` during an actual run; that lands in P7.4 alongside the pause signal
+(`GovernanceHaltError` veto path noted as deferred since the P6.8 log entry). `AuditLog` has no size
+bound or eviction policy (fine for an in-memory, single-run/test scope; revisit if long-lived
+processes accumulate unbounded history before a persistent backend is wired in P7.6).
+
+---
+
+## 2026-07-23 · [P7.2] Trust scoring — kernel bookkeeping + governance's telemetry read — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Two pieces. (1) **Kernel** (`core/pregel.py`): the barrier now folds every active agent's
+`StateUpdate.trust_delta` into `AgentState.trust_score` each superstep via a new private
+`PregelRunner._fold_trust` — summed and clamped to `[0.0, 1.0]`, so the score genuinely persists and
+evolves across supersteps instead of sitting at its `1.0` default forever (`trust_delta` was a P1
+model field with no effect until now). (2) **`governance/`**: `ControlTowerTelemetry` (a frozen,
+per-superstep governance snapshot: `run_id`/`tenant_id`/`superstep`/`trust_score`/
+`active_agent_ids`/`valid_time`), `derive_telemetry(state)` (pure — reads the just-completed
+superstep's messages off `AgentState.messages` to find which agents contributed), and
+`check_governance(state)` (bundles the kernel's `trust_score` with its telemetry into a
+`GovernanceCheck`). `korchestrator.governance.__all__` grows from empty to these four names.
+
+**Why.** P7.2 — "`ControlTowerTelemetry`, per-superstep `check_governance`, 0.0-1.0 score persisting
+across supersteps" (spec 12). Governance needs a real, kernel-computed trust score to threshold
+against; P7.3 (policy engine, `hitl_threshold`/`GOVERNANCE_TRUST_THRESHOLD`) and P7.4 (the runtime
+pause signal) build directly on this.
+
+**Design decisions.** (1) **Trust bookkeeping lives in the kernel, not governance** — it is pure
+arithmetic over a field (`trust_delta`) the barrier already receives on every `StateUpdate`, and
+`governance/` may only depend on `interfaces`/`models` inward (architecture-boundaries.md); the
+kernel cannot import `governance` (B1/B2), so the scalar fold had to be core's own bookkeeping,
+exactly as `superstep`/`halted` already are. (2) The fold is **associative and order-independent**
+(summation is commutative) — the same discipline the channel reducers hold themselves to (spec 06
+§3), proved by a Hypothesis property test asserting the result is unaffected by node order and
+stays within bounds. (3) `check_governance`/`derive_telemetry` are **read-only observers** of the
+state the kernel already produced — they never mutate state and never recompute `trust_score`,
+keeping the single-source-of-truth in the barrier. (4) `derive_telemetry` reads `state.superstep - 1`
+(floored at 0) because `AgentState.superstep` has already advanced past the round the barrier just
+computed; `active_agent_ids` is derived from `message.superstep` on the accumulated `state.messages`
+— the only per-superstep breakdown `AgentState` retains, since raw `StateUpdate`s are discarded once
+applied. (5) Threshold comparison and the actual pause decision are deliberately **not** built here —
+`check_governance` only reports; P7.3 owns `hitl_threshold`/`GOVERNANCE_TRUST_THRESHOLD` and the
+policy engine, P7.4 owns wiring an intervention into the runtime's pause signal.
+
+**Architecture changes.** `governance/` populated (L5); imports `models`, stdlib, pydantic only —
+import-linter's `feature modules must not import each other` and `inward-only layering` contracts
+both still kept (4/4). `core/pregel.py` gained one private static method and one new field in its
+`_apply` update dict; no new imports, no boundary change.
+
+**Files/modules affected.** `src/korchestrator/core/pregel.py` (`_fold_trust`, `_apply`);
+`src/korchestrator/governance/{__init__,telemetry,trust}.py` (new);
+`tests/unit/core/test_pregel.py` (trust-delta plumbing in `_update`/`_echo`, six new tests incl. a
+Hypothesis property test); `tests/unit/governance/{test_telemetry,test_trust}.py` (new);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. `trust_score` was already a documented `AgentState` field defaulting to
+`1.0`; it now actually changes, which is the intended completion of a P1 contract, not a new one.
+New `korchestrator.governance` surface; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (90 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Full suite (non-Temporal): **464 passed**, 95.39% coverage (≥80 floor; `core/` 97%, `governance/`
+100%). New: trust score starts at 1.0 and persists with no delta; a single delta lowers it; deltas
+accumulate across two supersteps (a ping-pong graph, since superstep 0 activates every node so a
+single-round sender/receiver pair can't demonstrate cross-superstep accumulation on its own);
+clamping at both 0.0 and 1.0; a Hypothesis property test over 1-4 random deltas asserting the barrier
+folds them identically regardless of node order and stays within bounds; `ControlTowerTelemetry`
+bounds/frozen/default-empty-agents tests; `derive_telemetry` reads the just-completed superstep,
+dedupes/sorts agent ids, and returns `()` on a fresh state; `check_governance` reads the score
+unchanged and is pure/repeatable. 5 doctests pass (`pregel.py` + the 3 new governance callables).
+
+**Known limitations / future improvements.** (1) `active_agent_ids` only lists agents that emitted at
+least one message that superstep — an agent that wrote only a context channel is invisible to
+telemetry, since raw `StateUpdate`s aren't retained past the barrier; acceptable for now, called out
+in the model's docstring. (2) No threshold comparison or intervention decision yet — `check_governance`
+purely observes; P7.3 adds the policy engine and `hitl_threshold`/`GOVERNANCE_TRUST_THRESHOLD`
+fallback, P7.4 wires an intervention into the runtime's pause signal (the `GovernanceHaltError` veto
+path noted as deferred in the P6.8 log entry).
+
+---
+
+## 2026-07-22 · [P7.1] Shield — the consolidated PII/secret redactor — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Added `security/redactor.py` — the single consolidated `Shield`. `redact(text)` masks
+detected entities to `[MASKED_<TYPE>]`: `EMAIL`, `SECRET` (JWT, AWS access keys, `sk-`/`ghp_`/Slack
+tokens, `Bearer` tokens), `IBAN`, `SSN`, `PAN` (13-19 digit runs validated by the Luhn checksum), and
+`PHONE` (E.164 7-15 digit runs), returning a `RedactionResult` (masked text, changed flag, sorted
+types). `redact_value` walks JSON structures and matches the bridge's `Redactor` seam so `Shield`
+plugs straight in. A `high_sensitivity` mode masks any 12-19 digit run as a PAN even without a valid
+Luhn checksum (fails toward masking).
+
+**Why.** P7.1, built first per the spec ("governance audit and trace ingestion depend on redaction
+existing"). One redactor on the ingest path before anything reaches persistence, telemetry, logs, or
+an event subscriber (spec 08 §2.4).
+
+**Design decisions.** (1) **One redactor, period** — a second anywhere is a review rejection; it lives
+in `security/` (leaf utility). (2) Detectors run most-specific-first (email, secrets, IBAN, SSN, then
+Luhn-checked PAN, then digit-counted phone) so an SSN or card isn't misread as a phone. (3) PAN uses
+the real Luhn checksum and PHONE bounds the digit count to E.164's 7-15, so a non-card 16-digit run is
+left alone by default (and only masked under `high_sensitivity`). (4) The governance *fail-closed*
+(deny a high-sensitivity flow when the redactor is unavailable) is a `governance/` behaviour landing
+in P7.2-P7.4; `Shield` itself only masks.
+
+**Architecture changes.** `security/` populated (leaf); imports types/pydantic/stdlib only.
+import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/security/{__init__,redactor}.py` (new);
+`tests/unit/security/test_redactor.py` (new).
+
+**Breaking changes.** None. New `korchestrator.security` surface; top-level `__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean; 14 tests + 3 doctests pass;
+import-linter 4/4. Covered: every required format masked; a non-Luhn card-like run not masked (default)
+but masked under high-sensitivity; a 16-digit run is not a phone; clean text untouched; multiple
+entities in one string; recursive JSON redaction; non-strings unchanged.
+
+**Known limitations / future improvements.** Governance fail-closed denial (P7.2-P7.4). The redactor is
+not yet wired as the bridge's default `Redactor` — that composition wiring lands with governance.
+
+---
+
 ## 2026-07-22 · [P6.5/P6.7/P6.8] A2A messaging, event streaming, middleware/hooks — v0.1.0 · closes P6
 
 **Type:** feature · **Phase:** P6 (integration & observability) · **Author:** Claude (agent)

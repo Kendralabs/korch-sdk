@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from pydantic import ValidationError as PydanticValidationError
 
 from korchestrator.core import Append, ChannelSchema, PregelRunner
@@ -28,12 +31,14 @@ def _update(
     updates: dict[str, JSONValue] | None = None,
     messages: Sequence[Message] = (),
     halt: bool = False,
+    trust_delta: float = 0.0,
 ) -> StateUpdate:
     return StateUpdate(
         agent_id=agent_id,
         updates=updates or {},
         messages=tuple(messages),
         halt=halt,
+        trust_delta=trust_delta,
         valid_time=NOW,
     )
 
@@ -56,9 +61,12 @@ def _echo(
     updates: dict[str, JSONValue] | None = None,
     messages: Sequence[Message] = (),
     halt: bool = False,
+    trust_delta: float = 0.0,
 ) -> Callable[[AgentState], object]:
     async def compute(state: AgentState) -> StateUpdate:
-        return _update(agent_id, updates=updates, messages=messages, halt=halt)
+        return _update(
+            agent_id, updates=updates, messages=messages, halt=halt, trust_delta=trust_delta
+        )
 
     return compute
 
@@ -169,6 +177,90 @@ async def test_context_channels_merge_through_their_reducer(
     )
     result = await runner.run(_start())
     assert result.state.context["log"] == ["a-note", "b-note"]
+
+
+# --- trust scoring (spec 05 §3.1, P7.2) ----------------------------------------------------------
+
+
+async def test_trust_score_starts_at_one_and_persists_with_no_delta(
+    make_clock: Callable[..., object],
+) -> None:
+    result = await PregelRunner(_worker_lead_graph(), clock=make_clock()).run(_start())  # type: ignore[arg-type]
+    assert result.trust_score == 1.0
+
+
+async def test_trust_delta_lowers_the_trust_score(make_clock: Callable[..., object]) -> None:
+    graph = AgentGraph([_node("a", _echo("a", trust_delta=-0.3, halt=True))])
+    result = await PregelRunner(graph, clock=make_clock()).run(_start())  # type: ignore[arg-type]
+    assert result.trust_score == pytest.approx(0.7)
+
+
+async def test_trust_score_accumulates_across_supersteps(
+    make_clock: Callable[..., object],
+) -> None:
+    # Superstep 0 activates every node, so a lone sender/receiver pair both contribute in the same
+    # round; a ping-pong (each halts only once it has heard back) genuinely spans two supersteps.
+    async def ping(state: AgentState) -> StateUpdate:
+        return _update(
+            "a", messages=[_msg("ping", recipient="b")], trust_delta=-0.1, halt=state.superstep > 0
+        )
+
+    async def pong(state: AgentState) -> StateUpdate:
+        return _update(
+            "b", messages=[_msg("pong", recipient="a")], trust_delta=-0.1, halt=state.superstep > 0
+        )
+
+    graph = AgentGraph(
+        [
+            Node(AgentConfig(id="a", persona=AgentPersona(role="r")), ping),  # type: ignore[arg-type]
+            Node(AgentConfig(id="b", persona=AgentPersona(role="r")), pong),  # type: ignore[arg-type]
+        ],
+        [Edge("a", "b"), Edge("b", "a")],
+    )
+    result = await PregelRunner(graph, clock=make_clock()).run(_start())  # type: ignore[arg-type]
+    assert result.supersteps == 2
+    assert result.trust_score == pytest.approx(0.6)
+
+
+async def test_trust_score_is_clamped_at_zero(make_clock: Callable[..., object]) -> None:
+    graph = AgentGraph(
+        [
+            _node("a", _echo("a", trust_delta=-1.0, halt=True)),
+            _node("b", _echo("b", trust_delta=-1.0, halt=True)),
+        ]
+    )
+    result = await PregelRunner(graph, clock=make_clock()).run(_start())  # type: ignore[arg-type]
+    assert result.trust_score == 0.0
+
+
+async def test_trust_score_is_clamped_at_one(make_clock: Callable[..., object]) -> None:
+    graph = AgentGraph([_node("a", _echo("a", trust_delta=1.0, halt=True))])
+    result = await PregelRunner(graph, clock=make_clock()).run(_start())  # type: ignore[arg-type]
+    assert result.trust_score == 1.0
+
+
+_TRUST_DELTA = st.floats(min_value=-1.0, max_value=1.0, allow_nan=False, allow_infinity=False)
+
+
+@given(st.lists(_TRUST_DELTA, min_size=1, max_size=4))
+@settings(deadline=None, max_examples=25)
+def test_trust_score_aggregation_is_order_independent_and_clamped(deltas: list[float]) -> None:
+    """Reducer-law discipline (spec 06 §3) applied to the scalar trust score: the barrier's fold
+    over each superstep's ``trust_delta``\\ s must not depend on node order, only on the multiset
+    of deltas, and must stay within ``[0.0, 1.0]``."""
+
+    async def run_with_order(order: Sequence[float]) -> float:
+        nodes = [
+            _node(f"a{i}", _echo(f"a{i}", trust_delta=d, halt=True)) for i, d in enumerate(order)
+        ]
+        result = await PregelRunner(AgentGraph(nodes), clock=lambda: NOW).run(_start())
+        return result.trust_score
+
+    forward = asyncio.run(run_with_order(deltas))
+    backward = asyncio.run(run_with_order(list(reversed(deltas))))
+    expected = max(0.0, min(1.0, 1.0 + sum(deltas)))
+    assert forward == pytest.approx(expected)
+    assert backward == pytest.approx(forward)
 
 
 # --- message routing ----------------------------------------------------------------------------

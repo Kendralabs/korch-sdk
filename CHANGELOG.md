@@ -15,6 +15,48 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Bitemporal Context Graph client (Phase 7, **closes Phase 7**): `korchestrator.persistence` gains
+  `ContextGraphClient` — `record_decision()`/`record_event()` write immutable, tenant-scoped
+  `DecisionNode`/`EventNode`s (each carrying `valid_time`, `transaction_time`, `confidence`, and
+  `provenance`) through Shield redaction first; `query()` reads them back tenant-scoped, with
+  `as_of`/`valid_at` time-travel and an optional `run_id` filter. A correction is always a new node
+  with a later `transaction_time` — nodes are never mutated (event sourcing). `GraphRepository`
+  (the P1 protocol) gains `record_node()`/`query_nodes()` — the extension its own docstring
+  anticipated — and `InMemoryGraphRepository` implements both.
+- Graph repository (Phase 7): `korchestrator.persistence` gains `InMemoryGraphRepository` (the
+  `GraphRepository` protocol's default, zero-infrastructure implementation, tenant-scoped and
+  concurrency-safe) and `resolve_repository()` (the one place `PERSISTENCE_BACKEND` becomes a
+  concrete repository, or `None` for `PERSISTENCE_BACKEND=none`'s fully standalone run).
+  `Korch`/`Swarm` now actually consult their `repository` — a `_PersistenceMiddleware` checkpoints
+  `AgentState` after every superstep, giving the local runtime (which has no built-in durability) a
+  best-effort recovery point. `PERSISTENCE_BACKEND=kcg` (an external backend) raises an actionable
+  `ConfigurationError`; external backends are post-1.0.
+- HITL controls (Phase 7): the Temporal runtime's `PregelMaster` workflow now **auto-pauses itself**
+  when a superstep's `trust_score` breaches any active node's effective HITL threshold — the same
+  `governance_paused` mechanism an operator's own `pause` signal uses. A new `edit_resume` signal
+  applies an operator's context/trust edit (last-value merge + the same clamped fold the barrier
+  uses) and resumes; a `status` query lets a caller check for `governance_paused` without blocking.
+  `Korch`/`Swarm` gain `pause(run_id)`/`resume(run_id)`/`cancel(run_id)`/`edit_resume(run_id, ...)` —
+  thin façade methods that deliver a durable control signal, raising `NotImplementedError` on the
+  synchronous local runtime (durable HITL needs `KORCH_RUNTIME=temporal`). `TemporalRuntime` can now
+  be constructed signal-only (`graph=None`) to deliver a control signal without rebuilding the graph.
+- Policy engine + audit log (Phase 7): `korchestrator.governance` gains `evaluate_policy()` —
+  compares a superstep's trust score against an agent's own `hitl_threshold` (falling back to the
+  new `GOVERNANCE_TRUST_THRESHOLD` setting, default `0.5`) and returns a `GovernanceDecision`
+  (`GovernanceAction.ALLOW`/`INTERVENE`) — plus `AuditLog`/`AuditEntry`, an append-only in-memory
+  trail of decisions and the telemetry each was based on. Pure and config-free; the runtime pause
+  signal that acts on an `INTERVENE` verdict lands in the next Phase 7 commit.
+- Trust scoring (Phase 7): the kernel barrier now folds each active agent's
+  `StateUpdate.trust_delta` into `AgentState.trust_score` every superstep, clamped to `[0.0, 1.0]`
+  — pure and order-independent, so the score is deterministic and replay-safe. `korchestrator.
+  governance` gains `ControlTowerTelemetry` (a per-superstep governance snapshot),
+  `derive_telemetry()`, and `check_governance()` — the governance-facing read of the score plus its
+  telemetry. Threshold comparison, `hitl_threshold`/`GOVERNANCE_TRUST_THRESHOLD`, the policy engine,
+  and the audit log land in the next Phase 7 commit; the runtime pause signal after that.
+- Shield redactor (Phase 7): `korchestrator.security.Shield` — the single consolidated PII/secret
+  redactor. `redact(text)`/`redact_value(json)` mask emails, secrets (JWT, AWS/`sk-`/Slack tokens,
+  Bearer), IBANs, SSNs, Luhn-validated card numbers (PAN), and E.164 phone numbers to
+  `[MASKED_<TYPE>]`, returning what changed. A `high_sensitivity` mode fails toward masking.
 - Extension framework (Phase 6): agent-to-agent messaging (`korchestrator.a2a` — `directed_message`,
   `HandoffTransformer`); transport-agnostic event streaming (`korchestrator.events` — `Event`,
   `EventPublisher`, `Subscription`, `format_sse`; the SDK emits, it does not serve HTTP); and
