@@ -102,8 +102,16 @@ def _read_dotenv_file(path: str | Path) -> dict[str, str]:
     file = Path(path)
     if not file.is_file():
         return {}
+    try:
+        text = file.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ConfigurationError(
+            f"Could not read the .env file at {file}: {exc}. Check its permissions, or pass "
+            "dotenv_path=None to skip .env loading.",
+            code="KORCH_CONFIG_INVALID",
+        ) from exc
     values: dict[str, str] = {}
-    for line in file.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue

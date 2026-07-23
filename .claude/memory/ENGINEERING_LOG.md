@@ -10,6 +10,86 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P8.4] Exception audit — v0.1.0
+
+**Type:** fix · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** Audited every module boundary that touches a third-party library or does I/O
+(`httpx`, `dspy`, `temporalio`, `mcp`, file/JSON reads) for spec 08 §2.2's rule: no raw
+third-party exception may cross a module boundary. Found the codebase's existing wrapping (P2–P7)
+essentially complete — `gateway_openai.py`, the dspy reasoning bridge, `mcp/client.py`,
+`sandbox_local.py`, and `routing/model_cards.py` already wrap every failure mode into a
+`KorchError` subclass with `from exc`. Two real gaps found and fixed: (1)
+`TemporalRuntime.start`/`wait`/`signal` had **no wrapping at all** — a raw `temporalio` exception
+(`RPCError` on a lost connection, `WorkflowFailureError` when a run itself fails, or any other
+`TemporalError`) propagated straight through to `Korch`/`Swarm.pause`/`resume`/`cancel`/
+`edit_resume`, all the way to the public façade. Added `_reraise_temporal_error`, called from all
+three methods: `RPCError` → `NetworkError`, `WorkflowFailureError` → `RunFailedError`, any other
+`TemporalError` → `ProviderError`, each with an actionable message and `from exc`. (2)
+`config/settings.py`'s `_read_dotenv_file` didn't catch `OSError` on the read (a permission error
+or a file deleted between the `is_file()` check and the read) — now wraps into
+`ConfigurationError`.
+
+**Why.** P8.4 — "every internal exception wrapped; boundary tests asserting only `KorchError`
+subclasses escape." The Temporal gap was a real, user-facing inconsistency: the structurally
+equivalent HTTP gateway boundary (`gateway_openai.py`) is a model of complete wrapping, while the
+Temporal client boundary — reached from the same-tier public API (`Korch.pause`, etc.) — had none.
+
+**Design decisions.** (1) **One helper, three call sites** — `_reraise_temporal_error` centralises
+the `RPCError`/`WorkflowFailureError`/`TemporalError` → `KorchError` mapping once rather than
+duplicating a three-branch `except` in `start`/`wait`/`signal`; typed `-> NoReturn` so mypy narrows
+correctly at each call site (every path through the function raises). (2) **Distinguished by
+Temporal's own exception hierarchy**, not by call site: `temporalio.exceptions.TemporalError` is
+the common base for `RPCError` (`temporalio.service`) and `WorkflowFailureError`
+(`temporalio.client`), confirmed via the installed package's actual MRO before writing the
+mapping — so the same three-way split applies uniformly to all three methods, and a future new
+`TemporalError` subclass falls back safely to `ProviderError` rather than escaping unwrapped. (3)
+**New tests need no real Temporal server** — `tests/unit/runtime/test_temporal_error_wrapping.py`
+mocks `Client`/`WorkflowHandle` directly (no `WorkflowEnvironment`, no `build_worker`, no
+sandboxed workflow validation), so these tests run in the *standard* suite despite this machine's
+unrelated `[temporal]` sandbox/beartype environment issue (P7.4) — a deliberate choice to get real
+coverage of the new wrapping logic without depending on that blocked path. (4)
+`tests/unit/test_error_wrapping.py` (the file name spec 08 §2.2 names) holds only the
+**cross-cutting** checks (every `KorchError` subclass has a non-empty `default_code`, is
+catchable as the base, preserves `__cause__`) rather than re-testing what the per-adapter test
+files already cover — avoids duplicating the gateway/dspy/mcp/model-card assertions that already
+exist, with pointers to where each one lives.
+
+**Architecture changes.** `runtime/temporal_runtime.py` gains `_reraise_temporal_error` and three
+new top-level `temporalio` imports (`WorkflowFailureError`, `TemporalError`, `RPCError`) — legal,
+this module already owns the `temporalio` confinement and loads lazily. `NetworkError`/
+`ProviderError`/`RunFailedError` added to its existing `imports_passed_through()` block alongside
+`ConfigurationError`. `config/settings.py`'s `_read_dotenv_file` gains one `try`/`except`. No
+import-linter contract changes.
+
+**Files/modules affected.** `src/korchestrator/runtime/temporal_runtime.py`;
+`src/korchestrator/config/settings.py`; `tests/unit/runtime/test_temporal_error_wrapping.py`
+(new); `tests/unit/test_error_wrapping.py` (new); `CHANGELOG.md`.
+
+**Breaking changes.** None. `TemporalRuntime.start`/`wait`/`signal` previously could raise an
+unspecified raw `temporalio` exception (never a documented contract); they now raise a documented
+`KorchError` subclass instead — a behavioural fix, not a compatibility break (nothing depended on
+catching the raw type, since it was never part of any contract).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (98 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **605 passed**, 95.23% coverage (≥80 floor; `temporal_runtime.py` itself rose
+from 46% to 59% thanks to the new mock-based tests exercising real code paths without a live
+server). New: 6 mocked-client tests (2 per method) proving each of the three `TemporalError`
+branches wraps correctly with `__cause__` set and an actionable message naming the `run_id`; 32
+cross-cutting `KorchError`-tree tests (every subclass has a code, is catchable as the base, cause
+chain preserved). 4 doctests pass.
+
+**Known limitations / future improvements.** None outstanding from this audit — the two gaps
+found are both fixed. A future audit should re-run this exercise after P9 (the remote client adds
+a new `httpx` boundary) and whenever a new third-party dependency is confined to a module.
+
+---
+
 ## 2026-07-23 · [P8.3] Namespaced, disable-able logging — v0.1.0
 
 **Type:** feature · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)

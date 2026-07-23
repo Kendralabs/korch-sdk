@@ -18,11 +18,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta
+from typing import NoReturn
 
 from pydantic import BaseModel, ConfigDict, Field
 from temporalio import activity, workflow
-from temporalio.client import Client, WorkflowHandle
+from temporalio.client import Client, WorkflowFailureError, WorkflowHandle
 from temporalio.common import RetryPolicy
+from temporalio.exceptions import TemporalError
+from temporalio.service import RPCError
 from temporalio.worker import Worker
 
 with workflow.unsafe.imports_passed_through():
@@ -35,7 +38,12 @@ with workflow.unsafe.imports_passed_through():
         build_result,
         select_active,
     )
-    from korchestrator.exceptions import ConfigurationError
+    from korchestrator.exceptions import (
+        ConfigurationError,
+        NetworkError,
+        ProviderError,
+        RunFailedError,
+    )
     from korchestrator.models.result import RunResult
     from korchestrator.models.state import AgentState, RunStatus
     from korchestrator.types import JSONValue
@@ -76,6 +84,32 @@ _CONTINUE_AS_NEW_HISTORY_LENGTH = 10_000
 # A paused run consumes no compute while it awaits a control signal, bounded by this deadline
 # (spec 06 §7); on expiry it transitions to TIMED_OUT. Configurable via TEMPORAL_HITL_TIMEOUT in P8.
 _HITL_TIMEOUT = timedelta(hours=24)
+
+
+def _reraise_temporal_error(exc: TemporalError, *, action: str, run_id: str) -> NoReturn:
+    """Wrap a raw ``temporalio`` client failure into an actionable ``KorchError`` (spec 08 §2.2).
+
+    No raw ``temporalio`` exception may cross this module's boundary. ``WorkflowFailureError``
+    (the run itself failed) becomes ``RunFailedError``; ``RPCError`` (lost/refused connection)
+    becomes ``NetworkError``; anything else deriving from ``TemporalError`` becomes a generic
+    ``ProviderError``.
+    """
+    if isinstance(exc, WorkflowFailureError):
+        raise RunFailedError(
+            f"Run {run_id!r} failed while {action}: {exc}. Inspect the workflow's event history "
+            "for the underlying activity/workflow error.",
+            code="KORCH_RUN_FAILED",
+        ) from exc
+    if isinstance(exc, RPCError):
+        raise NetworkError(
+            f"Lost connection to the Temporal server while {action} run {run_id!r}: {exc}. "
+            "Check TEMPORAL_ADDRESS and that the server is reachable.",
+            code="KORCH_NETWORK_UNAVAILABLE",
+        ) from exc
+    raise ProviderError(
+        f"Temporal reported an error while {action} run {run_id!r}: {exc}.",
+        code="KORCH_PROVIDER_FAILED",
+    ) from exc
 
 
 class PregelRequest(BaseModel):
@@ -382,6 +416,9 @@ class TemporalRuntime:
         Raises:
             ConfigurationError: If this instance was constructed without a graph (``graph=None``)
                 — a signal-only instance for delivering control signals to an existing run.
+            NetworkError: If the Temporal server is unreachable.
+            ProviderError: If Temporal rejects the request for any other reason (e.g. a
+                duplicate ``run_id``).
         """
         if self._graph is None:
             raise ConfigurationError(
@@ -396,27 +433,39 @@ class TemporalRuntime:
             for node in self._graph.nodes
             if node.config.hitl_threshold is not None
         }
-        await client.start_workflow(
-            PregelMaster.run,
-            PregelRequest(
-                state=state,
-                node_ids=self._graph.node_ids,
-                max_supersteps=max_supersteps,
-                hitl_thresholds=hitl_thresholds,
-                global_threshold=self._global_threshold,
-            ),
-            id=state.run_id,
-            task_queue=self._task_queue,
-        )
+        try:
+            await client.start_workflow(
+                PregelMaster.run,
+                PregelRequest(
+                    state=state,
+                    node_ids=self._graph.node_ids,
+                    max_supersteps=max_supersteps,
+                    hitl_thresholds=hitl_thresholds,
+                    global_threshold=self._global_threshold,
+                ),
+                id=state.run_id,
+                task_queue=self._task_queue,
+            )
+        except TemporalError as exc:
+            _reraise_temporal_error(exc, action="starting", run_id=state.run_id)
         return state.run_id
 
     async def wait(self, run_id: str, *, timeout_seconds: float | None = None) -> RunResult:
-        """Block until the workflow ``run_id`` completes and return its :class:`RunResult`."""
+        """Block until the workflow ``run_id`` completes and return its :class:`RunResult`.
+
+        Raises:
+            NetworkError: If the Temporal server is unreachable.
+            RunFailedError: If the run itself failed.
+            ProviderError: If Temporal reports any other error while waiting.
+        """
         client = self._require_client()
         handle: WorkflowHandle[PregelMaster, RunResult] = client.get_workflow_handle_for(
             PregelMaster.run, run_id
         )
-        return await handle.result()
+        try:
+            return await handle.result()
+        except TemporalError as exc:
+            _reraise_temporal_error(exc, action="waiting for", run_id=run_id)
 
     async def signal(self, run_id: str, name: str, payload: Mapping[str, str]) -> None:
         """Deliver a durable control signal (``cancel``/``pause``/``resume``/``edit_resume``).
@@ -424,10 +473,18 @@ class TemporalRuntime:
         ``edit_resume``'s payload carries the JSON-encoded :class:`EditResumePayload` under the
         ``"state_update"`` key; the composition root (``services.pause``/``resume``/``cancel``/
         ``edit_resume``) is the one place that builds it, so callers never see the wire format.
+
+        Raises:
+            NetworkError: If the Temporal server is unreachable.
+            ProviderError: If Temporal reports any other error delivering the signal (e.g. no
+                such ``run_id``).
         """
         client = self._require_client()
         handle = client.get_workflow_handle(run_id)
-        if name == "edit_resume":
-            await handle.signal(PregelMaster.edit_resume, payload.get("state_update", "{}"))
-            return
-        await handle.signal(name)
+        try:
+            if name == "edit_resume":
+                await handle.signal(PregelMaster.edit_resume, payload.get("state_update", "{}"))
+                return
+            await handle.signal(name)
+        except TemporalError as exc:
+            _reraise_temporal_error(exc, action="signalling", run_id=run_id)
