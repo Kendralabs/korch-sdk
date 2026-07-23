@@ -45,7 +45,13 @@ KORCH_RUN_TIMEOUT = "KORCH_RUN_TIMEOUT"
 # (.claude/rules/architecture-boundaries.md) that MissingExtraError implements.
 KORCH_MISSING_EXTRA = "KORCH_MISSING_EXTRA"
 
+# --- remote client ----------------------------------------------------------------------------
+# Not in the spec 08 §2.1 tree either; required by the remote contract (spec 04 §7.5), which
+# names ApiError explicitly as the one error type for a failed KorchestratorClient call.
+KORCH_API_ERROR = "KORCH_API_ERROR"
+
 __all__ = [
+    "KORCH_API_ERROR",
     "KORCH_AUTH_FAILED",
     "KORCH_AUTH_FORBIDDEN",
     "KORCH_CONFIG_INVALID",

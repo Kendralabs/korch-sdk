@@ -12,17 +12,18 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P8 — Cross-cutting foundations — **complete** (P8.1–P8.7 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
-| **Last completed milestone** | **P8.7 — optional OpenTelemetry telemetry (closes Phase 8).** New `korchestrator.telemetry` module: `start_span`/`record_metric`, zero-overhead no-op singleton when `KORCH_TELEMETRY_ENABLED` is off (the default), lazy `[otel]` import with `MissingExtraError` otherwise. Wired the outer `agent.run` span and `korch.run.duration`/`korch.run.status` metrics into `services/_composition.py::run_graph`. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: push `feat/p8-cross-cutting-foundations`, merge `--no-ff` into `develop`, then start Phase 9 (Remote client). |
-| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.7 committed locally, not yet pushed. |
+| **Active phase** | P9 — Remote client — **in progress** (P9.1 done) on branch `feat/p9-remote-client` (off `develop`, not yet pushed). Phase 8 is complete and merged. |
+| **Last completed milestone** | **P9.1 — remote client transport + auth.** New `korchestrator.remote`/`korchestrator.clients.KorchestratorClient` — authenticated (`Authorization: Bearer`), retrying (3 attempts, full-jitter backoff on 429/502/503/504 + connection failures) HTTP transport behind `[remote]`. New `ApiError` KorchError subclass. Transport only — no endpoint methods yet. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: P9.2 (credential safety), then P9.3–P9.8. |
+| **Pushed / merged** | `develop` (P0–P8) is pushed to `origin`. `feat/p9-remote-client` has P9.1 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (101 source files), `pytest` (dspy + non-dspy paths; **660 passed**,
-95.45% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+ruff-format, `mypy --strict` (103 source files), `pytest` (dspy + non-dspy paths; **681 passed**,
+95.55% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
 confinement), the isolation gate, env-confinement, and version single-sourcing. `import
 korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry` stay `dspy`/`[routing]`/
-`[otel]`-free; the base install stays `pydantic`-only.
+`[otel]`-free; the base install stays `pydantic`-only, and `korchestrator.clients`/`korchestrator.
+remote` are never imported by `korchestrator/__init__.py` (statically checked, `test_remote.py`).
 
 ## 2. Phase progress
 
@@ -36,8 +37,8 @@ korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry` stay `ds
 | P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
-| P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; not yet pushed/merged to `develop`) |
-| P9 | Remote client (Python only — TS deferred) | Not started |
+| P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
+| P9 | Remote client (Python only — TS deferred) | **In progress** (P9.1 done; P9.2–P9.8 next) |
 | P10 | Testing, benchmarks & quality gates | Not started |
 | P11 | Documentation, examples & DX | Not started |
 | P12 | CI/CD, packaging & publishing | Not started |
@@ -73,7 +74,7 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `serializers/` | Leaf utility | **tested** (`to_json`/`from_json` — `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult`, version-tagged, migration mechanism; `AgentGraph` excluded, ADR 0017) | P8.5 |
 | `validators/` | Leaf utility | **tested** (`validate_objective`/`validate_max_supersteps`/`validate_unique_agent_id`, wired into `Korch`/`Swarm`) | P8.6 |
 | `telemetry/` | Leaf utility | **tested** (`start_span`/`record_metric`, zero-overhead no-op off, lazy `[otel]`; `agent.run` span + `korch.run.duration`/`korch.run.status` wired into `_composition.run_graph`; rest of the span tree/metrics not yet wired — see known gaps) | P8.7 |
-| `clients/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P9 |
+| `clients/` | Client | **implemented** (`KorchestratorClient` transport: Bearer auth, retry/backoff, `ApiError`; re-exported as `korchestrator.remote`; no endpoint methods yet — P9.3–P9.6) | P9.1 |
 
 ## 4. Public surface
 

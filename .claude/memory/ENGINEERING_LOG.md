@@ -10,6 +10,103 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P9.1] Remote client transport + auth — v0.1.0
+
+**Type:** feature · **Phase:** P9 (remote client, first task) · **Author:** Claude (agent)
+
+**What.** `clients/client.py` (new): `KorchestratorClient` — the Tier 4 remote client's
+authenticated, retrying HTTP transport (spec 04 §7, `[remote]` extra). Constructor takes
+`base_url`, an optional `api_key` (rides one `Authorization: Bearer` header, per ADR 0005), a
+30s default `timeout`, and `max_retries=3`. Internal `_request(method, path, ...)` retries
+429/502/503/504 and connection failures with full-jitter exponential backoff, raising `ApiError`
+(new `KorchError` subclass, `status`/`code`/`trace_id`) for a terminal non-2xx response, `
+NetworkError`/`TimeoutError` for a connection/timeout failure that outlasts retries — and never
+retries any other 4xx. `aclose()`/`close()` and `async with` support. `korchestrator/remote.py`
+(new, top-level, sibling of `clients/`) re-exports `KorchestratorClient` — never imported by
+`korchestrator/__init__.py`, so the base install stays `httpx`-free (spec 04 §7 intro). This
+task builds the transport only; the actual endpoint methods (`run`, `get_run`, `resume`, `stream`,
+etc.) land in P9.3–P9.6.
+
+**Why.** P9.1 — "clients/ — httpx async+sync base, Authorization: Bearer, timeout 30s, retries 3
+with jittered backoff, retry 429/502/503/504 only," the first task of Phase 9 (spec 11 Phase 9,
+spec 12 P9.1).
+
+**Design decisions.** (1) **`httpx` is imported at module top level in `clients/client.py`**, not
+function-lazily — unlike `providers/gateway_openai.py`, which must defer the import because
+`providers/` sits on the base-install path. `clients/`/`remote.py` are never imported by
+`korchestrator/__init__.py` at all (confirmed by a new static-AST test,
+`tests/unit/test_remote.py::test_the_base_package_source_never_imports_clients_or_remote`), so
+the confinement here is by-never-being-imported, the same pattern `runtime/temporal_runtime.py`
+already uses for `temporalio` — not a second style, a second instance of the one already-accepted
+pattern. (2) **One async core, sync convenience wrapper — mirrors `Korch.run()`'s own
+`asyncio.run(_flow())` pattern exactly**, since spec 04 §7's own Tier-4 example calls
+`client.run_and_wait(...)` with no `await`. `_request` is `async def`; `close()` wraps `aclose()`
+in `asyncio.run()`. Streaming (P9.5) is documented to be a native async iterator, so this class
+will end up with both sync-convenience and genuinely-async public methods — intentional, not an
+inconsistency, since SSE benefits from real incremental awaiting. (3) **`ApiError` is one new
+`KorchError` subclass, not five** — spec 04 §7.5 names exactly one error type carrying
+`status`/`message`/`code`/`trace_id` for the whole remote contract, so a 401/402/403/404/429/5xx
+API-level failure (a response WAS received) all become `ApiError`, while a connection failure (no
+response at all) becomes `NetworkError`/`TimeoutError` — reusing the existing tree exactly where
+the semantics already fit, matching how `gateway_openai.py` already wraps `httpx` transport
+failures. `ApiError` lives in the one canonical `exceptions/errors.py` (not a second, `clients/`
+-local error base) — no other module in this codebase has ever defined its own `KorchError`
+subclass outside that file, and this doesn't start now. `status` defaults to `500` (not
+required-only) purely so `ApiError` stays constructible like every sibling for the existing
+generic cross-cutting test (`test_error_wrapping.py`'s `_korch_error_subclasses()` parametrization
+calls `error_cls("boundary test")` uniformly); real call sites always pass the actual status. (4)
+**The error-body schema is undocumented in spec 04 §7.5**, so `_api_error()` parses defensively:
+a JSON object with `message`/`code`/`trace_id` is preferred, anything else falls back to the raw
+response text as the message with no `code`/`trace_id` — never raises while building the error
+itself. (5) **Retry backoff uses `random.uniform(0, base * 2**attempt)`** (the well-known
+"full jitter" algorithm) rather than inventing a bespoke formula, and is tested by patching
+`korchestrator.clients.client.asyncio.sleep` (no real sleeping — T2), asserting both the retry
+count and that a non-retryable 4xx never calls sleep at all.
+
+**Architecture changes.** `clients/client.py` (new) and `clients/__init__.py` (re-exports
+`KorchestratorClient`); `remote.py` (new, top-level). `exceptions/errors.py` gains `ApiError`;
+`constants/error_codes.py` gains `KORCH_API_ERROR`. Neither `clients/` nor `remote.py` is added
+to the `layers` import-linter contract (they sit outside the services→agents→core→interfaces→
+models inward chain, same as `providers/`/`runtime/`); the existing `httpx-confined-to-http-owners`
+contract already names `clients/` as an approved owner, so no `.importlinter` edit was needed.
+
+**Files/modules affected.** `src/korchestrator/clients/{client,__init__}.py`;
+`src/korchestrator/remote.py` (new); `src/korchestrator/exceptions/{errors,__init__}.py`;
+`src/korchestrator/constants/error_codes.py`; `tests/unit/clients/test_client.py` (new, 15 tests);
+`tests/unit/test_remote.py` (new); `tests/unit/exceptions/test_errors.py` and
+`tests/unit/constants/test_error_codes.py` (golden-list additions for `ApiError`/
+`KORCH_API_ERROR`); `CHANGELOG.md`.
+
+**Breaking changes.** None — `ApiError`/`KORCH_API_ERROR` and the whole `clients`/`remote`
+surface are additive; nothing existing changed shape. `korchestrator.remote.KorchestratorClient`
+is a genuinely new public surface (spec 04 §7), but it's incomplete this task (transport only) —
+`tests/unit/public_surface.json` is untouched, since `korchestrator.remote` is a separate,
+optional import path from `korchestrator.__all__` (mirroring how `korchestrator.config`,
+`korchestrator.logging`, etc. already work) and the P8-established pattern only updates that
+golden file for `korchestrator/__init__.py`'s own top-level `__all__`.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (103 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **681 passed**, 95.55% coverage (≥80 floor; `clients/client.py` 99%,
+`remote.py` 100%). New: Bearer-header presence/absence, default timeout, a successful request, a
+non-retryable 4xx raising `ApiError` immediately (asserted via `respx` call count) with both a
+JSON and a non-JSON error body, each of the four retryable statuses retried exactly `max_retries`
+times then raising, a mid-retry recovery returning the eventual 200, a connection error and a
+timeout each retried then wrapped, `async with` closing the connection pool, and the
+never-imported-by-the-base-package static check. All 4 new/updated doctests pass offline.
+
+**Known limitations / future improvements.** `KorchestratorClient` currently has no public
+endpoint methods (`run`, `get_run`, `resume`, `stream`, etc.) — only the private `_request`
+transport; those land in P9.3 (run lifecycle), P9.4 (control + identity), P9.5 (streaming), and
+P9.6 (discovery). Credential redaction from logs/exceptions/telemetry (P9.2) has not been audited
+yet — `_api_error()`'s message currently includes the response body's `message` field verbatim,
+which is server-controlled and assumed not to echo the caller's own credentials, but this should
+be revisited explicitly in P9.2 rather than assumed.
+
 ## 2026-07-23 · [P8.7] Optional OpenTelemetry telemetry — v0.1.0 (closes Phase 8)
 
 **Type:** feature · **Phase:** P8 (cross-cutting foundations, final task) · **Author:** Claude (agent)

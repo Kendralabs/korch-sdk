@@ -5,6 +5,7 @@ error the SDK raises deliberately is a KorchError subclass so consumers can catc
 """
 
 from korchestrator.exceptions.errors import (
+    ApiError,
     AuthError,
     ConfigurationError,
     GovernanceHaltError,
@@ -23,6 +24,7 @@ from korchestrator.exceptions.errors import (
 )
 
 __all__ = [
+    "ApiError",
     "AuthError",
     "ConfigurationError",
     "GovernanceHaltError",
