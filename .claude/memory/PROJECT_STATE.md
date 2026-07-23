@@ -12,18 +12,19 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P9 — Remote client — **in progress** (P9.1–P9.2 done) on branch `feat/p9-remote-client` (off `develop`, not yet pushed). Phase 8 is complete and merged. |
-| **Last completed milestone** | **P9.2 — remote client credential safety.** `KorchestratorClient.__repr__` shows `base_url` only; test-locked that `repr`/`str` and every error path (`ApiError`/`NetworkError`/`TimeoutError`) never leak the API key, including a pathological echoed-header response; a static AST check asserts `clients/` performs no file I/O. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: P9.3 (run lifecycle), then P9.4–P9.8. |
-| **Pushed / merged** | `develop` (P0–P8) is pushed to `origin`. `feat/p9-remote-client` has P9.1–P9.2 committed locally, not yet pushed. |
+| **Active phase** | P9 — Remote client — **in progress** (P9.1–P9.3 done) on branch `feat/p9-remote-client` (off `develop`, not yet pushed). Phase 8 is complete and merged. |
+| **Last completed milestone** | **P9.3 — remote client run lifecycle.** `KorchestratorClient` gains `run`/`run_swarm`/`get_run`/`wait`/`run_and_wait`/`list_runs`/`get_run_summary` (all sync, wrapping async cores). New `models.remote.RemoteRunResult`/`RunSummary`. Numeric→string status normalization for all 7 `RunStatus` values. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: P9.4 (control + identity), then P9.5–P9.8. |
+| **Pushed / merged** | `develop` (P0–P8) is pushed to `origin`. `feat/p9-remote-client` has P9.1–P9.3 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (103 source files), `pytest` (dspy + non-dspy paths; **688 passed**,
-95.55% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
-confinement), the isolation gate, env-confinement, and version single-sourcing. `import
-korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry` stay `dspy`/`[routing]`/
-`[otel]`-free; the base install stays `pydantic`-only, and `korchestrator.clients`/`korchestrator.
-remote` are never imported by `korchestrator/__init__.py` (statically checked, `test_remote.py`).
+ruff-format, `mypy --strict` (104 source files), `pytest` (dspy + non-dspy paths; **716 passed**,
+95.75% cov, 16 Temporal excluded; `clients/client.py` itself 100%), import-linter (**4 contracts
+kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
+single-sourcing. `import korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry`
+stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, and
+`korchestrator.clients`/`korchestrator.remote` are never imported by
+`korchestrator/__init__.py` (statically checked, `test_remote.py`).
 
 ## 2. Phase progress
 
@@ -38,7 +39,7 @@ remote` are never imported by `korchestrator/__init__.py` (statically checked, `
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
 | P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
-| P9 | Remote client (Python only — TS deferred) | **In progress** (P9.1–P9.2 done; P9.3–P9.8 next) |
+| P9 | Remote client (Python only — TS deferred) | **In progress** (P9.1–P9.3 done; P9.4–P9.8 next) |
 | P10 | Testing, benchmarks & quality gates | Not started |
 | P11 | Documentation, examples & DX | Not started |
 | P12 | CI/CD, packaging & publishing | Not started |
@@ -74,7 +75,7 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `serializers/` | Leaf utility | **tested** (`to_json`/`from_json` — `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult`, version-tagged, migration mechanism; `AgentGraph` excluded, ADR 0017) | P8.5 |
 | `validators/` | Leaf utility | **tested** (`validate_objective`/`validate_max_supersteps`/`validate_unique_agent_id`, wired into `Korch`/`Swarm`) | P8.6 |
 | `telemetry/` | Leaf utility | **tested** (`start_span`/`record_metric`, zero-overhead no-op off, lazy `[otel]`; `agent.run` span + `korch.run.duration`/`korch.run.status` wired into `_composition.run_graph`; rest of the span tree/metrics not yet wired — see known gaps) | P8.7 |
-| `clients/` | Client | **implemented** (`KorchestratorClient` transport: Bearer auth, retry/backoff, `ApiError`, credential-safe `repr`; re-exported as `korchestrator.remote`; no endpoint methods yet — P9.3–P9.6) | P9.1–P9.2 |
+| `clients/` | Client | **implemented** (`KorchestratorClient`: Bearer auth transport, retry/backoff, `ApiError`, credential-safe `repr`, run lifecycle — `run`/`run_swarm`/`get_run`/`wait`/`run_and_wait`/`list_runs`/`get_run_summary`; re-exported as `korchestrator.remote`; control/streaming/discovery land in P9.4–P9.6) | P9.1–P9.3 |
 
 ## 4. Public surface
 
