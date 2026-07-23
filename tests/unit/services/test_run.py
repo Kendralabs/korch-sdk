@@ -191,3 +191,58 @@ def test_hooks_fire_around_supersteps_and_a_raising_hook_is_isolated() -> None:
     assert result.status is RunStatus.COMPLETED  # the raising middleware was isolated
     assert result.final_answer == "6 words"
     assert "superstep" in events_seen  # the event hook still fired
+
+
+# --- telemetry (P8.7) ----------------------------------------------------------------------------
+
+
+def test_run_emits_an_agent_run_span_and_run_metrics_when_telemetry_is_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Telemetry is settings-driven (spec 08 §4), not the global configure()/get_settings()
+    # singleton, so an injected Settings must be enough on its own to turn it on.
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from korchestrator.config import Settings
+    from korchestrator.telemetry.tracer import _INSTRUMENTS
+
+    _INSTRUMENTS.clear()
+    span_exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    metric_reader = InMemoryMetricReader()
+    meter_provider = MeterProvider(metric_readers=[metric_reader])
+    monkeypatch.setattr(
+        "opentelemetry.trace.get_tracer", lambda name: tracer_provider.get_tracer(name)
+    )
+    monkeypatch.setattr(
+        "opentelemetry.metrics.get_meter", lambda name: meter_provider.get_meter(name)
+    )
+
+    swarm = Swarm(
+        objective="Count the words in this objective",
+        settings=Settings(korch_telemetry_enabled=True),
+    ).add(WordCountAgent(id="counter", role="counter"))
+    result = swarm.run()
+
+    _INSTRUMENTS.clear()
+    assert result.status is RunStatus.COMPLETED
+    (span,) = span_exporter.get_finished_spans()
+    assert span.name == "agent.run"
+    assert span.attributes is not None
+    assert span.attributes["run_id"] == result.run_id
+    assert span.attributes["status"] == "completed"
+
+    metrics_data = metric_reader.get_metrics_data()
+    assert metrics_data is not None
+    metric_names = {
+        metric.name
+        for resource_metrics in metrics_data.resource_metrics
+        for scope_metrics in resource_metrics.scope_metrics
+        for metric in scope_metrics.metrics
+    }
+    assert {"korch.run.duration", "korch.run.status"} <= metric_names

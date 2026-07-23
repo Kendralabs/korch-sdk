@@ -15,6 +15,23 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Optional OpenTelemetry telemetry (Phase 8, **closes Phase 8**): `korchestrator.telemetry` gains
+  `start_span(name, *, settings=None, **attributes)` and `record_metric(name, value, *, settings=
+  None, **attributes)`, behind `KORCH_TELEMETRY_ENABLED` (default off) and the `[otel]` extra.
+  Disabled — the default — `start_span` returns the same module-level no-op singleton on every
+  call (no context manager allocation, no OTel import); `record_metric` returns immediately. Both
+  take an explicit `settings` so a run's actual, injected `Settings` decides — not the disconnected
+  `configure()`/`get_settings()` process singleton. Enabled without the `[otel]` extra installed,
+  both raise an actionable `MissingExtraError`. `services._composition.run_graph` wires the outer
+  `agent.run` span (`run_id`, `tenant_id`, `max_supersteps`, `status`, `supersteps` attributes) and
+  the `korch.run.duration`/`korch.run.status` metrics; the rest of the documented span tree
+  (`agent.superstep`/`agent.plan`/`tool.call`/`gen_ai.call`) and the remaining four metrics
+  (`korch.superstep.duration`, `korch.agents.active`, `korch.tool.calls`, `korch.model.tokens`) are
+  defined (correct OTel instrument kind — histogram, up/down counter, or counter — per name) but not
+  yet wired into the kernel/tool/gateway call sites; a `benchmarks/` regression proving the
+  telemetry-off path is within noise of an `[otel]`-uninstalled build is P10's job. Neither
+  `start_span` nor `record_metric` joins top-level `korchestrator.__all__` (submodule-only, like
+  `ConfigurationError` — not part of the documented public surface).
 - Deterministic, version-tagged serialization (Phase 8): new top-level `korchestrator.to_json(model)`/
   `from_json(payload, model_cls)` round-trip `AgentState`, `ExecutionPlan`, `ModelCard`, and
   `RunResult` byte-for-byte — sorted keys at every nesting level, fixed separators, UTF-8,
