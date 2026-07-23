@@ -107,21 +107,32 @@ points.
   in a documented order, and a failing hook can never crash a run. Wired into the local runtime via
   a `SuperstepObserver` seam (off by default, so determinism is untouched).
 
-## P7 — Governance, security & context graph 🔨 (in progress)
+## P7 — Governance, security & context graph ✅
 
-Zero-trust guardrails and long-term memory. **1 of 6 tasks done so far.**
+Zero-trust guardrails and long-term memory.
 
 - ✅ **P7.1 — Shield (PII/secret redactor)**: one consolidated `Shield` that masks sensitive data to
   `[MASKED_<TYPE>]` — emails, secrets (JWTs, AWS/`sk-`/Slack/Bearer tokens), IBANs, SSNs, real card
   numbers (checked with the Luhn formula), and phone numbers. Walks JSON too. A "high sensitivity"
   mode masks anything that looks risky. This was built first because the rest of governance depends
   on it.
-- ⬜ P7.2 — Trust scoring (a 0–1 score updated each superstep).
-- ⬜ P7.3 — Policy engine + audit log + per-agent trust thresholds.
-- ⬜ P7.4 — Human-in-the-loop controls (`pause` / `resume` / `cancel` / `edit_resume`).
-- ⬜ P7.5 — In-memory graph repository (the default store; also runs fully standalone with none).
-- ⬜ P7.6 — Bitemporal Context Graph client (decisions/events with valid-time + transaction-time,
-  provenance, time-travel queries, tenant scoping).
+- ✅ **P7.2 — Trust scoring**: the kernel's barrier folds each agent's `trust_delta` into
+  `AgentState.trust_score` every superstep, clamped to `[0, 1]`. `governance.check_governance` is
+  the read-only, governance-facing view of the score plus its per-superstep telemetry.
+- ✅ **P7.3 — Policy engine + audit log**: `evaluate_policy(...)` compares the trust score against an
+  agent's own `hitl_threshold`, falling back to `GOVERNANCE_TRUST_THRESHOLD` (default `0.5`), and
+  decides allow/intervene. `AuditLog` keeps an append-only record of decisions and their telemetry.
+- ✅ **P7.4 — Human-in-the-loop controls**: the Temporal runtime now auto-pauses a run when trust
+  drops below threshold — the same mechanism an operator's own `pause` signal uses. A new
+  `edit_resume` signal lets an operator patch context/trust and resume; `Korch`/`Swarm` expose
+  `pause`/`resume`/`cancel`/`edit_resume`, all backed by durable Temporal signals.
+- ✅ **P7.5 — In-memory graph repository**: `InMemoryGraphRepository` is the default, zero-setup
+  backend (`PERSISTENCE_BACKEND=memory`); `none` runs fully standalone. `Korch`/`Swarm` now actually
+  checkpoint state to it after each superstep.
+- ✅ **P7.6 — Bitemporal Context Graph client**: `ContextGraphClient` records decisions and events —
+  each carrying valid-time, transaction-time, confidence, and provenance — through Shield redaction
+  first, and queries them back tenant-scoped with time-travel (`as_of`/`valid_at`). Nodes are
+  immutable and append-only: a correction is always a new node, never an edit.
 
 ---
 
