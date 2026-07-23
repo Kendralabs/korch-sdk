@@ -10,6 +10,83 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P8.5] Deterministic, version-tagged serialization — v0.1.0 · ADR 0017
+
+**Type:** feature · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** `serializers/codec.py` (new): `to_json(model) -> str` and `from_json(payload,
+model_cls) -> T`, supporting `AgentState`, `ExecutionPlan`, `ModelCard`, and `RunResult`.
+`to_json` wraps `model.model_dump(mode="json")` in an envelope (`schema_version`,
+`korchestrator_version`, `type`, `data`) and serialises with `json.dumps(sort_keys=True,
+separators=(",", ":"), ensure_ascii=False)` — deterministic byte-for-byte output, ISO-8601
+timestamps with an explicit UTC offset and microsecond precision (pydantic's own JSON mode),
+`repr`-fidelity floats. `from_json` validates the envelope shape, rejects a type mismatch,
+rejects a `schema_version` newer than the package supports, applies any registered
+`(model_cls, version) -> upgrade_fn` migrations in sequence (`_MIGRATIONS`, empty today — nothing
+has evolved past v1 yet), and re-validates into `model_cls`. Every failure mode raises
+`ValidationError`. `to_json`/`from_json` join top-level `korchestrator.__all__`. Golden fixtures
+for all four models live in `tests/fixtures/serde/`, asserted byte-for-byte.
+
+**Why.** P8.5 — "deterministic, version-tagged round-trip for `AgentState`/`AgentGraph`/
+`ExecutionPlan`/`ModelCard`/`RunResult`; stable key ordering; migration rule."
+
+**Design decisions.** (1) **`AgentGraph` is excluded, by ADR** (0017) — its nodes carry live
+Python callables (`Node.compute`), which have no safe JSON representation; pickling code across a
+trust boundary is exactly what spec 08 §5's output-sanitization rule forbids, and nothing today
+actually needs full graph round-trip (the Temporal runtime already crosses the workflow boundary
+via `node_ids` alone, never a serialized graph — precedent this ADR makes explicit rather than
+silently diverging from the spec's literal five-model list). (2) **`schema_version` is looked up
+from a small per-type registry** (`_CURRENT_SCHEMA_VERSION`), not solely from the model's own
+`schema_version` field — `AgentState`/`ExecutionPlan`/`RunResult` happen to carry that field
+already (P1/P2), but `ModelCard` doesn't, so the registry is the one place `to_json`/`from_json`
+actually consult, keeping all four types uniform rather than special-casing the one without a
+field. (3) **No custom key-sorting helper** — `json.dumps(sort_keys=True)` already sorts
+recursively at every nesting level, and every model field is a tuple/frozen structure (never a
+`set`), so a hand-rolled `_stable_default` walker would have been dead code; relying on the
+stdlib's own guarantee is simpler and equally correct. (4) **YAML is out of scope** — spec 08 §6's
+prose mentions "object ⇄ dict ⇄ JSON ⇄ YAML," but the concrete public API (§6's own code example,
+and spec 04) only ever shows `to_json`/`from_json`; adding YAML would need a new dependency/extra
+with no current requirement driving it, so it's deferred rather than spec-drift. (5) The migration
+machinery is built and tested (a fake `(ModelCard, 0)` migration registered/applied/torn down in
+one test) even though nothing has actually evolved past v1 yet — proves the mechanism works before
+it's load-bearing, per spec 08 §6.5's explicit requirement that `from_json` "applies migrations in
+sequence," not just documents the intent.
+
+**Architecture changes.** `serializers/codec.py` (new); imports `models`, `exceptions`, `version`,
+pydantic, stdlib `json` — within its declared allowance. `korchestrator/__init__.py` imports and
+exports `from_json`/`to_json`. No import-linter contract changes.
+
+**Files/modules affected.** `src/korchestrator/serializers/{codec,__init__}.py`;
+`src/korchestrator/__init__.py`; `tests/unit/public_surface.json`;
+`tests/unit/serializers/test_codec.py` (new); `tests/fixtures/serde/{agent_state,execution_plan,
+model_card,run_result}.json` (new golden fixtures); `docs/adr/0017-*.md` (new); `docs/adr/README.md`;
+`CHANGELOG.md`.
+
+**Breaking changes.** None. New `korchestrator.serializers` surface; `from_json`/`to_json` added
+to top-level `__all__` (additive, MINOR — golden snapshot updated in this PR).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (99 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **629 passed**, 95.33% coverage (≥80 floor). New (24 tests): byte-for-byte
+golden-fixture match for all four models; determinism (same object, same bytes, twice);
+round-trip equality; envelope shape (`schema_version`/`korchestrator_version`/`type`); ISO-8601
+timestamp format; an unsupported model type on both `to_json` and `from_json`; malformed JSON; a
+non-envelope payload; a type-name mismatch; a `schema_version` newer than supported; data that
+fails the target model's own validation; a payload missing a since-added optional field still
+loading with its default (spec 08 §6.6); and the migration machinery actually applying a
+registered upgrade function. 2 doctests pass.
+
+**Known limitations / future improvements.** (1) `AgentGraph` intentionally unsupported (ADR
+0017) — revisit only if a real topology-round-trip need appears. (2) No YAML support — deferred,
+not currently required by any public API surface. (3) Only these four models are registered;
+adding a fifth (e.g. a future public model) is a one-line registry addition, not a new mechanism.
+
+---
+
 ## 2026-07-23 · [P8.4] Exception audit — v0.1.0
 
 **Type:** fix · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)

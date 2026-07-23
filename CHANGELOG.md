@@ -15,6 +15,15 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Deterministic, version-tagged serialization (Phase 8): new top-level `korchestrator.to_json(model)`/
+  `from_json(payload, model_cls)` round-trip `AgentState`, `ExecutionPlan`, `ModelCard`, and
+  `RunResult` byte-for-byte — sorted keys at every nesting level, fixed separators, UTF-8,
+  ISO-8601 timestamps with an explicit UTC offset and microsecond precision. Every envelope
+  carries `schema_version` and `korchestrator_version`; `from_json` applies registered migrations
+  in sequence and raises `ValidationError` if the payload's `schema_version` is newer than the
+  installed package supports. `AgentGraph` is deliberately not supported — its nodes carry live,
+  non-serialisable compute callables (see
+  [ADR 0017](docs/adr/0017-agentgraph-excluded-from-json-serialization.md)).
 - Namespaced, disable-able logging (Phase 8): `korchestrator.logging` gains `enable_logging(level=
   "INFO", *, stream=None)` (attaches a single `StreamHandler` to the `korchestrator` logger,
   idempotent) and `disable_logging()`. Off by default — only a `NullHandler` is attached at import
