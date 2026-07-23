@@ -15,6 +15,11 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- TypeScript parity matrix (Phase 9, **closes Phase 9**): `docs/parity-matrix.md` settles the
+  deferred TypeScript client's contract (ADR 0008) — every `KorchestratorClient` method, the
+  constructor, `ApiError`, and the `models.remote` types, each marked `TS: planned` with its
+  settled TypeScript name. Three discrepancies between an earlier TS-facing design sketch and the
+  shipped Python implementation are resolved in the Python implementation's favor and labelled.
 - Remote client discovery (Phase 9, **completes the `KorchestratorClient` method surface**):
   `tools()`, `models()`, `swarm_templates()` (spec 04 §7.3). `models()` returns the existing
   `korchestrator.models.routing.ModelCard`. New `korchestrator.models.remote.ToolDescriptor`
