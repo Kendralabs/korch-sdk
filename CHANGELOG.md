@@ -15,6 +15,11 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Remote client discovery (Phase 9, **completes the `KorchestratorClient` method surface**):
+  `tools()`, `models()`, `swarm_templates()` (spec 04 §7.3). `models()` returns the existing
+  `korchestrator.models.routing.ModelCard`. New `korchestrator.models.remote.ToolDescriptor`
+  (`name`/`description`/`input_schema`) and `SwarmTemplate` (`name`/`description`/`agents`/
+  `edges`, reusing `AgentConfig` so a fetched template can be passed straight into `run_swarm`).
 - Remote client SSE streaming (Phase 9): `KorchestratorClient.stream(run_id)` (spec 04 §7.3/§7.5)
   — a native async iterator yielding `korchestrator.models.remote.RunEvent`, the only method on
   the client that isn't a sync wrapper. Reconnects automatically (full-jitter backoff, budget

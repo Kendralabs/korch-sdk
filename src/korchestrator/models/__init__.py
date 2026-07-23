@@ -15,6 +15,8 @@ from korchestrator.models.remote import (
     RemoteRunResult,
     RunEvent,
     RunSummary,
+    SwarmTemplate,
+    ToolDescriptor,
 )
 from korchestrator.models.result import RunResult
 from korchestrator.models.routing import (
@@ -58,7 +60,9 @@ __all__ = [
     "RunStatus",
     "RunSummary",
     "StateUpdate",
+    "SwarmTemplate",
     "TaskDecomposition",
     "TaskSemantics",
+    "ToolDescriptor",
     "ToolResult",
 ]
