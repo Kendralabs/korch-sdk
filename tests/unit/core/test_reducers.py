@@ -133,6 +133,22 @@ def test_append_concatenates_in_agent_id_order() -> None:
     assert Append()([0], [("c", 3), ("a", 1), ("b", 2)]) == [0, 1, 2, 3]
 
 
+def test_append_coerces_a_bare_scalar_current_value_to_a_single_element_list() -> None:
+    # Defensive: a channel's current value should always already be a list, but _as_list must
+    # still be total (reducer law) over a malformed/externally-set scalar.
+    assert Append()(0, [("a", 1)]) == [0, 1]
+
+
+def test_append_on_a_channel_with_no_prior_writes_starts_from_an_empty_list() -> None:
+    # Every list channel's very first write sees current=None (spec 06 §3) — the most common
+    # real path through _as_list's None branch, not just a defensive edge case.
+    assert Append()(None, [("a", 1)]) == [1]
+
+
+def test_merge_dict_coerces_a_none_current_value_to_an_empty_mapping() -> None:
+    assert MergeDict()(None, [("a", {"x": 1})]) == {"x": 1}
+
+
 def test_unique_append_preserves_first_seen_and_skips_duplicates() -> None:
     assert UniqueAppend()([1], [("b", 2), ("a", 1), ("c", 2)]) == [1, 2]
 
