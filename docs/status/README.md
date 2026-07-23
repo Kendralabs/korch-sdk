@@ -8,7 +8,7 @@ up. Written for a quick read; the authoritative technical records stay in `.clau
 
 ## Files in this folder
 
-- **[what-has-been-built.md](what-has-been-built.md)** — every phase so far (P0–P8), each explained
+- **[what-has-been-built.md](what-has-been-built.md)** — every phase so far (P0–P9), each explained
   in simple points.
 - **[how-to-continue.md](how-to-continue.md)** — what is left to do, and the exact prompt to paste
   into a new session to continue.
@@ -26,7 +26,7 @@ up. Written for a quick read; the authoritative technical records stay in `.clau
 | P6 | Integration & observability | ✅ Done — merged & pushed |
 | P7 | Governance, security & context graph | ✅ Done — all 6 tasks (P7.1–P7.6) |
 | P8 | Cross-cutting foundations | ✅ Done — all 7 tasks (P8.1–P8.7) |
-| P9 | Remote client (Python) | ⬜ Not started |
+| P9 | Remote client (Python) | ✅ Done — all 8 tasks (P9.1–P9.8) |
 | P10 | Testing, benchmarks & quality | ⬜ Not started |
 | P11 | Docs, examples & DX | ⬜ Not started |
 | P12 | CI/CD, packaging & publishing | ⬜ Not started |
@@ -34,17 +34,21 @@ up. Written for a quick read; the authoritative technical records stay in `.clau
 
 ## Where the code lives right now
 
-- **`develop` branch** (pushed to GitHub): contains **P0 through P8** — everything is merged and
+- **`develop` branch** (pushed to GitHub): contains **P0 through P9** — everything is merged and
   green.
-- **`feat/p8-cross-cutting-foundations` branch** (pushed, merged into `develop`): contains all of
-  **P8.1–P8.7**.
-- Next: **Phase 9 — Remote client**, on a new `feat/p9-*` branch off `develop`.
+- **`feat/p9-remote-client` branch** (pushed, merged into `develop`): contains all of **P9.1–P9.8**.
+- Next: **Phase 10 — Testing, benchmarks & quality gates**, on a new `feat/p10-*` branch off
+  `develop`.
 
 ## One-line summary
 
 The SDK already runs a full multi-agent job end-to-end offline: `Korch().run("...")` plans a team,
 runs them in deterministic parallel supersteps, routes a model per agent, and returns an answer —
 with tools, MCP, streaming, hooks, PII redaction, trust-scored governance with durable
-human-in-the-loop pause/resume, and a bitemporal Context Graph for decisions and events. Configuration,
-logging, serialization, validation, and telemetry are now all finalized and settings-injected
-end to end. Phase 9 (the optional Python remote client, `korchestrator.remote`) is next.
+human-in-the-loop pause/resume, and a bitemporal Context Graph for decisions and events.
+Configuration, logging, serialization, validation, and telemetry are all finalized and
+settings-injected end to end. An optional Python remote client (`korchestrator.remote.
+KorchestratorClient`, behind `[remote]`) now drives a hosted engine over the full documented
+contract — run lifecycle, control, identity, key management, discovery, and SSE streaming — with
+the TypeScript client's contract settled (`docs/parity-matrix.md`) but not built (ADR 0008). Phase
+10 (testing, benchmarks, and a ratcheted quality bar) is next.
