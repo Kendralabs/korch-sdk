@@ -26,6 +26,10 @@
     "Swarm",
     "ToolError",
     "ValidationError",
-    "__version__"
+    "__version__",
+    "configure",
+    "enable_logging",
+    "from_json",
+    "to_json"
   ]
 }

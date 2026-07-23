@@ -10,6 +10,556 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P8.7] Optional OpenTelemetry telemetry — v0.1.0 (closes Phase 8)
+
+**Type:** feature · **Phase:** P8 (cross-cutting foundations, final task) · **Author:** Claude (agent)
+
+**What.** `telemetry/tracer.py` (new): `is_enabled(settings=None)`, `start_span(name, *,
+settings=None, **attributes)`, `record_metric(name, value, *, settings=None, **attributes)`.
+Disabled (`KORCH_TELEMETRY_ENABLED` false, the default) — `start_span` returns the same
+module-level `_NoOpSpan` singleton on every call (no context manager allocation, no attribute
+processing beyond the caller's own `**kwargs`, no OTel import) and `record_metric` returns
+immediately. Enabled, both lazily import `opentelemetry.trace`/`opentelemetry.metrics` (confined
+inside `_otel()` — never at module top level) and raise `MissingExtraError` if the `[otel]` extra
+isn't installed. `record_metric` routes each of the six spec-named metrics to the correct OTel
+instrument kind (`korch.run.duration`/`korch.superstep.duration` → histogram;
+`korch.agents.active` → up/down counter; `korch.tool.calls`/`korch.model.tokens`/
+`korch.run.status` → counter), caching created instruments by name. `services/_composition.py`'s
+`run_graph` — the one composition-root function every `Korch.run`/`Swarm.run` call passes through
+— is wrapped in an `agent.run` span (`run_id`, `tenant_id`, `max_supersteps` attributes at start;
+`status`, `supersteps` set before the span closes) and records `korch.run.duration`/
+`korch.run.status` after.
+
+**Why.** P8.7 — "telemetry/ — optional OTel spans/metrics behind the `[otel]` extra and
+`KORCH_TELEMETRY_ENABLED`, zero overhead when off," the last task of Phase 8 (spec 08 §4).
+
+**Design decisions.** (1) **`start_span`/`record_metric` take an explicit `settings` kwarg,
+defaulting to the process-wide `get_settings()`.** The first draft read only `get_settings()`
+(the `configure()`-installed singleton) directly — which is disconnected from the `Settings` a
+`Korch`/`Swarm` call actually resolves (`self._settings or Settings.from_env()`, per spec 08 §1.2's
+injection model). That would have silently ignored `Swarm(settings=Settings(
+korch_telemetry_enabled=True))` unless the caller *also* called `configure()` process-wide — a
+real DI-boundary bug caught before committing, not a hypothetical. `run_graph` now passes its own
+resolved `settings` through explicitly; the `get_settings()` fallback stays for standalone/
+zero-config callers (docstring examples, future call sites that don't have a `Settings` on hand
+yet). (2) **The no-op path returns a literal singleton, not a freshly-built context manager** —
+`_NoOpSpan.__enter__` returns `self`; there is no `@contextmanager`-decorated function on the
+disabled branch, matching spec 08 §4's "no context manager allocation" literally rather than just
+in spirit. (3) **`tracer.start_as_current_span(...)`'s abstract type is `Iterator[Span]`** (it's
+implemented with `@contextmanager` by every concrete SDK, but the ABC method itself isn't
+decorated) **while it's used and documented as a context manager at runtime** — reconciled with one
+explicit, commented `cast`, not a broader `# type: ignore`. (4) **Only the outer `agent.run` span
+and its two metrics are wired this task** — the full span tree (`agent.superstep`/`agent.plan`/
+`tool.call`/`gen_ai.call`) and the remaining four metrics thread through the kernel, tool bridge,
+and model gateway, none of which currently carry a `Settings`/span-context handle; wiring all of
+them is a multi-module change belonging to those modules' own future work, not a one-task bolt-on.
+(5) **`benchmarks/`'s telemetry-on/off delta regression is explicitly deferred to P10** (Testing,
+Benchmarks & Quality Gates) — `benchmarks/` doesn't exist yet; a bare timing assertion inside the
+unit suite would violate T2 (no wall-clock timing in tests) for no real coverage gain. (6) Neither
+function joins top-level `korchestrator.__all__`, matching spec 04 §6's literal `__init__.py`
+example (telemetry isn't listed there, exactly like `ConfigurationError`, ADR 0016).
+
+**Architecture changes.** `telemetry/tracer.py` (new) — imports `config`, `exceptions`, stdlib;
+OTel imported only inside `_otel()`. `telemetry/__init__.py` re-exports `Span`, `is_enabled`,
+`record_metric`, `start_span`. `services/_composition.py` imports `korchestrator.telemetry`
+(a leaf utility — legal for the façade layer) and wraps `run_graph`. No import-linter contract
+changes; the base install still never imports OTel (`telemetry/` is transitively imported via
+`korchestrator.services`, so the lazy-inside-`_otel()` confinement — not a lazily-loaded module
+like `runtime/temporal_runtime.py` — is what keeps the base install `pydantic`-only here).
+
+**Files/modules affected.** `src/korchestrator/telemetry/{tracer,__init__}.py`;
+`src/korchestrator/services/_composition.py`; `pyproject.toml` (no change needed — `opentelemetry.*`
+ships its own inline types, so no new mypy override was required); `tests/unit/telemetry/
+test_tracer.py` (new); `tests/unit/services/test_run.py` (new end-to-end telemetry-wiring test);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. `KORCH_TELEMETRY_ENABLED` already existed as a `Settings` field (P8.1)
+but was previously unconsumed; consuming it is additive.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (101 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **660 passed**, 95.45% coverage (≥80 floor; `telemetry/tracer.py` itself 99%).
+New: disabled-path singleton-identity and no-op-context-manager tests; `MissingExtraError` on
+enabled-without-`[otel]` (via `sys.modules` patching, the same technique `test_run.py` already uses
+for `dspy`); real span/metric assertions against `InMemorySpanExporter`/`InMemoryMetricReader`
+bound through a monkeypatched `get_tracer`/`get_meter` (never the OTel *global* provider, which can
+only be set once per process — avoiding a test-order hazard); one end-to-end `Swarm(settings=
+Settings(korch_telemetry_enabled=True)).run()` test proving the `agent.run` span and both run
+metrics are actually emitted through the real façade path, not just the unit-level function. All
+doctest examples (2 new) pass offline.
+
+**Known limitations / future improvements.** The documented span tree below `agent.run` and four
+of the six named metrics are defined (correct instrument kind) but not wired into the kernel/tool/
+gateway call sites — tracked as follow-up wiring work, not a new phase. The `benchmarks/`
+zero-overhead regression is P10's job (already an open item in `PROJECT_STATE.md`'s known gaps).
+
+---
+
+## 2026-07-23 · [P8.6] Trust-boundary validation — v0.1.0
+
+**Type:** feature/fix · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** `validators/boundary.py` (new): `validate_objective(objective)`,
+`validate_max_supersteps(max_supersteps)`, and `validate_unique_agent_id(agent_id,
+existing_ids)` — the domain rules spec 08 §7's trust-boundary table assigns to `validators/`
+(Pydantic field constraints already cover graph construction, agent-output shape, routing,
+tool-schema, and deserialization checks — all built in earlier phases and confirmed still
+correct during this audit). Wired in: `services/_composition.py`'s own `validate_objective`
+(previously a local copy) now delegates to `validators/`; `Korch.run`/`Swarm.run` gained a
+`validate_max_supersteps` call; `Swarm.add()` gained a `validate_unique_agent_id` call.
+
+Two real, previously-silent gaps fixed as part of wiring this in: (1) **`max_supersteps` was
+never validated** — `Korch.run`/`Swarm.run` accepted any integer, including `0` or negative,
+with no check, even though spec 08 §7 explicitly documents the 1-100 bound. (2) **`Swarm.add()`
+silently overwrote a duplicate agent id** — `self._agents: dict[str, Agent]` is keyed by id, so
+adding a second agent with an id already in use discarded the first with no warning; it now
+raises `ValidationError` immediately.
+
+**Why.** P8.6 — "validators/ — trust-boundary validation, fail-fast with actionable messages."
+Auditing the full spec 08 §7 boundary table against the actual codebase (rather than assuming
+each row is covered because the module exists) surfaced the two gaps above — exactly the kind of
+review this task is for.
+
+**Design decisions.** (1) **Scoped to what Pydantic cannot express** — per spec 08 §7's own rule
+("Pydantic does the structural work; `validators/` holds only the domain rules Pydantic cannot
+express"), the other seven boundary-table rows (graph construction, agent output, routing, tool
+invocation, MCP responses, deserialization) were checked and confirmed already correctly enforced
+in their owning modules from earlier phases — no duplicate validation added, no re-implementation.
+Only "public façade arguments" needed new work, since that row was explicitly the one marked
+"services/, validators/" in the table. (2) **`_composition.py`'s local `validate_objective` was
+replaced, not duplicated** — re-exported from `validators/` (`import ... as ...`, the established
+pattern from P7.5's `resolve_repository`), so there is exactly one implementation, not two that
+could drift. (3) **Fail fast at `.add()` time, not at `.run()` time**, for the duplicate-id check
+— the earlier agent is about to be silently discarded the moment the second `.add()` call
+happens, so that is where the mistake is catchable with the most context (which two `.add()`
+calls collided), not later when the swarm actually runs.
+
+**Architecture changes.** `validators/boundary.py` (new); imports only `exceptions` + stdlib,
+within its declared allowance. `services/_composition.py` gains three re-exported imports and
+loses its own three-line `validate_objective`/`_MIN_OBJECTIVE_CHARS`; `services/korch.py` and
+`services/swarm.py` each gain one new validation call. No import-linter contract changes.
+
+**Files/modules affected.** `src/korchestrator/validators/{boundary,__init__}.py`;
+`src/korchestrator/services/{_composition,korch,swarm}.py`;
+`tests/unit/validators/test_boundary.py` (new); `tests/unit/services/test_facade.py` (duplicate-id
+test); `tests/unit/services/test_run.py` (`max_supersteps` bound tests); `CHANGELOG.md`.
+
+**Breaking changes.** None to any public signature. Behavioural: `Swarm.add()` on a duplicate id
+and `Korch.run`/`Swarm.run` with an out-of-range `max_supersteps` now raise instead of silently
+misbehaving — both are bug fixes (the old behaviour was never a documented, intended contract;
+spec 08 §7 already specified the 1-100 bound and duplicate-id rejection).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None. Any caller that was accidentally relying on `max_supersteps` outside
+1-100 being silently accepted, or on a duplicate `Swarm.add()` silently overwriting, was already
+depending on undocumented, spec-violating behaviour.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (100 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **648 passed**, 95.37% coverage (≥80 floor). New: each validator's accepted
+range and inclusive boundary; `Swarm.add()` rejecting a duplicate id and leaving `size` unchanged;
+`Korch.run`/`Swarm.run` rejecting `max_supersteps` of `0`, `-1`, and `101`. 3 new doctests pass.
+
+**Known limitations / future improvements.** None outstanding — the boundary-table audit found
+exactly two gaps and both are closed.
+
+---
+
+## 2026-07-23 · [P8.5] Deterministic, version-tagged serialization — v0.1.0 · ADR 0017
+
+**Type:** feature · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** `serializers/codec.py` (new): `to_json(model) -> str` and `from_json(payload,
+model_cls) -> T`, supporting `AgentState`, `ExecutionPlan`, `ModelCard`, and `RunResult`.
+`to_json` wraps `model.model_dump(mode="json")` in an envelope (`schema_version`,
+`korchestrator_version`, `type`, `data`) and serialises with `json.dumps(sort_keys=True,
+separators=(",", ":"), ensure_ascii=False)` — deterministic byte-for-byte output, ISO-8601
+timestamps with an explicit UTC offset and microsecond precision (pydantic's own JSON mode),
+`repr`-fidelity floats. `from_json` validates the envelope shape, rejects a type mismatch,
+rejects a `schema_version` newer than the package supports, applies any registered
+`(model_cls, version) -> upgrade_fn` migrations in sequence (`_MIGRATIONS`, empty today — nothing
+has evolved past v1 yet), and re-validates into `model_cls`. Every failure mode raises
+`ValidationError`. `to_json`/`from_json` join top-level `korchestrator.__all__`. Golden fixtures
+for all four models live in `tests/fixtures/serde/`, asserted byte-for-byte.
+
+**Why.** P8.5 — "deterministic, version-tagged round-trip for `AgentState`/`AgentGraph`/
+`ExecutionPlan`/`ModelCard`/`RunResult`; stable key ordering; migration rule."
+
+**Design decisions.** (1) **`AgentGraph` is excluded, by ADR** (0017) — its nodes carry live
+Python callables (`Node.compute`), which have no safe JSON representation; pickling code across a
+trust boundary is exactly what spec 08 §5's output-sanitization rule forbids, and nothing today
+actually needs full graph round-trip (the Temporal runtime already crosses the workflow boundary
+via `node_ids` alone, never a serialized graph — precedent this ADR makes explicit rather than
+silently diverging from the spec's literal five-model list). (2) **`schema_version` is looked up
+from a small per-type registry** (`_CURRENT_SCHEMA_VERSION`), not solely from the model's own
+`schema_version` field — `AgentState`/`ExecutionPlan`/`RunResult` happen to carry that field
+already (P1/P2), but `ModelCard` doesn't, so the registry is the one place `to_json`/`from_json`
+actually consult, keeping all four types uniform rather than special-casing the one without a
+field. (3) **No custom key-sorting helper** — `json.dumps(sort_keys=True)` already sorts
+recursively at every nesting level, and every model field is a tuple/frozen structure (never a
+`set`), so a hand-rolled `_stable_default` walker would have been dead code; relying on the
+stdlib's own guarantee is simpler and equally correct. (4) **YAML is out of scope** — spec 08 §6's
+prose mentions "object ⇄ dict ⇄ JSON ⇄ YAML," but the concrete public API (§6's own code example,
+and spec 04) only ever shows `to_json`/`from_json`; adding YAML would need a new dependency/extra
+with no current requirement driving it, so it's deferred rather than spec-drift. (5) The migration
+machinery is built and tested (a fake `(ModelCard, 0)` migration registered/applied/torn down in
+one test) even though nothing has actually evolved past v1 yet — proves the mechanism works before
+it's load-bearing, per spec 08 §6.5's explicit requirement that `from_json` "applies migrations in
+sequence," not just documents the intent.
+
+**Architecture changes.** `serializers/codec.py` (new); imports `models`, `exceptions`, `version`,
+pydantic, stdlib `json` — within its declared allowance. `korchestrator/__init__.py` imports and
+exports `from_json`/`to_json`. No import-linter contract changes.
+
+**Files/modules affected.** `src/korchestrator/serializers/{codec,__init__}.py`;
+`src/korchestrator/__init__.py`; `tests/unit/public_surface.json`;
+`tests/unit/serializers/test_codec.py` (new); `tests/fixtures/serde/{agent_state,execution_plan,
+model_card,run_result}.json` (new golden fixtures); `docs/adr/0017-*.md` (new); `docs/adr/README.md`;
+`CHANGELOG.md`.
+
+**Breaking changes.** None. New `korchestrator.serializers` surface; `from_json`/`to_json` added
+to top-level `__all__` (additive, MINOR — golden snapshot updated in this PR).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (99 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **629 passed**, 95.33% coverage (≥80 floor). New (24 tests): byte-for-byte
+golden-fixture match for all four models; determinism (same object, same bytes, twice);
+round-trip equality; envelope shape (`schema_version`/`korchestrator_version`/`type`); ISO-8601
+timestamp format; an unsupported model type on both `to_json` and `from_json`; malformed JSON; a
+non-envelope payload; a type-name mismatch; a `schema_version` newer than supported; data that
+fails the target model's own validation; a payload missing a since-added optional field still
+loading with its default (spec 08 §6.6); and the migration machinery actually applying a
+registered upgrade function. 2 doctests pass.
+
+**Known limitations / future improvements.** (1) `AgentGraph` intentionally unsupported (ADR
+0017) — revisit only if a real topology-round-trip need appears. (2) No YAML support — deferred,
+not currently required by any public API surface. (3) Only these four models are registered;
+adding a fifth (e.g. a future public model) is a one-line registry addition, not a new mechanism.
+
+---
+
+## 2026-07-23 · [P8.4] Exception audit — v0.1.0
+
+**Type:** fix · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** Audited every module boundary that touches a third-party library or does I/O
+(`httpx`, `dspy`, `temporalio`, `mcp`, file/JSON reads) for spec 08 §2.2's rule: no raw
+third-party exception may cross a module boundary. Found the codebase's existing wrapping (P2–P7)
+essentially complete — `gateway_openai.py`, the dspy reasoning bridge, `mcp/client.py`,
+`sandbox_local.py`, and `routing/model_cards.py` already wrap every failure mode into a
+`KorchError` subclass with `from exc`. Two real gaps found and fixed: (1)
+`TemporalRuntime.start`/`wait`/`signal` had **no wrapping at all** — a raw `temporalio` exception
+(`RPCError` on a lost connection, `WorkflowFailureError` when a run itself fails, or any other
+`TemporalError`) propagated straight through to `Korch`/`Swarm.pause`/`resume`/`cancel`/
+`edit_resume`, all the way to the public façade. Added `_reraise_temporal_error`, called from all
+three methods: `RPCError` → `NetworkError`, `WorkflowFailureError` → `RunFailedError`, any other
+`TemporalError` → `ProviderError`, each with an actionable message and `from exc`. (2)
+`config/settings.py`'s `_read_dotenv_file` didn't catch `OSError` on the read (a permission error
+or a file deleted between the `is_file()` check and the read) — now wraps into
+`ConfigurationError`.
+
+**Why.** P8.4 — "every internal exception wrapped; boundary tests asserting only `KorchError`
+subclasses escape." The Temporal gap was a real, user-facing inconsistency: the structurally
+equivalent HTTP gateway boundary (`gateway_openai.py`) is a model of complete wrapping, while the
+Temporal client boundary — reached from the same-tier public API (`Korch.pause`, etc.) — had none.
+
+**Design decisions.** (1) **One helper, three call sites** — `_reraise_temporal_error` centralises
+the `RPCError`/`WorkflowFailureError`/`TemporalError` → `KorchError` mapping once rather than
+duplicating a three-branch `except` in `start`/`wait`/`signal`; typed `-> NoReturn` so mypy narrows
+correctly at each call site (every path through the function raises). (2) **Distinguished by
+Temporal's own exception hierarchy**, not by call site: `temporalio.exceptions.TemporalError` is
+the common base for `RPCError` (`temporalio.service`) and `WorkflowFailureError`
+(`temporalio.client`), confirmed via the installed package's actual MRO before writing the
+mapping — so the same three-way split applies uniformly to all three methods, and a future new
+`TemporalError` subclass falls back safely to `ProviderError` rather than escaping unwrapped. (3)
+**New tests need no real Temporal server** — `tests/unit/runtime/test_temporal_error_wrapping.py`
+mocks `Client`/`WorkflowHandle` directly (no `WorkflowEnvironment`, no `build_worker`, no
+sandboxed workflow validation), so these tests run in the *standard* suite despite this machine's
+unrelated `[temporal]` sandbox/beartype environment issue (P7.4) — a deliberate choice to get real
+coverage of the new wrapping logic without depending on that blocked path. (4)
+`tests/unit/test_error_wrapping.py` (the file name spec 08 §2.2 names) holds only the
+**cross-cutting** checks (every `KorchError` subclass has a non-empty `default_code`, is
+catchable as the base, preserves `__cause__`) rather than re-testing what the per-adapter test
+files already cover — avoids duplicating the gateway/dspy/mcp/model-card assertions that already
+exist, with pointers to where each one lives.
+
+**Architecture changes.** `runtime/temporal_runtime.py` gains `_reraise_temporal_error` and three
+new top-level `temporalio` imports (`WorkflowFailureError`, `TemporalError`, `RPCError`) — legal,
+this module already owns the `temporalio` confinement and loads lazily. `NetworkError`/
+`ProviderError`/`RunFailedError` added to its existing `imports_passed_through()` block alongside
+`ConfigurationError`. `config/settings.py`'s `_read_dotenv_file` gains one `try`/`except`. No
+import-linter contract changes.
+
+**Files/modules affected.** `src/korchestrator/runtime/temporal_runtime.py`;
+`src/korchestrator/config/settings.py`; `tests/unit/runtime/test_temporal_error_wrapping.py`
+(new); `tests/unit/test_error_wrapping.py` (new); `CHANGELOG.md`.
+
+**Breaking changes.** None. `TemporalRuntime.start`/`wait`/`signal` previously could raise an
+unspecified raw `temporalio` exception (never a documented contract); they now raise a documented
+`KorchError` subclass instead — a behavioural fix, not a compatibility break (nothing depended on
+catching the raw type, since it was never part of any contract).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (98 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **605 passed**, 95.23% coverage (≥80 floor; `temporal_runtime.py` itself rose
+from 46% to 59% thanks to the new mock-based tests exercising real code paths without a live
+server). New: 6 mocked-client tests (2 per method) proving each of the three `TemporalError`
+branches wraps correctly with `__cause__` set and an actionable message naming the `run_id`; 32
+cross-cutting `KorchError`-tree tests (every subclass has a code, is catchable as the base, cause
+chain preserved). 4 doctests pass.
+
+**Known limitations / future improvements.** None outstanding from this audit — the two gaps
+found are both fixed. A future audit should re-run this exercise after P9 (the remote client adds
+a new `httpx` boundary) and whenever a new third-party dependency is confined to a module.
+
+---
+
+## 2026-07-23 · [P8.3] Namespaced, disable-able logging — v0.1.0
+
+**Type:** feature · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** `logging/logger.py` (new): the single namespaced `logging.getLogger("korchestrator")`
+logger, with a `NullHandler` attached the moment the module is imported. `enable_logging(level=
+"INFO", *, stream=None)` attaches one `StreamHandler` (idempotent — a second call replaces the
+handler and level rather than stacking), validates `level` against the six recognised Python level
+names, and raises `ValidationError` on garbage. `disable_logging()` removes the handler if present;
+idempotent. Neither touches the root logger or calls `logging.basicConfig()`. `enable_logging`
+joins top-level `korchestrator.__all__` (golden snapshot updated); `disable_logging` stays
+submodule-only, matching spec 04 §6's `__init__.py` example exactly (same treatment as
+`ConfigurationError`/`get_settings` in P8.1). Also added the `T20` (`flake8-print`) ruff rule to
+`pyproject.toml`'s lint selection — "no `print()` anywhere in `src/`" (spec 08 §3) is now
+machine-enforced, not just a style guideline; the package was already clean (the only two matches
+were inside docstrings/doctest text, not real calls).
+
+**Why.** P8.3 — "`logging/` — namespaced logger, `NullHandler`, `enable_logging()`, structured
+fields, secret-safe." Eight modules already logged via child loggers
+(`korchestrator.events`/`.mcp`/`.routing`/`.tools`, and two bare `korchestrator`) with no
+`NullHandler` anywhere in the hierarchy — meaning a WARNING+ log call (e.g. `services/hooks.py`'s
+isolated-hook error log) would already reach Python's "handler of last resort" and print to
+stderr in any embedding application with no logging configured of its own, a real, silent
+violation of "off by default" that existed before this phase closed it.
+
+**Design decisions.** (1) **The `NullHandler` attaches at import time**, which is an explicit,
+narrow, sanctioned exception to B8's "no import-time side effects" — this is the standard,
+universally-recommended Python library pattern specifically to suppress the "no handlers could be
+found" warning, and spec 08 §3 prescribes it directly ("configured once in `logging/` with a
+`NullHandler` attached"). It has no effect on business logic and is itself idempotent (attaching
+the same `NullHandler` type is harmless even if re-imported). (2) **`logging/` is allowed to
+import `exceptions`**, not just `config` as spec 05's module table literally lists — a narrow,
+low-risk gap-fill (both are leaf utilities, no cycle, no layering violation) needed so an invalid
+`level` argument raises the required `KorchError` subclass rather than a bare `ValueError`; every
+other leaf utility (`config`, `security`) already imports `exceptions` for the same reason. (3)
+**Validated against an explicit level-name set**, not by catching whatever `Logger.setLevel()`
+raises — keeps the failure path independent of stdlib `logging`'s exact error type/wording, and
+produces the actionable, valid-values-listing message style spec 08 §2.3 requires. (4) Test
+isolation: since `enable_logging`/`disable_logging` mutate genuinely global (module-level, process
+lifetime) state, `tests/unit/logging/test_logger.py` uses an autouse fixture calling
+`disable_logging()` before and after every test so no test's `enable_logging()` call leaks into
+another — the same discipline P8.1's `settings` fixture already established for `configure()`.
+
+**Architecture changes.** `logging/logger.py` (new); `logging/__init__.py` re-exports; top-level
+`korchestrator/__init__.py` imports and exports `enable_logging`. No import-linter contract
+changes needed (`logging/` isn't in any of the four contracts' module lists — it's a leaf utility
+like `config`/`exceptions`, already outside their scope).
+
+**Files/modules affected.** `src/korchestrator/logging/{logger,__init__}.py`;
+`src/korchestrator/__init__.py`; `tests/unit/public_surface.json`;
+`tests/unit/logging/test_logger.py` (new); `pyproject.toml` (`T20` added to ruff `select`);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. New `korchestrator.logging` surface; `enable_logging` added to
+top-level `__all__` (additive, MINOR — golden snapshot updated in this PR).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean (incl. the new `T20` rule — zero real `print()`
+calls in `src/`); `mypy --strict` clean (98 source files); import-linter 4/4 kept; the isolation
+gate and env-confinement check both `OK`. Non-Temporal suite: **567 passed**, 94.77% coverage
+(≥80 floor). New (12 tests): the default `NullHandler`-only state; `enable_logging` attaches
+exactly one `StreamHandler` at the right level; idempotent re-enabling replaces rather than stacks
+and re-routes subsequent output to the new stream; an invalid level raises `ValidationError`;
+case-insensitive level names; `disable_logging` removes the handler and is idempotent when
+called with nothing attached; the root logger's handlers/level are provably untouched (compared
+against a snapshot taken inside the test, not at import time, since pytest's own log-capture
+plugin legitimately touches root between tests); and an end-to-end check that a logged message
+actually reaches the configured stream. 2 doctests pass.
+
+**Known limitations / future improvements.** (1) "Structured fields go through `extra=`... never
+string interpolation of variable data" (spec 08 §3) is a per-call-site discipline, not something
+this module enforces mechanically — existing call sites (`events`, `mcp`, `routing`, `tools`, the
+two `services`/`providers` ones) were not audited for this in P8.3; worth a follow-up pass. (2) No
+log-record redaction filter yet (Shield integration on the logging path) — spec 08 §5 requires
+secrets/PII never reach a log record; today that discipline rests entirely on call sites not
+logging raw prompts/secrets in the first place, not on a mechanical guard. Consider a
+`logging.Filter` wired in P8.7 (telemetry) or as its own follow-up.
+
+---
+
+## 2026-07-23 · [P8.2] Config isolation test — v0.1.0
+
+**Type:** test · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** `tests/unit/test_config_isolation.py` — a pytest test asserting no environment read
+(`os.environ`, `os.getenv`, `load_dotenv`, `dotenv_values`) appears anywhere under
+`src/korchestrator` outside `config/` (spec 08 §1.4's literal requirement). Reuses the existing
+`scripts/check_env_reads.py` gate's scan rather than reimplementing it: extracted its logic into
+`find_offenders(package)`, added `scripts/__init__.py` so it's importable, and added
+`pythonpath = ["."]` to `pyproject.toml`'s pytest config so the repo root resolves. A second test
+proves the scan itself actually detects a real violation (a scan that always returned `[]` would
+otherwise pass the main assertion vacuously).
+
+**Why.** P8.2 — this exact check already ran as a standalone script (`python scripts/
+check_env_reads.py`, part of the documented gate sequence since P0), but was never wired into
+`pytest tests`, so a violation wouldn't fail the normal test run — only a separate, easy-to-forget
+manual/CI step. Spec 08 §1.4 explicitly wants it as a pytest test.
+
+**Design decisions.** (1) **One canonical scan, not two** — rather than duplicating the regex and
+walk logic inline in the new test module (which is what spec 08 §1.4's own snippet literally
+shows), the existing script's logic was extracted into a reusable `find_offenders()` and imported.
+Engineering-rules "one canonical implementation per cross-cutting concern" outweighs matching the
+spec snippet verbatim here, since the spec's intent (assert the isolation property in pytest) is
+fully met either way. (2) Writing the regression-detection test caught a **real latent bug**:
+`find_offenders`'s original subdir check indexed `path.parts[2]`, which only worked because the
+script always calls it with the literal relative path `"src/korchestrator"` — passing any other
+package root (as the new regression test does, using `tmp_path`) silently produced wrong results.
+Fixed to `path.relative_to(package).parts[0]`, which is correct regardless of how deep or where
+`package` sits. This is exactly the kind of latent fragility a reused, tested function surfaces
+that a fire-and-forget script does not. (3) `scripts/__init__.py` documents plainly that `scripts/`
+is never imported by `src/korchestrator` — it exists only so the test can reuse the scan.
+
+**Architecture changes.** None to `src/korchestrator`. `scripts/check_env_reads.py` refactored
+(same behaviour, `find_offenders` extracted + the `parts[2]` → `relative_to(...).parts[0]` fix);
+`scripts/__init__.py` added; `pyproject.toml` gains `pythonpath = ["."]` under
+`[tool.pytest.ini_options]`.
+
+**Files/modules affected.** `scripts/check_env_reads.py`, `scripts/__init__.py` (new),
+`pyproject.toml`, `tests/unit/test_config_isolation.py` (new).
+
+**Breaking changes.** None. Internal tooling/test-infrastructure only; no public surface change,
+so no CHANGELOG entry (nothing user-visible changed).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (97 source files, `scripts/`
+is outside its configured scope, consistent with existing precedent); import-linter 4/4 kept; the
+isolation gate, env-confinement CLI script, and version-validate all still `OK` after the refactor.
+Non-Temporal suite: **555 passed**, 94.71% coverage (≥80 floor). New: the real package passes
+(`find_offenders(...) == []`); a synthetic package with one compliant and one offending file is
+correctly flagged (proves the scan isn't vacuously always-empty).
+
+**Known limitations / future improvements.** None — this closes the P8.2 task as scoped.
+
+---
+
+## 2026-07-23 · [P8.1] Settings finalized — full variable table, `.env`, `configure()` — v0.1.0
+
+**Type:** feature · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent) · **ADR:** 0016
+
+**What.** `config/settings.py`: added the 16 `Settings` fields spec 08 §1.3 lists that weren't
+already there — `kendra_ai_gateway_url`/`kendra_gateway_api_key` (gateway), `korch_max_supersteps`/
+`korch_plugins_enabled` (kernel/runtime), `korch_log_level`/`korch_telemetry_enabled`
+(logging/telemetry toggles consumed by P8.3/P8.7), `korch_engine_*` (the remote engine client,
+P9), and `temporal_*` (address/namespace/task-queue/API-key/HITL-timeout, consumed by
+`runtime/temporal_runtime.py`). Secret fields use `pydantic.SecretStr`. `Settings.from_env()`
+gains `dotenv_path` (opt-in, `None` default) and a small hand-written `.env` reader
+(`_read_dotenv_file`). `mock_llm`, under `from_env()` only, now defaults `False` when a gateway
+key resolved (spec's "true when no gateway key is present, else false"); bare `Settings()`
+construction is unaffected. `LLM_GATEWAY_URL` is wired as a fallback env-var *name* for
+`kendra_ai_gateway_url`, not a second field. `config/process.py` (new): `configure(**overrides)`
+builds+validates+installs a process-wide `Settings` (`.env` from the CWD by default, wraps
+`pydantic.ValidationError` into `korchestrator.ValidationError`) and `get_settings()` returns it,
+building the zero-config default lazily on first call — no import-time singleton (B8). `configure`
+joins top-level `korchestrator.__all__` (golden snapshot updated); `get_settings`/
+`ConfigurationError` stay submodule-only, matching spec 04 §6 exactly.
+
+**Why.** P8.1 — "Full variable table from spec 08, precedence arg > env > .env > default,
+configure(), zero-config MockLM default." ADR 0009 explicitly deferred `.env`/`SecretStr`/
+`configure()`/`get_settings()` to this phase and invited reopening the `pydantic-settings`
+question once `.env` support was actually needed — which it now is.
+
+**Design decisions.** (1) **No `pydantic-settings`** (ADR 0016) — `SecretStr` is already part of
+`pydantic` core, and a ~15-line hand-written `.env` reader covers everything this SDK needs, so
+ADR 0009's reopening condition ("a concrete requirement... justifies the dependency") isn't met;
+adding it would cost the base install's `pydantic`-only invariant (ADR 0004) for a convenience
+that's cheap to build directly. (2) **`.env` is opt-in on `Settings.from_env()`** (`dotenv_path=
+None` default) but **on by default in `configure()`** (`dotenv_path=".env"`) — this is the key
+test-isolation decision: `Korch`/`Swarm` (and most of the test suite) call bare `Settings.
+from_env()` internally, which must never risk picking up a developer's stray local `.env`;
+`configure()` is the deliberate, explicit "load my app's settings" entry point spec 08's
+precedence chain actually has in mind, so it is the one place `.env` reads automatically. (3)
+**`ConfigurationError`/`ValidationError` split** (ADR 0016): `ValidationError` is structural
+(type/range/enum — what `configure()` wraps pydantic's own error into, spec 08 §1.2's literal
+promise); `ConfigurationError` is "structurally fine but operationally unresolved/unsupported"
+(malformed JSON env var, an unresolvable model-card source, `PERSISTENCE_BACKEND=kcg`, a missing
+bound collaborator) — every existing call site already fit this rule without change. (4)
+**`ConfigurationError` stays out of top-level `__all__`**, deliberately not promoted despite being
+reachable from `configure()`, because spec 04 §6's `__init__.py` example is explicit and excludes
+it — the same treatment `TimeoutError` already gets. Promoting it was considered and rejected as
+unforced spec drift (§ ADR alternatives). (5) `configure()`/`get_settings()` share one
+module-level `_installed` variable (the sanctioned "lazily-resolved accessor" exception to B8, not
+an import-time singleton) — `tests/conftest.py` gained a `settings` fixture that resets it via
+`monkeypatch.setattr`, satisfying spec 08 §1.2's "restores the previous instance on teardown."
+
+**Architecture changes.** `config/process.py` (new) — imports only `config.settings` +
+`exceptions` + pydantic, no new boundary. `config/__init__.py` re-exports `configure`/
+`get_settings` alongside `Settings`. Top-level `korchestrator/__init__.py` imports `configure`
+from `korchestrator.config`. Import-linter 4/4 kept; env-confinement check still `OK` (`.env`
+reading stays inside `config/settings.py`, same as `os.environ`).
+
+**Files/modules affected.** `src/korchestrator/config/{settings,process,__init__}.py`;
+`src/korchestrator/__init__.py`; `tests/unit/public_surface.json`; `tests/conftest.py` (renamed
+the hypothesis import to `hypothesis_settings` to free the `settings` fixture name, added the
+fixture); `tests/unit/config/{test_settings,test_dotenv,test_configure}.py`
+(test_dotenv/test_configure new); `docs/adr/0016-*.md` (new); `docs/adr/README.md`; `CHANGELOG.md`.
+
+**Breaking changes.** None. All 16 new fields are additive with declared defaults.
+`Settings.from_env()` gains a keyword-only `dotenv_path` (non-breaking; existing callers are
+unaffected since the default is `None`, i.e. today's exact behaviour). `configure` added to
+top-level `__all__` (additive, MINOR — golden snapshot updated in this PR).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (97 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **553 passed**, 94.71% coverage (≥80 floor). New (49 tests across 3 config
+files): every new field's default and `from_env()` read; `korch_max_supersteps` bounds; `SecretStr`
+never appears in `repr`/`str` but is recoverable via `get_secret_value()`; the `mock_llm`
+gateway-key-aware default in all four precedence combinations; the `LLM_GATEWAY_URL` alias and its
+precedence under the primary name; `.env` parsing (values, quoting, comments/blank lines, a
+missing file, `os.environ`/override precedence over it) — all via `tmp_path`, never touching a
+real `.env`; `configure()`/`get_settings()` install/cache/override/wrap-on-failure/leave-prior-
+state-on-failure, plus its `.env`-by-default vs `dotenv_path=None` behavior. 4 doctests pass.
+
+**Known limitations / future improvements.** (1) None of the 16 new fields are wired into
+behaviour yet beyond being readable — `korch_log_level`/`korch_telemetry_enabled` await P8.3/P8.7,
+`korch_engine_*` await P9, and `temporal_*` await a production `Client.connect()` helper (a
+pre-existing gap noted in the P7.4 log entry, not newly introduced). `korch_max_supersteps` is not
+yet consulted by `Korch.run`/`Swarm.run`'s `max_supersteps` parameter default — worth revisiting
+alongside a later façade change. (2) The `.env` reader is intentionally minimal — no variable
+interpolation, no `export` syntax, no multi-line values — documented as an explicit, permanent
+scope limit in ADR 0016, not a gap to close.
+
+---
+
 ## 2026-07-23 · [P7.6] Bitemporal Context Graph client — v0.1.0 · closes P7
 
 **Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)

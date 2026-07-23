@@ -15,6 +15,51 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Optional OpenTelemetry telemetry (Phase 8, **closes Phase 8**): `korchestrator.telemetry` gains
+  `start_span(name, *, settings=None, **attributes)` and `record_metric(name, value, *, settings=
+  None, **attributes)`, behind `KORCH_TELEMETRY_ENABLED` (default off) and the `[otel]` extra.
+  Disabled — the default — `start_span` returns the same module-level no-op singleton on every
+  call (no context manager allocation, no OTel import); `record_metric` returns immediately. Both
+  take an explicit `settings` so a run's actual, injected `Settings` decides — not the disconnected
+  `configure()`/`get_settings()` process singleton. Enabled without the `[otel]` extra installed,
+  both raise an actionable `MissingExtraError`. `services._composition.run_graph` wires the outer
+  `agent.run` span (`run_id`, `tenant_id`, `max_supersteps`, `status`, `supersteps` attributes) and
+  the `korch.run.duration`/`korch.run.status` metrics; the rest of the documented span tree
+  (`agent.superstep`/`agent.plan`/`tool.call`/`gen_ai.call`) and the remaining four metrics
+  (`korch.superstep.duration`, `korch.agents.active`, `korch.tool.calls`, `korch.model.tokens`) are
+  defined (correct OTel instrument kind — histogram, up/down counter, or counter — per name) but not
+  yet wired into the kernel/tool/gateway call sites; a `benchmarks/` regression proving the
+  telemetry-off path is within noise of an `[otel]`-uninstalled build is P10's job. Neither
+  `start_span` nor `record_metric` joins top-level `korchestrator.__all__` (submodule-only, like
+  `ConfigurationError` — not part of the documented public surface).
+- Deterministic, version-tagged serialization (Phase 8): new top-level `korchestrator.to_json(model)`/
+  `from_json(payload, model_cls)` round-trip `AgentState`, `ExecutionPlan`, `ModelCard`, and
+  `RunResult` byte-for-byte — sorted keys at every nesting level, fixed separators, UTF-8,
+  ISO-8601 timestamps with an explicit UTC offset and microsecond precision. Every envelope
+  carries `schema_version` and `korchestrator_version`; `from_json` applies registered migrations
+  in sequence and raises `ValidationError` if the payload's `schema_version` is newer than the
+  installed package supports. `AgentGraph` is deliberately not supported — its nodes carry live,
+  non-serialisable compute callables (see
+  [ADR 0017](docs/adr/0017-agentgraph-excluded-from-json-serialization.md)).
+- Namespaced, disable-able logging (Phase 8): `korchestrator.logging` gains `enable_logging(level=
+  "INFO", *, stream=None)` (attaches a single `StreamHandler` to the `korchestrator` logger,
+  idempotent) and `disable_logging()`. Off by default — only a `NullHandler` is attached at import
+  time, so the SDK never touches the root logger or calls `logging.basicConfig()`, and an embedding
+  application's own logging configuration is untouched. `enable_logging` joins top-level
+  `korchestrator.__all__`; `disable_logging` stays submodule-only, matching spec 04 §6 exactly.
+- Settings finalized (Phase 8): the full spec 08 §1.3 variable table — 16 new fields covering the
+  model gateway, kernel/runtime bounds, logging/telemetry toggles, the remote engine client, and
+  the Temporal runtime (`TEMPORAL_ADDRESS`, `TEMPORAL_API_KEY`, etc.). Secret-bearing fields
+  (`kendra_gateway_api_key`, `korch_engine_api_key`, `temporal_api_key`) use `pydantic.SecretStr`
+  and never appear in `repr`/`str`. `Settings.from_env()` gains opt-in `.env` file support
+  (`dotenv_path=`, `None` by default — no ambient developer `.env` affects an unrelated
+  `from_env()` call). `mock_llm`, under `from_env()` only, now defaults to `False` when a gateway
+  key resolved. New top-level `korchestrator.configure(**overrides)` builds, validates, and
+  installs a process-wide `Settings` (reading `.env` from the CWD by default), raising
+  `korchestrator.ValidationError` on an invalid value; `korchestrator.config.get_settings()`
+  returns the installed instance, building the zero-config default lazily on first call. See
+  [ADR 0016](docs/adr/0016-settings-finalization-no-pydantic-settings-error-split.md) for why this
+  didn't require adopting `pydantic-settings`, and the `ConfigurationError`/`ValidationError` rule.
 - Bitemporal Context Graph client (Phase 7, **closes Phase 7**): `korchestrator.persistence` gains
   `ContextGraphClient` — `record_decision()`/`record_event()` write immutable, tenant-scoped
   `DecisionNode`/`EventNode`s (each carrying `valid_time`, `transaction_time`, `confidence`, and
@@ -216,6 +261,23 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   `bind(clock=...)`, `clock` (`clock.now()`), and `to_node()`. `think` receives an immutable
   `AgentState` and returns a `StateUpdate` delta; the base implementation raises until a subclass
   overrides it or the façade supplies the default reasoning agent. See ADR 0012.
+
+### Fixed
+
+- **Validation (Phase 8):** `Swarm.add()` now rejects a duplicate agent `id` with a
+  `ValidationError` instead of silently overwriting the earlier agent (the dict-keyed-by-id
+  storage previously discarded it with no warning). `Korch.run`/`Swarm.run` now validate
+  `max_supersteps` is between 1 and 100 (spec 08 §7) — previously any integer, including 0 or
+  negative, was accepted with no check. New `korchestrator.validators` module
+  (`validate_objective`/`validate_max_supersteps`/`validate_unique_agent_id`) centralizes these
+  domain rules; `services/_composition.py`'s objective-length check now delegates to it instead of
+  a local copy.
+- **Exception audit (Phase 8):** `TemporalRuntime.start`/`wait`/`signal` (and, through them,
+  `Korch`/`Swarm.pause`/`resume`/`cancel`/`edit_resume`) no longer let a raw `temporalio` exception
+  cross the façade boundary. A lost/refused connection now raises `NetworkError`, the run's own
+  failure raises `RunFailedError`, and any other Temporal-reported error raises `ProviderError` —
+  all with `__cause__` set to the original exception. Also: `Settings.from_env()`'s `.env` reader
+  now wraps an unreadable file into `ConfigurationError` instead of letting a raw `OSError` escape.
 
 ### Changed
 
