@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1–P8.5 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
-| **Last completed milestone** | **P8.5 — deterministic, version-tagged serialization.** `korchestrator.to_json`/`from_json` round-trip `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult` byte-for-byte, version-tagged, with a working migration mechanism. `AgentGraph` is deliberately excluded (ADR 0017 — its nodes carry live compute callables). Golden fixtures in `tests/fixtures/serde/`. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.6 (validation), P8.7 (telemetry) — the last two P8 tasks. |
-| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.5 committed locally, not yet pushed. |
+| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1–P8.6 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
+| **Last completed milestone** | **P8.6 — trust-boundary validation.** New `korchestrator.validators` module; audited spec 08 §7's boundary table against the codebase and found two real, previously-silent gaps, both fixed: `max_supersteps` was never checked against its documented 1-100 bound, and `Swarm.add()` silently overwrote a duplicate agent id instead of raising. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.7 (telemetry) — the last P8 task, then push + merge Phase 8. |
+| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.6 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (99 source files), `pytest` (dspy + non-dspy paths; **629 passed**,
-95.33% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+ruff-format, `mypy --strict` (100 source files), `pytest` (dspy + non-dspy paths; **648 passed**,
+95.37% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
 confinement), the isolation gate, env-confinement, and version single-sourcing. `import
 korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
 `pydantic`-only.
@@ -71,7 +71,8 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `persistence/` | Context (L3) | **tested** (`InMemoryGraphRepository` + `resolve_repository`, wired into `Korch`/`Swarm` via `_PersistenceMiddleware`; `ContextGraphClient` — bitemporal `DecisionNode`/`EventNode`, Shield-redacted, tenant-scoped, time-travel query, P7.6) | P7 |
 | `logging/` | Leaf utility | **tested** (namespaced logger, `NullHandler` by default, `enable_logging`/`disable_logging`, P8.3) | P8.3 |
 | `serializers/` | Leaf utility | **tested** (`to_json`/`from_json` — `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult`, version-tagged, migration mechanism; `AgentGraph` excluded, ADR 0017) | P8.5 |
-| `clients/` · `validators/` · `telemetry/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
+| `validators/` | Leaf utility | **tested** (`validate_objective`/`validate_max_supersteps`/`validate_unique_agent_id`, wired into `Korch`/`Swarm`) | P8.6 |
+| `clients/` · `telemetry/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
 
 ## 4. Public surface
 

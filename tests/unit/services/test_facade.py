@@ -54,6 +54,16 @@ def test_swarm_add_returns_self_for_chaining() -> None:
     assert swarm.add(Agent(id="lead", role="lead")) is swarm
 
 
+def test_swarm_add_rejects_a_duplicate_agent_id() -> None:
+    # A duplicate id would otherwise silently overwrite the earlier agent (spec 08 §7, P8.6).
+    from korchestrator import ValidationError
+
+    swarm = Swarm(objective="Summarize the design").add(Agent(id="lead", role="lead"))
+    with pytest.raises(ValidationError):
+        swarm.add(Agent(id="lead", role="a-different-role"))
+    assert swarm.size == 1
+
+
 def test_korch_constructs_with_defaults() -> None:
     # No arguments, no environment — the zero-config path constructs cleanly.
     assert isinstance(Korch(), Korch)

@@ -10,6 +10,77 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P8.6] Trust-boundary validation — v0.1.0
+
+**Type:** feature/fix · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** `validators/boundary.py` (new): `validate_objective(objective)`,
+`validate_max_supersteps(max_supersteps)`, and `validate_unique_agent_id(agent_id,
+existing_ids)` — the domain rules spec 08 §7's trust-boundary table assigns to `validators/`
+(Pydantic field constraints already cover graph construction, agent-output shape, routing,
+tool-schema, and deserialization checks — all built in earlier phases and confirmed still
+correct during this audit). Wired in: `services/_composition.py`'s own `validate_objective`
+(previously a local copy) now delegates to `validators/`; `Korch.run`/`Swarm.run` gained a
+`validate_max_supersteps` call; `Swarm.add()` gained a `validate_unique_agent_id` call.
+
+Two real, previously-silent gaps fixed as part of wiring this in: (1) **`max_supersteps` was
+never validated** — `Korch.run`/`Swarm.run` accepted any integer, including `0` or negative,
+with no check, even though spec 08 §7 explicitly documents the 1-100 bound. (2) **`Swarm.add()`
+silently overwrote a duplicate agent id** — `self._agents: dict[str, Agent]` is keyed by id, so
+adding a second agent with an id already in use discarded the first with no warning; it now
+raises `ValidationError` immediately.
+
+**Why.** P8.6 — "validators/ — trust-boundary validation, fail-fast with actionable messages."
+Auditing the full spec 08 §7 boundary table against the actual codebase (rather than assuming
+each row is covered because the module exists) surfaced the two gaps above — exactly the kind of
+review this task is for.
+
+**Design decisions.** (1) **Scoped to what Pydantic cannot express** — per spec 08 §7's own rule
+("Pydantic does the structural work; `validators/` holds only the domain rules Pydantic cannot
+express"), the other seven boundary-table rows (graph construction, agent output, routing, tool
+invocation, MCP responses, deserialization) were checked and confirmed already correctly enforced
+in their owning modules from earlier phases — no duplicate validation added, no re-implementation.
+Only "public façade arguments" needed new work, since that row was explicitly the one marked
+"services/, validators/" in the table. (2) **`_composition.py`'s local `validate_objective` was
+replaced, not duplicated** — re-exported from `validators/` (`import ... as ...`, the established
+pattern from P7.5's `resolve_repository`), so there is exactly one implementation, not two that
+could drift. (3) **Fail fast at `.add()` time, not at `.run()` time**, for the duplicate-id check
+— the earlier agent is about to be silently discarded the moment the second `.add()` call
+happens, so that is where the mistake is catchable with the most context (which two `.add()`
+calls collided), not later when the swarm actually runs.
+
+**Architecture changes.** `validators/boundary.py` (new); imports only `exceptions` + stdlib,
+within its declared allowance. `services/_composition.py` gains three re-exported imports and
+loses its own three-line `validate_objective`/`_MIN_OBJECTIVE_CHARS`; `services/korch.py` and
+`services/swarm.py` each gain one new validation call. No import-linter contract changes.
+
+**Files/modules affected.** `src/korchestrator/validators/{boundary,__init__}.py`;
+`src/korchestrator/services/{_composition,korch,swarm}.py`;
+`tests/unit/validators/test_boundary.py` (new); `tests/unit/services/test_facade.py` (duplicate-id
+test); `tests/unit/services/test_run.py` (`max_supersteps` bound tests); `CHANGELOG.md`.
+
+**Breaking changes.** None to any public signature. Behavioural: `Swarm.add()` on a duplicate id
+and `Korch.run`/`Swarm.run` with an out-of-range `max_supersteps` now raise instead of silently
+misbehaving — both are bug fixes (the old behaviour was never a documented, intended contract;
+spec 08 §7 already specified the 1-100 bound and duplicate-id rejection).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None. Any caller that was accidentally relying on `max_supersteps` outside
+1-100 being silently accepted, or on a duplicate `Swarm.add()` silently overwriting, was already
+depending on undocumented, spec-violating behaviour.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (100 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+Non-Temporal suite: **648 passed**, 95.37% coverage (≥80 floor). New: each validator's accepted
+range and inclusive boundary; `Swarm.add()` rejecting a duplicate id and leaving `size` unchanged;
+`Korch.run`/`Swarm.run` rejecting `max_supersteps` of `0`, `-1`, and `101`. 3 new doctests pass.
+
+**Known limitations / future improvements.** None outstanding — the boundary-table audit found
+exactly two gaps and both are closed.
+
+---
+
 ## 2026-07-23 · [P8.5] Deterministic, version-tagged serialization — v0.1.0 · ADR 0017
 
 **Type:** feature · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
