@@ -10,6 +10,71 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P9.2] Remote client credential safety — v0.1.0
+
+**Type:** feature/test · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient.__repr__` (new): shows `base_url` only, never headers or the
+credential — the class previously fell back to Python's default `object.__repr__` (a bare memory
+address, already safe, but implicit rather than engineered). `tests/unit/clients/
+test_credential_safety.py` (new, 7 tests) locks the spec 04 §7.2 mandate ("credentials MUST never
+be logged, never written to disk by the SDK, and MUST be redacted from exception messages and
+telemetry") as executable regression tests: the client's `repr`/`str` never contain the API key;
+`httpx.Headers.__repr__`'s built-in `authorization` redaction (`'[secure]'`) is pinned as a
+load-bearing assumption so a future `httpx` upgrade that changed it would fail loudly here; every
+error path P9.1 can already raise (`ApiError`, `NetworkError`, the `TimeoutError` alias) is
+exercised with a real-shaped secret key and asserted never to leak it, including a pathological
+case where the engine's own response body tries to echo the `Authorization` header back (proving
+`_api_error()` only ever reads `message`/`code`/`trace_id`, never blindly stringifies the whole
+body); and a static AST scan of every `clients/*.py` file asserts no `open(...)` call exists at
+all — "never written to disk" isn't just true today, it's guarded against regressing silently.
+
+**Why.** P9.2 — "Redaction from logs, exceptions, telemetry; test asserting credentials never
+appear in any output or on disk" (spec 11 Phase 9, spec 12 P9.2).
+
+**Design decisions.** (1) **No redaction *code* was needed for logs or telemetry, because
+`clients/` doesn't call either yet** — P9.1 built the transport with zero logging calls and no
+telemetry spans. Auditing that (rather than assuming) is the actual P9.2 work: everywhere a
+credential *could* leak today (repr, exception messages) is now tested; where it *could* leak in
+the future (a P9.3+ endpoint method adding a debug log line or an `http.request` telemetry span)
+is called out explicitly in Known limitations below, so the constraint isn't lost between tasks.
+(2) **Relied on `httpx`'s own `Authorization` redaction rather than re-implementing it** — `httpx.
+Headers.__repr__` already masks known-sensitive header names to `'[secure]'`; duplicating that
+logic in `korchestrator` would be a second implementation of the same concern. The risk (an
+`httpx` upgrade silently changing or dropping that behavior) is covered by pinning it as an
+explicit assertion in this task's test suite, so a regression is caught here rather than assumed
+away. (3) **The pathological echoed-header test is deliberate, not paranoid** — `_api_error()`
+(P9.1) already only reads three named fields (`message`/`code`/`trace_id`) out of the response
+body rather than dumping it wholesale, so this test is a regression guard proving that design
+choice holds, not evidence a new defense was added this task.
+
+**Architecture changes.** None — `clients/client.py` gained one dunder method (`__repr__`); no
+new module, no new dependency, no `.importlinter` change.
+
+**Files/modules affected.** `src/korchestrator/clients/client.py` (`__repr__`);
+`tests/unit/clients/test_credential_safety.py` (new); `CHANGELOG.md`.
+
+**Breaking changes.** None. `KorchestratorClient` had no prior custom `__repr__` to change
+behavior away from — the default was a bare memory address, so this is a pure improvement.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (103 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients` (P9.1 + P9.2 combined): **22 passed**. All 78 package doctests still pass.
+
+**Known limitations / future improvements.** This task audited and tested the surface `clients/`
+exposes *today* (transport only). P9.3–P9.6 add real endpoint methods and P9.5 adds streaming;
+whoever adds the first logging call or telemetry span in `clients/` must route request/response
+data through Shield (`korchestrator.security`) before it reaches a log record or a span attribute
+— spec 08 §5's "redaction applies... before anything reaches persistence, telemetry, logs" —
+and must never pass `self._client.headers` (or anything derived from it) into a log/span
+attribute even redacted-looking, since the whole point is that credential is never even eligible
+to leak, not that it's masked after the fact. This is now an explicit carry-forward, not an
+assumption.
+
 ## 2026-07-23 · [P9.1] Remote client transport + auth — v0.1.0
 
 **Type:** feature · **Phase:** P9 (remote client, first task) · **Author:** Claude (agent)

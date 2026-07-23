@@ -72,6 +72,10 @@ class KorchestratorClient:
         )
         self._max_retries = max_retries
 
+    def __repr__(self) -> str:
+        """Show ``base_url`` only — never the credential (spec 04 §7.2: never logged/printed)."""
+        return f"KorchestratorClient(base_url={str(self._client.base_url)!r})"
+
     async def __aenter__(self) -> Self:
         """Support ``async with KorchestratorClient(...) as client:``."""
         return self
