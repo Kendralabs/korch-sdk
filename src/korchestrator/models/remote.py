@@ -1,14 +1,14 @@
-"""Contract layer. Imports: korchestrator.models.state, stdlib, pydantic.
+"""Contract layer. Imports: korchestrator.models.{agent,state}, stdlib, pydantic.
 
 The remote engine's wire-facing shapes (spec 04 §7.3/§7.4) — what
 :class:`~korchestrator.clients.KorchestratorClient`'s methods return: run outcomes
-(``RemoteRunResult``/``RunSummary``), caller identity and usage (``CallerIdentity``/``Quota``),
-and API key management (``ApiKey``/``ApiKeySummary``). Deliberately distinct from the local
-kernel's :class:`~korchestrator.models.result.RunResult`: spec 04 §7 pins the documented
-*concepts* (§7.1) and the lifecycle/status vocabulary (§7.4), not a full wire schema, and the
-engine's response never carries the kernel's internal nested ``AgentState`` snapshot — reusing
-``RunResult`` verbatim would mean fabricating fields the engine never sends. Frozen and
-``extra="forbid"``.
+(``RemoteRunResult``/``RunSummary``/``RunEvent``), caller identity and usage
+(``CallerIdentity``/``Quota``), API key management (``ApiKey``/``ApiKeySummary``), and discovery
+(``ToolDescriptor``/``SwarmTemplate``). Deliberately distinct from the local kernel's
+:class:`~korchestrator.models.result.RunResult`: spec 04 §7 pins the documented *concepts* (§7.1)
+and the lifecycle/status vocabulary (§7.4), not a full wire schema, and the engine's response
+never carries the kernel's internal nested ``AgentState`` snapshot — reusing ``RunResult``
+verbatim would mean fabricating fields the engine never sends. Frozen and ``extra="forbid"``.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from korchestrator.models.agent import AgentConfig
 from korchestrator.models.state import RunStatus
 from korchestrator.types import JSONValue
 
@@ -29,6 +30,8 @@ __all__ = [
     "RemoteRunResult",
     "RunEvent",
     "RunSummary",
+    "SwarmTemplate",
+    "ToolDescriptor",
 ]
 
 
@@ -131,3 +134,35 @@ class ApiKeySummary(BaseModel):
     id: str
     scopes: tuple[str, ...] = ()
     created_at: datetime
+
+
+class ToolDescriptor(BaseModel):
+    """A discoverable tool (``GET /v1/tools``, spec 04 §7.3).
+
+    The wire twin of the local :class:`korchestrator.interfaces.Connector` protocol's
+    ``name``/``description``/``schema`` (P6) — the same concept the AUB registry already
+    exposes locally, described for a remote caller instead. The field is named
+    ``input_schema``, not ``schema`` — ``BaseModel`` reserves ``schema`` for its own (deprecated)
+    ``.schema()`` method, and ``input_schema`` matches Anthropic's own tool-use vocabulary.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    description: str = ""
+    input_schema: Mapping[str, JSONValue] = Field(default_factory=dict)
+
+
+class SwarmTemplate(BaseModel):
+    """A named swarm topology preset (``GET /v1/swarm-templates``, spec 04 §7.3).
+
+    Reuses :class:`~korchestrator.models.agent.AgentConfig` for ``agents`` — the same declarative
+    shape ``run_swarm`` already accepts, so a template can be fetched and passed straight through.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    description: str = ""
+    agents: tuple[AgentConfig, ...] = ()
+    edges: tuple[tuple[str, str], ...] = ()

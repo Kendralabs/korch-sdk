@@ -10,6 +10,73 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P9.6] Remote client discovery — v0.1.0 (closes the client-method surface)
+
+**Type:** feature · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient.tools()`/`models()`/`swarm_templates()` (`GET /v1/tools`,
+`/v1/models`, `/v1/swarm-templates`, spec 04 §7.3). `models()` reuses the existing
+`korchestrator.models.routing.ModelCard` — the local kernel's own model-capability catalogue —
+verbatim, since it's the same concept over the wire with no kernel-internal-state issue. Two new
+`models.remote` types: `ToolDescriptor` (`name`/`description`/`input_schema` — the wire twin of
+the local `Connector` protocol's `name`/`description`/`schema`) and `SwarmTemplate` (`name`/
+`description`/`agents`/`edges`, reusing `AgentConfig` so a fetched template can be passed straight
+into `run_swarm`). This completes the client's method surface — P9.7/P9.8 are documentation and
+test-hardening tasks, not new endpoints.
+
+**Why.** P9.6 — "tools, models, swarm_templates" (spec 11 Phase 9, spec 12 P9.6).
+
+**Design decisions.** (1) **`ModelCard` is reused directly — the first genuine model reuse across
+Phase 9**, breaking with P9.3/P9.5's pattern of purpose-built wire models. The distinction: a
+`ModelCard` is a pure capability/cost/latency description with no kernel-internal state (unlike
+`RunResult`'s nested `AgentState`, or `events.Event` being the LOCAL streaming primitive) — the
+SAME concept whether a caller asks the local router or a remote engine "what models exist," so
+reuse is the one-canonical-implementation call here, not a debatable cross-layer import (`clients/`
+already imports `korchestrator.models.routing` freely — models/ is `clients/`'s one documented
+allowed import). (2) **`ToolDescriptor.input_schema`, not `.schema`** — pydantic v2's `BaseModel`
+still exposes a deprecated `.schema()` method, and a field literally named `schema` collides with
+it (mypy caught this immediately: "Incompatible types in assignment... base class BaseModel
+defined the type as Callable"). `input_schema` was chosen over an alias workaround because it
+matches an already-established real-world vocabulary (Anthropic's own tool-use API), not because
+it was the only name available. (3) **"Discovery" (P9.6) deliberately excludes
+`POST /v1/tools/register`** — spec 04 §7.3's endpoint table lists it, but the P9.4–P9.6 task
+breakdown never names it, and it doesn't fit "discovery" (a read-only capability), so it's treated
+as intentionally out of this implementation's scope, the same call already made for the raw-
+`AgentState` `POST /v1/run` endpoint in P9.3.
+
+**Architecture changes.** `models/remote.py` gains `ToolDescriptor`, `SwarmTemplate` (both
+re-exported from `korchestrator.models`); `clients/client.py` imports
+`korchestrator.models.routing.ModelCard` (new for this file, already an allowed `models`
+sub-import) and gains `tools`/`models`/`swarm_templates` + their async cores, using the existing
+`_extract_list`/`_validate_model` helpers — no new parsing pattern. `KorchestratorClient`'s class
+docstring updated to describe the now-complete method surface (run lifecycle, control/identity,
+discovery, streaming) in one place. No new import-linter-relevant dependency.
+
+**Files/modules affected.** `src/korchestrator/models/{remote,__init__}.py`;
+`src/korchestrator/clients/client.py`; `tests/unit/clients/test_discovery.py` (new, 7 tests);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. Additive only; `tests/unit/public_surface.json` untouched (same
+reasoning as P9.1–P9.5).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients`: **79 passed**, 99.75% coverage on `clients/client.py` (the one uncovered
+branch is the same loop-continuation artifact noted in P9.5, unrelated to this task). New:
+`tools()`/`models()`/`swarm_templates()` each parsing both a wrapped-object and (for `tools`) a
+bare-array response, rejecting an unexpected shape, and `swarm_templates()` round-tripping a real
+`AgentConfig` through the nested `agents` field. All 98 package doctests (up from 95) pass.
+
+**Known limitations / future improvements.** Same wire-format caveat as P9.3–P9.5: the exact JSON
+shapes are this task's own documented assumption, not a transcription of a published schema.
+`POST /v1/tools/register` remains unimplemented (Design decision 3). P9.7 (the full `respx`
+contract-conformance suite covering every method built P9.1–P9.6) and P9.8 (the TS parity matrix)
+are what's left in Phase 9.
+
 ## 2026-07-23 · [P9.5] Remote client SSE streaming — v0.1.0
 
 **Type:** feature · **Phase:** P9 (remote client) · **Author:** Claude (agent)

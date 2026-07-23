@@ -34,7 +34,10 @@ from korchestrator.models.remote import (
     RemoteRunResult,
     RunEvent,
     RunSummary,
+    SwarmTemplate,
+    ToolDescriptor,
 )
+from korchestrator.models.routing import ModelCard
 from korchestrator.models.state import RunStatus
 from korchestrator.types import JSONValue
 
@@ -72,12 +75,12 @@ class KorchestratorClient:
     backoff on 429/502/503/504 and connection failures — never on any other 4xx, since retrying a
     client error is a defect (spec 04 §7.5). Covers run lifecycle (``run``/``run_swarm``/
     ``get_run``/``wait``/``run_and_wait``/``list_runs``/``get_run_summary``), control and identity
-    (``resume``/``cancel``/``edit_resume``/``me``/``my_quota``/``my_runs``/key management), and
-    live event streaming (``stream``, a native async iterator) — every method except ``stream``
-    is a sync wrapper around an async core (spec 04 §7's own Tier-4 example calls
-    ``client.run_and_wait(...)`` with no ``await``). Discovery (``tools``/``models``/
-    ``swarm_templates``) lands in the next Phase 9 task. Nothing in Tiers 1-3 (``Korch``/``Swarm``/
-    the kernel) depends on this client, and the base install never imports it.
+    (``resume``/``cancel``/``edit_resume``/``me``/``my_quota``/``my_runs``/key management),
+    discovery (``tools``/``models``/``swarm_templates``), and live event streaming (``stream``, a
+    native async iterator) — every method except ``stream`` is a sync wrapper around an async core
+    (spec 04 §7's own Tier-4 example calls ``client.run_and_wait(...)`` with no ``await``). Nothing
+    in Tiers 1-3 (``Korch``/``Swarm``/the kernel) depends on this client, and the base install
+    never imports it.
 
     Example:
         >>> from korchestrator.remote import KorchestratorClient
@@ -801,6 +804,93 @@ class KorchestratorClient:
 
     async def _revoke_key_async(self, key_id: str, *, timeout: float | None) -> None:
         await self._request("DELETE", f"/v1/keys/{key_id}", timeout=timeout)
+
+    # --- discovery (spec 04 §7.3, P9.6) -----------------------------------------------------
+
+    def tools(self, *, timeout: float | None = None) -> tuple[ToolDescriptor, ...]:
+        """List the tools available on the engine (``GET /v1/tools``).
+
+        Args:
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The available tools as :class:`~korchestrator.models.remote.ToolDescriptor`.
+
+        Raises:
+            ApiError: The engine rejected the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.tools()  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._tools_async(timeout=timeout))
+
+    async def _tools_async(self, *, timeout: float | None) -> tuple[ToolDescriptor, ...]:
+        response = await self._request("GET", "/v1/tools", timeout=timeout)
+        payload = _parse_json_body(response)
+        items = _extract_list(payload, "tools", response.status_code)
+        return tuple(_validate_model(ToolDescriptor, item, response.status_code) for item in items)
+
+    def models(self, *, timeout: float | None = None) -> tuple[ModelCard, ...]:
+        """List the models available on the engine (``GET /v1/models``).
+
+        Args:
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The available models as :class:`~korchestrator.models.routing.ModelCard` — the same
+            catalogue shape the local kernel's routing already uses.
+
+        Raises:
+            ApiError: The engine rejected the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.models()  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._models_async(timeout=timeout))
+
+    async def _models_async(self, *, timeout: float | None) -> tuple[ModelCard, ...]:
+        response = await self._request("GET", "/v1/models", timeout=timeout)
+        payload = _parse_json_body(response)
+        items = _extract_list(payload, "models", response.status_code)
+        return tuple(_validate_model(ModelCard, item, response.status_code) for item in items)
+
+    def swarm_templates(self, *, timeout: float | None = None) -> tuple[SwarmTemplate, ...]:
+        """List the engine's swarm topology presets (``GET /v1/swarm-templates``).
+
+        Args:
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The available presets as :class:`~korchestrator.models.remote.SwarmTemplate`.
+
+        Raises:
+            ApiError: The engine rejected the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.swarm_templates()  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._swarm_templates_async(timeout=timeout))
+
+    async def _swarm_templates_async(self, *, timeout: float | None) -> tuple[SwarmTemplate, ...]:
+        response = await self._request("GET", "/v1/swarm-templates", timeout=timeout)
+        payload = _parse_json_body(response)
+        items = _extract_list(payload, "templates", response.status_code)
+        return tuple(_validate_model(SwarmTemplate, item, response.status_code) for item in items)
 
     # --- streaming (spec 04 §7.3/§7.5, P9.5) --------------------------------------------------
 
