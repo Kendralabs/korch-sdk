@@ -15,6 +15,14 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Graph repository (Phase 7): `korchestrator.persistence` gains `InMemoryGraphRepository` (the
+  `GraphRepository` protocol's default, zero-infrastructure implementation, tenant-scoped and
+  concurrency-safe) and `resolve_repository()` (the one place `PERSISTENCE_BACKEND` becomes a
+  concrete repository, or `None` for `PERSISTENCE_BACKEND=none`'s fully standalone run).
+  `Korch`/`Swarm` now actually consult their `repository` — a `_PersistenceMiddleware` checkpoints
+  `AgentState` after every superstep, giving the local runtime (which has no built-in durability) a
+  best-effort recovery point. `PERSISTENCE_BACKEND=kcg` (an external backend) raises an actionable
+  `ConfigurationError`; external backends are post-1.0.
 - HITL controls (Phase 7): the Temporal runtime's `PregelMaster` workflow now **auto-pauses itself**
   when a superstep's `trust_score` breaches any active node's effective HITL threshold — the same
   `governance_paused` mechanism an operator's own `pause` signal uses. A new `edit_resume` signal

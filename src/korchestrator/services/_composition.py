@@ -18,11 +18,12 @@ from korchestrator.config import Settings
 from korchestrator.core.graph import AgentGraph, Edge, Node
 from korchestrator.core.pregel import Clock, SuperstepObserver
 from korchestrator.exceptions import MissingExtraError, ValidationError
-from korchestrator.interfaces import BaseRouter, IDurableRuntime, IModelGateway
+from korchestrator.interfaces import BaseRouter, GraphRepository, IDurableRuntime, IModelGateway
 from korchestrator.models.agent import AgentConfig
 from korchestrator.models.result import RunResult
 from korchestrator.models.routing import ModelCard, RoutingContext, TaskSemantics
 from korchestrator.models.state import AgentState
+from korchestrator.persistence import resolve_repository as resolve_repository
 from korchestrator.providers import get_lm
 from korchestrator.routing import load_model_cards, resolve_router
 from korchestrator.runtime import resolve_runtime
@@ -33,18 +34,45 @@ from korchestrator.types import JSONValue
 _MIN_OBJECTIVE_CHARS = 10
 
 
+class _PersistenceMiddleware(Middleware):
+    """Checkpoint ``AgentState`` after each superstep via an injected ``GraphRepository``.
+
+    The local runtime has no built-in durability (a crash loses the run); this gives it a
+    best-effort checkpoint so the latest state is recoverable via ``GraphRepository.load_state``.
+    Hooks never run in Temporal workflow scope (spec 07 §9) — Temporal's own event history is
+    already the durable checkpoint there, so this middleware's practical effect is local-only.
+    """
+
+    def __init__(self, repository: GraphRepository, *, tenant_id: str) -> None:
+        """Store the repository and the tenant every checkpoint is scoped to."""
+        self._repository = repository
+        self._tenant_id = tenant_id
+
+    async def after_superstep(self, state: AgentState) -> None:
+        """Persist ``state`` under its own ``run_id`` within the bound tenant."""
+        await self._repository.save_state(state, tenant_id=self._tenant_id)
+
+
 def build_observer(
-    middleware: Sequence[Middleware], handlers: Sequence[tuple[str, EventHandler]]
+    middleware: Sequence[Middleware],
+    handlers: Sequence[tuple[str, EventHandler]],
+    *,
+    repository: GraphRepository | None = None,
+    tenant_id: str = "default",
 ) -> SuperstepObserver | None:
-    """Build a :class:`HookRegistry` from middleware and handlers, or ``None`` if there are none.
+    """Build a :class:`HookRegistry` from middleware, handlers, and persistence, or ``None``.
 
     Returning ``None`` when nothing is registered keeps the zero-overhead path — the runtime skips
-    observer dispatch entirely.
+    observer dispatch entirely. When ``repository`` is given (``PERSISTENCE_BACKEND`` resolved to
+    something other than ``"none"``), a :class:`_PersistenceMiddleware` checkpoint is appended.
     """
-    if not middleware and not handlers:
+    all_middleware = list(middleware)
+    if repository is not None:
+        all_middleware.append(_PersistenceMiddleware(repository, tenant_id=tenant_id))
+    if not all_middleware and not handlers:
         return None
     registry = HookRegistry()
-    for item in middleware:
+    for item in all_middleware:
         registry.register_middleware(item)
     for event, handler in handlers:
         registry.on(event, handler)

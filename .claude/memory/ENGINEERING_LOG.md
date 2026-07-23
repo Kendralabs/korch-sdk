@@ -10,6 +10,85 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P7.5] Graph repository — in-memory GraphRepository, wired into the façade — v0.1.0
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** `persistence/repository.py`: `InMemoryGraphRepository` — implements the P1
+`GraphRepository` protocol (`save_state`/`load_state`) structurally, tenant-scoped
+(`dict[tenant_id, dict[run_id, AgentState]]`), guarded by an `asyncio.Lock` for the protocol's
+concurrency requirement. `persistence/factory.py`: `resolve_repository(settings, repository=None)`
+— the one place `PERSISTENCE_BACKEND` becomes a concrete repository: an injected instance wins;
+`"none"` returns `None` (fully standalone); `"memory"` (the default) returns a fresh
+`InMemoryGraphRepository`; `"kcg"` raises an actionable `ConfigurationError` (external backends are
+post-1.0). Wired into the façade: `services/_composition.py` gains `_PersistenceMiddleware` (an
+`after_superstep` hook that checkpoints `AgentState` via the repository) and `build_observer` grows
+a `repository=`/`tenant_id=` pair that appends it when a repository resolves. `Korch.run`/
+`Swarm.run` now actually resolve and pass their `repository` — previously accepted but never
+consulted (a gap flagged since the P4.9 log entry).
+
+**Why.** P7.5 — "in-memory `GraphRepository` (default), `PERSISTENCE_BACKEND=none` runs fully
+standalone." The `GraphRepository` protocol has existed since P1 with nothing behind it; this is
+the default implementation plus the wiring that makes it real.
+
+**Design decisions.** (1) **Checkpointing rides the existing `SuperstepObserver`/`Middleware` seam**
+(P6.8) rather than a new extension point — `_PersistenceMiddleware.after_superstep` is exactly the
+shape `Middleware` already supports, so no core or runtime change was needed. (2) Hooks "never run
+in Temporal workflow scope" (spec 07 §9), so this checkpointing is **local-runtime-only in
+practice** — intentional: the local runtime has no built-in durability of its own ("a crash loses
+the run"), while Temporal's event history is already the durable checkpoint for that path.
+Documented on the middleware's own docstring rather than silently assumed. (3) `resolve_repository`
+follows the same factory pattern as `resolve_router`/`get_lm`: a pure function in the owning
+feature module (`persistence/`), called from the composition root — not a class the façade
+constructs inline. (4) `"kcg"` fails fast with a clear, actionable message pointing at `"memory"`/
+`"none"`, mirroring `MODELCARD_URL`'s deferred-with-guidance pattern from P5.2, rather than a bare
+`NotImplementedError`. (5) The checkpoint's `tenant_id` defaults to `"default"` in `run_graph`'s
+existing default — no new multi-tenancy wiring introduced; `Korch`/`Swarm` don't yet expose a
+`tenant_id` parameter (a pre-existing gap, not this phase's scope).
+
+**Architecture changes.** `persistence/` gains its first real implementation (was an empty stub);
+imports `interfaces`, `models`, `config`, `exceptions` — within its declared allowance, no
+`serializers` dependency needed (plain in-memory dict storage, no round-trip serialization required
+yet). `services/_composition.py` gains one `Middleware` subclass and a `repository`/`tenant_id`
+extension to `build_observer` — legal at the composition root, which already wires everything.
+Import-linter 4/4 kept (`persistence` stays independent of the other feature modules).
+
+**Files/modules affected.** `src/korchestrator/persistence/{repository,factory,__init__}.py`
+(repository/factory new, `__init__` re-exports); `src/korchestrator/services/_composition.py`
+(`_PersistenceMiddleware`, `build_observer`); `src/korchestrator/services/{korch,swarm}.py`
+(resolve + pass `repository`); `tests/unit/persistence/{test_repository,
+test_repository_factory}.py` (new); `tests/unit/services/test_run.py` (one new checkpointing test);
+`CHANGELOG.md`. (`test_factory.py` would have collided with the existing
+`tests/unit/providers/test_factory.py` module name under pytest's no-`__init__.py` layout — named
+`test_repository_factory.py` instead.)
+
+**Breaking changes.** None. `build_observer` gains two keyword-only parameters with defaults
+(`repository=None`, `tenant_id="default"`); behavioural change only when a non-`None` repository is
+actually resolved (previously silently ignored). New `korchestrator.persistence` surface; top-level
+`__all__` untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (94 source files);
+import-linter 4/4 kept; the isolation gate and env-confinement check both `OK`. Non-Temporal suite:
+**511 passed**, 94.48% coverage (≥80 floor). New: protocol conformance; save/load round-trip;
+overwrite-on-resave; tenant isolation; multiple runs coexisting within a tenant; `resolve_repository`
+for `none`/`memory`/`kcg`/an injected override/a fresh instance per call; an end-to-end `Swarm.run()`
+with an injected repository asserting the checkpointed state matches the run (checked against
+`halted=True` rather than `RunStatus.COMPLETED`, since the observer only ever sees the kernel's own
+`RUNNING` status — `COMPLETED` is stamped by `build_result()` after the loop, outside the observer's
+reach). 2 doctests pass.
+
+**Known limitations / future improvements.** (1) Checkpointing is best-effort and only fires on the
+local runtime in practice (§ design decisions) — Temporal hook dispatch remains deferred. (2) No
+`tenant_id` parameter on `Korch`/`Swarm` yet; every run checkpoints under `"default"`. (3) The
+bitemporal `ContextGraphClient` (decision/event nodes, confidence, provenance, event sourcing,
+time-travel queries) that layers on top of this `GraphRepository` is P7.6, next.
+
+---
+
 ## 2026-07-23 · [P7.4] HITL controls — governance auto-pause, edit_resume, façade signals — v0.1.0
 
 **Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
