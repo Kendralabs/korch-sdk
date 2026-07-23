@@ -27,6 +27,7 @@
     "ToolError",
     "ValidationError",
     "__version__",
-    "configure"
+    "configure",
+    "enable_logging"
   ]
 }

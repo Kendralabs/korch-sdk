@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1–P8.2 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
-| **Last completed milestone** | **P8.2 — config isolation test.** `tests/unit/test_config_isolation.py` now asserts, as part of the normal `pytest` run, that no environment read escapes `config/` (spec 08 §1.4) — previously only checked by a separately-invoked script. Reuses `scripts/check_env_reads.py`'s scan (`find_offenders`, extracted + a latent `path.parts[2]` indexing bug fixed) rather than duplicating it. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.3 (logging), P8.4 (exception audit), P8.5 (serialization), P8.6 (validation), P8.7 (telemetry). |
-| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.2 committed locally, not yet pushed. |
+| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1–P8.3 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
+| **Last completed milestone** | **P8.3 — namespaced, disable-able logging.** `korchestrator.logging.enable_logging()`/`disable_logging()`; a `NullHandler` is attached at import so the SDK stays silent by default (closing a real pre-existing gap — no handler anywhere meant WARNING+ logs could already leak to stderr via Python's last-resort handler). `enable_logging` joins top-level `__all__`. The `T20` (no-`print()`) ruff rule is now enforced. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.4 (exception audit), P8.5 (serialization), P8.6 (validation), P8.7 (telemetry). |
+| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.3 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (97 source files), `pytest` (dspy + non-dspy paths; **553 passed**,
-94.71% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+ruff-format, `mypy --strict` (98 source files), `pytest` (dspy + non-dspy paths; **567 passed**,
+94.77% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
 confinement), the isolation gate, env-confinement, and version single-sourcing. `import
 korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
 `pydantic`-only.
@@ -36,7 +36,7 @@ korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the 
 | P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
-| P8 | Cross-cutting foundations | **In progress** (P8.1 Settings finalized; P8.2–P8.7 next) |
+| P8 | Cross-cutting foundations | **In progress** (P8.1–P8.3 done; P8.4–P8.7 next) |
 | P9 | Remote client (Python only — TS deferred) | Not started |
 | P10 | Testing, benchmarks & quality gates | Not started |
 | P11 | Documentation, examples & DX | Not started |
@@ -69,20 +69,23 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `governance/` | Governance (L5) | **tested** (`ControlTowerTelemetry`/`check_governance` — trust score read; `evaluate_policy`/`GovernanceDecision`/`AuditLog` — policy + audit, P7.3) | P7 |
 | `security/` | Leaf utility | **tested** (Shield redactor, P7.1) | P7 |
 | `persistence/` | Context (L3) | **tested** (`InMemoryGraphRepository` + `resolve_repository`, wired into `Korch`/`Swarm` via `_PersistenceMiddleware`; `ContextGraphClient` — bitemporal `DecisionNode`/`EventNode`, Shield-redacted, tenant-scoped, time-travel query, P7.6) | P7 |
-| `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
+| `logging/` | Leaf utility | **tested** (namespaced logger, `NullHandler` by default, `enable_logging`/`disable_logging`, P8.3) | P8.3 |
+| `clients/` · `serializers/` · `validators/` · `telemetry/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
 
 ## 4. Public surface
 
-**Currently exported:** 28 names — `Agent`, `AgentState`, `Korch`, `Swarm`, `configure` (P8.1), the
-4 ARI ports (`IDurableRuntime`/`IExecutionSandbox`/`IIdentityProvider`/`IModelGateway`), the 13
-top-level `KorchError` subclasses, `Message`/`RunResult`/`RunStatus`/`StateUpdate`, `Settings`, and
-`__version__`. Full list in `tests/unit/public_surface.json`. Frozen at P1 with 27 names;
-`configure` is the first deliberate, ADR-considered addition (ADR 0016).
+**Currently exported:** 29 names — `Agent`, `AgentState`, `Korch`, `Swarm`, `configure` (P8.1),
+`enable_logging` (P8.3), the 4 ARI ports (`IDurableRuntime`/`IExecutionSandbox`/`IIdentityProvider`/
+`IModelGateway`), the 13 top-level `KorchError` subclasses,
+`Message`/`RunResult`/`RunStatus`/`StateUpdate`, `Settings`, and `__version__`. Full list in
+`tests/unit/public_surface.json`. Frozen at P1 with 27 names; `configure`/`enable_logging` are the
+first deliberate, ADR-considered additions (ADR 0016).
 
-**Grows further in P8** by three more names (`enable_logging` — P8.3, `from_json`/`to_json` — P8.5)
-— each a MINOR addition that updates the golden snapshot. `korchestrator.exceptions.TimeoutError`
-and `ConfigurationError` are both part of the compatibility surface but intentionally not top-level
-(ADR 0016 for the latter — matches spec 04 §6's `__init__.py` example exactly).
+**Grows further in P8** by two more names (`from_json`/`to_json` — P8.5) — each a MINOR addition
+that updates the golden snapshot. `korchestrator.exceptions.TimeoutError` and `ConfigurationError`,
+and `korchestrator.logging.disable_logging`, are all part of the compatibility surface but
+intentionally not top-level (ADR 0016 for the latter two — matches spec 04 §6's `__init__.py`
+example exactly).
 
 The surface is guarded by the golden-file snapshot test (`tests/unit/test_public_surface.py`).
 Changing it is a deliberate act requiring a CHANGELOG entry and a version decision in the same PR.
