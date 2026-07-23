@@ -31,6 +31,7 @@ EXPECTED_DEFAULT_CODES = {
     "RunFailedError": "KORCH_RUN_FAILED",
     "RunTimeoutError": "KORCH_RUN_TIMEOUT",
     "MissingExtraError": "KORCH_MISSING_EXTRA",
+    "ApiError": "KORCH_API_ERROR",
 }
 
 

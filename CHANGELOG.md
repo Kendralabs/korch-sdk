@@ -15,6 +15,15 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Remote client transport + auth (Phase 9): `korchestrator.remote.KorchestratorClient` (also
+  `korchestrator.clients.KorchestratorClient`) — the Tier 4 client's authenticated, retrying HTTP
+  transport, behind the `[remote]` extra (spec 04 §7). One `Authorization: Bearer` header for
+  both a static API key and a Keycloak/KIAM JWT; a 30s default timeout, overridable per call; up
+  to 3 retries with full-jitter exponential backoff on `429`/`502`/`503`/`504` and connection
+  failures, never on any other `4xx`. New `korchestrator.exceptions.ApiError` (`status`, `code`,
+  `trace_id`) is raised for a terminal non-2xx response. This first remote-client task ships the
+  transport only — `run`/`get_run`/`resume`/`stream`/etc. land in the following Phase 9 tasks, so
+  `KorchestratorClient` is not yet usable end-to-end.
 - Optional OpenTelemetry telemetry (Phase 8, **closes Phase 8**): `korchestrator.telemetry` gains
   `start_span(name, *, settings=None, **attributes)` and `record_metric(name, value, *, settings=
   None, **attributes)`, behind `KORCH_TELEMETRY_ENABLED` (default off) and the `[otel]` extra.
