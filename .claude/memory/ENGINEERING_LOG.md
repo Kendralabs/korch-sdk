@@ -10,6 +10,79 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P9.4] Remote client control + identity — v0.1.0
+
+**Type:** feature/refactor · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient` gains `resume`, `cancel`, `edit_resume` (spec 04 §7.3's
+`POST /v1/run/{id}/{resume,cancel,edit-resume}`), `me`/`my_quota`/`my_runs`
+(`GET /v1/me`, `/v1/me/quota`, `/v1/me/runs`), and key management — `create_key`/`list_keys`/
+`revoke_key` (`POST`/`GET /v1/keys`, `DELETE /v1/keys/{id}`). `edit_resume(run_id, *, updates=,
+trust_delta=)` mirrors the local kernel's own `Korch.edit_resume` signal shape exactly. Four new
+`models.remote` types: `CallerIdentity`, `Quota`, `ApiKey` (the creation response — `key:
+SecretStr`, shown once), `ApiKeySummary` (list response — no secret field at all). Alongside the
+new methods, `_parse_remote_run_result`/`_parse_run_summary` were generalized into one shared
+`_validate_model(model_cls, payload, status_code)` + `_extract_list(payload, key, status_code)`
+pair, since `me`/`my_quota`/`create_key`/`list_keys` needed the identical "validate one JSON
+object into a model, wrapping shape/validation failures as `ApiError`" and "extract a list from a
+bare array or a `{key: [...]}` wrapper" logic `get_run`/`list_runs` already had — refactored the
+three P9.1–P9.3 call sites onto the shared helpers rather than adding a fourth near-duplicate.
+
+**Why.** P9.4 — "resume, cancel, edit_resume, me, my_quota, my_runs, key management" (spec 11
+Phase 9, spec 12 P9.4).
+
+**Design decisions.** (1) **`ApiKey.key` is a `pydantic.SecretStr`, not a plain `str`** — spec 08
+§1.3's rule ("every secret-bearing field MUST be typed `SecretStr`") applies just as much to a
+key the ENGINE hands back as to one the SDK reads from `Settings`; a bare `str` field would defeat
+P9.2's whole credential-safety effort the moment someone `repr()`s or logs the creation response.
+The caller still gets the real value via `.get_secret_value()` — the point is making an accidental
+leak require a deliberate call, not an accident. (2) **Key-management method names
+(`create_key`/`list_keys`/`revoke_key`) are this task's own choice, not a spec quote** — unlike
+`resume`/`cancel`/`edit_resume`/`me`/`my_quota`/`my_runs`, which spec 12's P9.4 bullet names
+explicitly, "key management" is named as a capability, not a method list; the chosen names follow
+ordinary Python convention and the same create/list/revoke shape the rest of the SDK uses
+elsewhere (e.g. `ConnectorRegistry`). (3) **The shared-helper refactor happened because a fourth
+near-identical parsing function would have been the third or fourth instance of the same "shape
+check, then model_validate, then wrap the failure as ApiError" logic** — the architecture rule is
+one canonical implementation per concern; four functions that differ only by which model class
+they validate against is the concern duplicated, not four different concerns. `_normalize_status_
+field` staying inside `_validate_model` is harmless for the three new models (none has a `status`
+field, so it's a no-op), keeping one code path instead of a status-aware and a status-unaware
+variant.
+
+**Architecture changes.** `models/remote.py` gains `CallerIdentity`, `Quota`, `ApiKey`,
+`ApiKeySummary` (all re-exported from `korchestrator.models`). `clients/client.py`'s two
+run-result parsing functions were replaced by the generalized `_validate_model`/`_extract_list`;
+every P9.1–P9.4 call site updated accordingly, no behavioural change to any already-shipped
+method (all 61 pre-existing + new `tests/unit/clients` tests pass unmodified against the
+refactor). No new import-linter-relevant dependency.
+
+**Files/modules affected.** `src/korchestrator/models/{remote,__init__}.py`;
+`src/korchestrator/clients/client.py`; `tests/unit/clients/test_control_identity.py` (new, 11
+tests); `CHANGELOG.md`.
+
+**Breaking changes.** None. Additive only; `tests/unit/public_surface.json` untouched (same
+reasoning as P9.1–P9.3).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients`: **61 passed**, **100% coverage** on `clients/client.py` and
+`models/remote.py` combined. New: `resume`/`cancel` request+response; `edit_resume`'s exact wire
+body (`{"updates": {...}, "trust_delta": ...}`, including the empty-updates default); `me`/
+`my_quota` parsing; `my_runs` parsing a bare array and rejecting an unexpected shape;
+`create_key`'s request body and that the returned `ApiKey.key` is retrievable via
+`get_secret_value()` but never appears in `repr(key)`; `list_keys` never carries a secret field;
+`revoke_key` sends the `DELETE` and returns `None`. All 94 package doctests (up from 85) pass.
+
+**Known limitations / future improvements.** Same wire-format caveat as P9.3: the JSON shapes for
+`CallerIdentity`/`Quota`/`ApiKey`/`ApiKeySummary` are this task's own documented assumption, not a
+transcription of a published engine schema (none exists yet). P9.5 (streaming) and P9.6
+(discovery — tools/models/swarm-templates) remain.
+
 ## 2026-07-23 · [P9.3] Remote client run lifecycle — v0.1.0
 
 **Type:** feature · **Phase:** P9 (remote client) · **Author:** Claude (agent)

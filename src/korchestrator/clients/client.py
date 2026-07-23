@@ -15,16 +15,26 @@ import asyncio
 import random
 from collections.abc import Mapping, Sequence
 from types import TracebackType
+from typing import TypeVar
 
 import httpx
+from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 from typing_extensions import Self
 
 from korchestrator.exceptions import ApiError, NetworkError
 from korchestrator.exceptions import TimeoutError as KorchTimeoutError
 from korchestrator.models.agent import AgentConfig
-from korchestrator.models.remote import RemoteRunResult, RunSummary
+from korchestrator.models.remote import (
+    ApiKey,
+    ApiKeySummary,
+    CallerIdentity,
+    Quota,
+    RemoteRunResult,
+    RunSummary,
+)
 from korchestrator.models.state import RunStatus
+from korchestrator.types import JSONValue
 
 __all__ = ["KorchestratorClient"]
 
@@ -48,6 +58,7 @@ _STATUS_BY_CODE: dict[int, RunStatus] = {
     5: RunStatus.GOVERNANCE_PAUSED,
     6: RunStatus.TIMED_OUT,
 }
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
 
 
 class KorchestratorClient:
@@ -248,7 +259,7 @@ class KorchestratorClient:
         if tenant_id is not None:
             body["tenant_id"] = tenant_id
         response = await self._request("POST", "/v1/run/auto", json=body, timeout=timeout)
-        return _parse_remote_run_result(response)
+        return _validate_model(RemoteRunResult, _parse_json_body(response), response.status_code)
 
     def run_swarm(
         self,
@@ -316,7 +327,7 @@ class KorchestratorClient:
         if tenant_id is not None:
             body["tenant_id"] = tenant_id
         response = await self._request("POST", "/v1/run/swarm", json=body, timeout=timeout)
-        return _parse_remote_run_result(response)
+        return _validate_model(RemoteRunResult, _parse_json_body(response), response.status_code)
 
     def get_run(self, run_id: str, *, timeout: float | None = None) -> RemoteRunResult:
         """Fetch a run's full live state (``GET /v1/run/{id}``).
@@ -343,7 +354,7 @@ class KorchestratorClient:
 
     async def _get_run_async(self, run_id: str, *, timeout: float | None) -> RemoteRunResult:
         response = await self._request("GET", f"/v1/run/{run_id}", timeout=timeout)
-        return _parse_remote_run_result(response)
+        return _validate_model(RemoteRunResult, _parse_json_body(response), response.status_code)
 
     def wait(
         self,
@@ -483,18 +494,8 @@ class KorchestratorClient:
         params = {"tenant_id": tenant_id} if tenant_id is not None else None
         response = await self._request("GET", "/v1/runs", params=params, timeout=timeout)
         payload = _parse_json_body(response)
-        if isinstance(payload, list):
-            items: object = payload
-        elif isinstance(payload, Mapping) and "runs" in payload:
-            items = payload["runs"]
-        else:
-            items = None
-        if not isinstance(items, list):
-            raise ApiError(
-                f"The engine returned an unexpected /v1/runs response shape: {payload!r}.",
-                status=response.status_code,
-            )
-        return tuple(_parse_run_summary(item, response.status_code) for item in items)
+        items = _extract_list(payload, "runs", response.status_code)
+        return tuple(_validate_model(RunSummary, item, response.status_code) for item in items)
 
     def get_run_summary(self, run_id: str, *, timeout: float | None = None) -> RunSummary:
         """Fetch a run's summary (``GET /v1/runs/{id}/summary``).
@@ -521,7 +522,279 @@ class KorchestratorClient:
 
     async def _get_run_summary_async(self, run_id: str, *, timeout: float | None) -> RunSummary:
         response = await self._request("GET", f"/v1/runs/{run_id}/summary", timeout=timeout)
-        return _parse_run_summary(_parse_json_body(response), response.status_code)
+        return _validate_model(RunSummary, _parse_json_body(response), response.status_code)
+
+    # --- control + identity (spec 04 §7.3, P9.4) ---------------------------------------------
+
+    def resume(self, run_id: str, *, timeout: float | None = None) -> RemoteRunResult:
+        """Resume a ``governance_paused`` run (``POST /v1/run/{id}/resume``).
+
+        Args:
+            run_id: The paused run to resume.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The run's :class:`~korchestrator.models.remote.RemoteRunResult` after resuming.
+
+        Raises:
+            ApiError: The engine rejected the request or the run is not paused.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.resume("r1")  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._resume_async(run_id, timeout=timeout))
+
+    async def _resume_async(self, run_id: str, *, timeout: float | None) -> RemoteRunResult:
+        response = await self._request("POST", f"/v1/run/{run_id}/resume", timeout=timeout)
+        return _validate_model(RemoteRunResult, _parse_json_body(response), response.status_code)
+
+    def cancel(self, run_id: str, *, timeout: float | None = None) -> RemoteRunResult:
+        """Cancel a run (``POST /v1/run/{id}/cancel``).
+
+        Args:
+            run_id: The run to cancel.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The run's :class:`~korchestrator.models.remote.RemoteRunResult` after cancelling.
+
+        Raises:
+            ApiError: The engine rejected the request or the run does not exist.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.cancel("r1")  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._cancel_async(run_id, timeout=timeout))
+
+    async def _cancel_async(self, run_id: str, *, timeout: float | None) -> RemoteRunResult:
+        response = await self._request("POST", f"/v1/run/{run_id}/cancel", timeout=timeout)
+        return _validate_model(RemoteRunResult, _parse_json_body(response), response.status_code)
+
+    def edit_resume(
+        self,
+        run_id: str,
+        *,
+        updates: Mapping[str, JSONValue] | None = None,
+        trust_delta: float = 0.0,
+        timeout: float | None = None,
+    ) -> RemoteRunResult:
+        """Modify a ``governance_paused`` run's state and resume it (``POST .../edit-resume``).
+
+        Mirrors the local kernel's own ``edit_resume`` signal (``services.Korch.edit_resume``):
+        ``updates`` are merged last-value into the run's context channel, and ``trust_delta`` is
+        folded into ``trust_score``.
+
+        Args:
+            run_id: The paused run to edit and resume.
+            updates: Context-channel values to merge (last-value) into the paused run's state.
+            trust_delta: Folded into ``trust_score`` by the engine's own clamp.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The run's :class:`~korchestrator.models.remote.RemoteRunResult` after resuming.
+
+        Raises:
+            ApiError: The engine rejected the request or the run is not paused.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.edit_resume("r1", trust_delta=0.1)  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(
+            self._edit_resume_async(
+                run_id, updates=updates, trust_delta=trust_delta, timeout=timeout
+            )
+        )
+
+    async def _edit_resume_async(
+        self,
+        run_id: str,
+        *,
+        updates: Mapping[str, JSONValue] | None,
+        trust_delta: float,
+        timeout: float | None,
+    ) -> RemoteRunResult:
+        body = {"updates": dict(updates or {}), "trust_delta": trust_delta}
+        response = await self._request(
+            "POST", f"/v1/run/{run_id}/edit-resume", json=body, timeout=timeout
+        )
+        return _validate_model(RemoteRunResult, _parse_json_body(response), response.status_code)
+
+    def me(self, *, timeout: float | None = None) -> CallerIdentity:
+        """Fetch the authenticated caller's identity (``GET /v1/me``).
+
+        Args:
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The caller's :class:`~korchestrator.models.remote.CallerIdentity`.
+
+        Raises:
+            ApiError: The engine rejected the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.me()  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._me_async(timeout=timeout))
+
+    async def _me_async(self, *, timeout: float | None) -> CallerIdentity:
+        response = await self._request("GET", "/v1/me", timeout=timeout)
+        return _validate_model(CallerIdentity, _parse_json_body(response), response.status_code)
+
+    def my_quota(self, *, timeout: float | None = None) -> Quota:
+        """Fetch the authenticated caller's usage quota (``GET /v1/me/quota``).
+
+        Args:
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The caller's :class:`~korchestrator.models.remote.Quota`.
+
+        Raises:
+            ApiError: The engine rejected the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.my_quota()  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._my_quota_async(timeout=timeout))
+
+    async def _my_quota_async(self, *, timeout: float | None) -> Quota:
+        response = await self._request("GET", "/v1/me/quota", timeout=timeout)
+        return _validate_model(Quota, _parse_json_body(response), response.status_code)
+
+    def my_runs(self, *, timeout: float | None = None) -> tuple[RunSummary, ...]:
+        """List the authenticated caller's runs (``GET /v1/me/runs``).
+
+        Args:
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The caller's runs as :class:`~korchestrator.models.remote.RunSummary`.
+
+        Raises:
+            ApiError: The engine rejected the request.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.my_runs()  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._my_runs_async(timeout=timeout))
+
+    async def _my_runs_async(self, *, timeout: float | None) -> tuple[RunSummary, ...]:
+        response = await self._request("GET", "/v1/me/runs", timeout=timeout)
+        payload = _parse_json_body(response)
+        items = _extract_list(payload, "runs", response.status_code)
+        return tuple(_validate_model(RunSummary, item, response.status_code) for item in items)
+
+    def create_key(self, *, scopes: Sequence[str] = (), timeout: float | None = None) -> ApiKey:
+        """Create a new API key (``POST /v1/keys``, the ``korchestrator:admin`` scope).
+
+        The returned secret is shown once — the engine never returns it again.
+
+        Args:
+            scopes: The scopes to grant the new key.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The newly created :class:`~korchestrator.models.remote.ApiKey`.
+
+        Raises:
+            ApiError: The engine rejected the request (e.g. insufficient scope).
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.create_key(scopes=["korchestrator:read"])  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._create_key_async(scopes=scopes, timeout=timeout))
+
+    async def _create_key_async(self, *, scopes: Sequence[str], timeout: float | None) -> ApiKey:
+        body = {"scopes": list(scopes)}
+        response = await self._request("POST", "/v1/keys", json=body, timeout=timeout)
+        return _validate_model(ApiKey, _parse_json_body(response), response.status_code)
+
+    def list_keys(self, *, timeout: float | None = None) -> tuple[ApiKeySummary, ...]:
+        """List existing API keys (``GET /v1/keys``, the ``korchestrator:admin`` scope).
+
+        Args:
+            timeout: Overrides the client's default timeout for this call only.
+
+        Returns:
+            The tenant's keys as :class:`~korchestrator.models.remote.ApiKeySummary` — never the
+            secret, which the engine only ever returns once, at creation.
+
+        Raises:
+            ApiError: The engine rejected the request (e.g. insufficient scope).
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.list_keys()  # doctest: +SKIP
+            >>> client.close()
+        """
+        return asyncio.run(self._list_keys_async(timeout=timeout))
+
+    async def _list_keys_async(self, *, timeout: float | None) -> tuple[ApiKeySummary, ...]:
+        response = await self._request("GET", "/v1/keys", timeout=timeout)
+        payload = _parse_json_body(response)
+        items = _extract_list(payload, "keys", response.status_code)
+        return tuple(_validate_model(ApiKeySummary, item, response.status_code) for item in items)
+
+    def revoke_key(self, key_id: str, *, timeout: float | None = None) -> None:
+        """Revoke an API key (``DELETE /v1/keys/{id}``, the ``korchestrator:admin`` scope).
+
+        Args:
+            key_id: The key to revoke.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Raises:
+            ApiError: The engine rejected the request or the key does not exist.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The request timed out after retries were exhausted.
+
+        Example:
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> client = KorchestratorClient("https://engine.example.com", api_key="sk-example")
+            >>> client.revoke_key("key-1")  # doctest: +SKIP
+            >>> client.close()
+        """
+        asyncio.run(self._revoke_key_async(key_id, timeout=timeout))
+
+    async def _revoke_key_async(self, key_id: str, *, timeout: float | None) -> None:
+        await self._request("DELETE", f"/v1/keys/{key_id}", timeout=timeout)
 
 
 def _parse_json_body(response: httpx.Response) -> object:
@@ -549,37 +822,40 @@ def _normalize_status_field(payload: Mapping[str, object]) -> dict[str, object]:
     return normalized
 
 
-def _parse_remote_run_result(response: httpx.Response) -> RemoteRunResult:
-    """Parse a run-result response body, normalizing its status (spec 04 §7.4)."""
-    payload = _parse_json_body(response)
+def _validate_model(model_cls: type[_ModelT], payload: object, status_code: int) -> _ModelT:
+    """Validate ``payload`` into ``model_cls``, normalizing a numeric ``status`` field first.
+
+    Wraps a shape mismatch or a ``pydantic`` validation failure as an :class:`ApiError` — the one
+    documented error type for a failed :class:`KorchestratorClient` call (spec 04 §7.5).
+    """
     if not isinstance(payload, Mapping):
         raise ApiError(
-            f"The engine returned an unexpected run response shape: {payload!r}.",
-            status=response.status_code,
-        )
-    try:
-        return RemoteRunResult.model_validate(_normalize_status_field(payload))
-    except PydanticValidationError as exc:
-        raise ApiError(
-            f"The engine's response did not match the expected run shape: {exc}",
-            status=response.status_code,
-        ) from exc
-
-
-def _parse_run_summary(payload: object, status_code: int) -> RunSummary:
-    """Parse one run-summary item, normalizing its status (spec 04 §7.4)."""
-    if not isinstance(payload, Mapping):
-        raise ApiError(
-            f"The engine returned an unexpected run-summary shape: {payload!r}.",
+            f"The engine returned an unexpected {model_cls.__name__} response shape: {payload!r}.",
             status=status_code,
         )
     try:
-        return RunSummary.model_validate(_normalize_status_field(payload))
+        return model_cls.model_validate(_normalize_status_field(payload))
     except PydanticValidationError as exc:
         raise ApiError(
-            f"The engine's response did not match the expected run-summary shape: {exc}",
+            f"The engine's response did not match the expected {model_cls.__name__} shape: {exc}",
             status=status_code,
         ) from exc
+
+
+def _extract_list(payload: object, key: str, status_code: int) -> list[object]:
+    """Extract a list from either a bare JSON array or a ``{key: [...]}`` wrapper object."""
+    if isinstance(payload, list):
+        items: object = payload
+    elif isinstance(payload, Mapping) and key in payload:
+        items = payload[key]
+    else:
+        items = None
+    if not isinstance(items, list):
+        raise ApiError(
+            f"The engine returned an unexpected list response shape: {payload!r}.",
+            status=status_code,
+        )
+    return items
 
 
 def _api_error(method: str, path: str, response: httpx.Response) -> ApiError:
