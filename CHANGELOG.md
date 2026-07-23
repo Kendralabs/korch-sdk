@@ -15,6 +15,12 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Remote client credential safety (Phase 9): `KorchestratorClient.__repr__` shows `base_url` only,
+  never headers or the credential. Test-locked (spec 04 §7.2): the client's `repr`/`str`, and
+  every error `KorchestratorClient` can raise (`ApiError`, `NetworkError`, `TimeoutError`), never
+  contain the API key — including when a (misbehaving) engine response tries to echo the
+  `Authorization` header back. A static check asserts `clients/` performs no file I/O at all, so
+  "credentials are never written to disk" can't regress silently.
 - Remote client transport + auth (Phase 9): `korchestrator.remote.KorchestratorClient` (also
   `korchestrator.clients.KorchestratorClient`) — the Tier 4 client's authenticated, retrying HTTP
   transport, behind the `[remote]` extra (spec 04 §7). One `Authorization: Bearer` header for
