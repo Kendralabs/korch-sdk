@@ -13,11 +13,13 @@ engine's response never carries the kernel's internal nested ``AgentState`` snap
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from korchestrator.models.state import RunStatus
+from korchestrator.types import JSONValue
 
 __all__ = [
     "ApiKey",
@@ -25,6 +27,7 @@ __all__ = [
     "CallerIdentity",
     "Quota",
     "RemoteRunResult",
+    "RunEvent",
     "RunSummary",
 ]
 
@@ -49,6 +52,23 @@ class RemoteRunResult(BaseModel):
     error: str | None = None
     started_at: datetime
     completed_at: datetime | None = None
+
+
+class RunEvent(BaseModel):
+    """One live event from a run's SSE stream (``GET /v1/run/{id}/stream``, spec 04 §7.3/§7.5).
+
+    Deliberately mirrors :class:`korchestrator.events.Event`'s shape (``name``/``payload``/
+    ``run_id``) — the same concept, one streamed event — without importing across the
+    ``clients``/``events`` module boundary spec 05's allowed-imports table doesn't authorize
+    (``clients/`` reuses the same purpose-built-model pattern this file already uses for
+    :class:`RemoteRunResult` rather than the local kernel's ``RunResult``).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    run_id: str
+    name: str
+    payload: Mapping[str, JSONValue] = Field(default_factory=dict)
 
 
 class RunSummary(BaseModel):

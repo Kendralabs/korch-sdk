@@ -15,6 +15,11 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Remote client SSE streaming (Phase 9): `KorchestratorClient.stream(run_id)` (spec 04 §7.3/§7.5)
+  — a native async iterator yielding `korchestrator.models.remote.RunEvent`, the only method on
+  the client that isn't a sync wrapper. Reconnects automatically (full-jitter backoff, budget
+  reset on each successful reconnect) on a dropped connection; note that reconnecting resumes from
+  "now", not the last delivered event — the wire format carries no event id to resume from.
 - Remote client control + identity (Phase 9): `KorchestratorClient` gains `resume`, `cancel`,
   `edit_resume` (mirrors the local kernel's own `edit_resume` signal shape), `me`, `my_quota`,
   `my_runs`, and key management (`create_key`, `list_keys`, `revoke_key`) — spec 04 §7.3. New

@@ -13,6 +13,7 @@ from korchestrator.models.remote import (
     CallerIdentity,
     Quota,
     RemoteRunResult,
+    RunEvent,
     RunSummary,
 )
 from korchestrator.models.result import RunResult
@@ -52,6 +53,7 @@ __all__ = [
     "RemoteRunResult",
     "RoutingContext",
     "RoutingResult",
+    "RunEvent",
     "RunResult",
     "RunStatus",
     "RunSummary",

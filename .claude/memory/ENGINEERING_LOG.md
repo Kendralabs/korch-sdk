@@ -10,6 +10,80 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P9.5] Remote client SSE streaming — v0.1.0
+
+**Type:** feature · **Phase:** P9 (remote client) · **Author:** Claude (agent)
+
+**What.** `KorchestratorClient.stream(run_id, *, timeout=None) -> AsyncIterator[RunEvent]`
+(`GET /v1/run/{id}/stream`, spec 04 §7.3/§7.5) — the one method on this class that is a **native
+async generator**, not a sync wrapper: SSE is inherently incremental, and buffering the whole
+stream behind `asyncio.run()` would defeat the point. Parses the response body frame-by-frame
+(`event:`/`data:` lines, blank-line-terminated, the inverse of `korchestrator.events.format_sse`'s
+own frame shape) via a new `_iter_sse_events`/`_parse_sse_data` pair, yielding one new
+`models.remote.RunEvent` (`run_id`, `name`, `payload`) per frame. A dropped connection (timeout or
+any `httpx.HTTPError`) triggers an automatic reconnect — up to `max_retries` *consecutive*
+failures, the same full-jitter backoff `_request` already uses, with the retry budget reset every
+time a connection is actually (re-)established. A non-2xx response is wrapped as `ApiError`, same
+as every other method.
+
+**Why.** P9.5 — "SSE stream as an async iterator; reconnect semantics" (spec 11 Phase 9, spec 12
+P9.5).
+
+**Design decisions.** (1) **`RunEvent` is a new model in `models/remote.py`, not a reuse of
+`korchestrator.events.Event`** — even though the two shapes are nearly identical (`name`/
+`payload`/`run_id`), `events.Event` is the LOCAL kernel's own streaming primitive (`EventPublisher`
+fans it out inside a local run; `format_sse`'s own docstring says "the caller serves it; the SDK
+does not" — i.e. an application embedding the SDK locally, not this remote client parsing an
+*external* engine's stream), and `clients/`'s spec 05 allowed-imports table doesn't authorize
+importing `events/`. This is the exact same call P9.3 already made for `RemoteRunResult` vs the
+local `RunResult` — a purpose-built wire model over a debatable cross-layer reuse — applied
+consistently rather than re-litigated. (2) **Reconnection is honestly scoped to "keep the
+connection alive," not "resume exactly where it left off."** True SSE resumption needs a
+`Last-Event-ID` the server can replay from; `format_sse`'s wire frames (and therefore `RunEvent`)
+carry no event id at all, so there is no resumption token to send. Silently claiming full
+"reconnect semantics" would overstate what's implemented; the docstring and this entry are
+explicit that a reconnect resumes from "now" and events emitted during the outage are not
+replayed — an honest limitation, not a hidden one. (3) **The retry budget resets on every
+successful (re-)connection**, not once per `stream()` call — a long-lived stream over a flaky-but-
+generally-working network should be able to survive many reconnects over its life, not exhaust a
+fixed budget of 3 total. This mirrors treating "attempt" as *consecutive* failures, the same
+semantics `_request`'s own retry loop already has within a single call.
+
+**Architecture changes.** `models/remote.py` gains `RunEvent` (re-exported from
+`korchestrator.models`). `clients/client.py` gains `stream()`, `_iter_sse_events()`,
+`_parse_sse_data()`. No new import-linter-relevant dependency — `clients/` still only reaches
+`models`, `exceptions`, `httpx`, stdlib (`json` newly, for parsing `data:` payloads).
+
+**Files/modules affected.** `src/korchestrator/models/{remote,__init__}.py`;
+`src/korchestrator/clients/client.py`; `tests/unit/clients/test_streaming.py` (new, 11 tests);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. Additive only; `tests/unit/public_surface.json` untouched (same
+reasoning as P9.1–P9.4).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (104 source files);
+import-linter 4/4 kept; the isolation gate, env-confinement check, and version-validate all `OK`.
+`tests/unit/clients`: **72 passed**, 99.73% coverage on `clients/client.py` (one uncovered branch
+is a loop-continuation artifact, not a behavioral gap). New: multi-frame parsing, the stream ending
+cleanly when the engine closes the connection, a non-2xx response wrapped as `ApiError`, malformed
+`data:` payloads (non-JSON, non-object JSON) rejected, an empty `data:` payload treated as `{}`, a
+frame with no `event:` line defaulting to `"message"`, direct `_iter_sse_events` frame-parsing
+tests against a fake response double, a dropped-then-recovered connection actually reconnecting
+(backoff mocked — T2), and giving up with `NetworkError`/`TimeoutError` after `max_retries`
+consecutive connection failures. All 95 package doctests (up from 94) pass — `stream`'s own
+example defines an async demo function (harmless — defining a function doesn't execute its body)
+and skips only the line that would actually call it.
+
+**Known limitations / future improvements.** No `Last-Event-ID`-based resumption (see Design
+decision 2) — a real engine implementation that wants gap-free delivery across reconnects would
+need the wire format extended with an event id, which is out of this task's scope (it would touch
+`events/format_sse` too, a P6-shipped module). P9.6 (discovery: tools/models/swarm-templates) and
+P9.7 (the full `respx` contract suite) remain.
+
 ## 2026-07-23 · [P9.4] Remote client control + identity — v0.1.0
 
 **Type:** feature/refactor · **Phase:** P9 (remote client) · **Author:** Claude (agent)

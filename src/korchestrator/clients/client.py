@@ -12,8 +12,9 @@ confinement-by-never-being-imported pattern, not a function-local lazy import (C
 from __future__ import annotations
 
 import asyncio
+import json
 import random
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from types import TracebackType
 from typing import TypeVar
 
@@ -31,6 +32,7 @@ from korchestrator.models.remote import (
     CallerIdentity,
     Quota,
     RemoteRunResult,
+    RunEvent,
     RunSummary,
 )
 from korchestrator.models.state import RunStatus
@@ -68,10 +70,14 @@ class KorchestratorClient:
     both a static API key and a Keycloak/KIAM JWT (spec 04 §7.2, ADR 0005), a 30s default
     per-request timeout (overridable per call), and up to 3 retries with full-jitter exponential
     backoff on 429/502/503/504 and connection failures — never on any other 4xx, since retrying a
-    client error is a defect (spec 04 §7.5). This class currently provides the authenticated,
-    retrying transport only; the run-lifecycle/control/streaming/discovery methods land in later
-    Phase 9 tasks. Nothing in Tiers 1-3 (``Korch``/``Swarm``/the kernel) depends on this client,
-    and the base install never imports it.
+    client error is a defect (spec 04 §7.5). Covers run lifecycle (``run``/``run_swarm``/
+    ``get_run``/``wait``/``run_and_wait``/``list_runs``/``get_run_summary``), control and identity
+    (``resume``/``cancel``/``edit_resume``/``me``/``my_quota``/``my_runs``/key management), and
+    live event streaming (``stream``, a native async iterator) — every method except ``stream``
+    is a sync wrapper around an async core (spec 04 §7's own Tier-4 example calls
+    ``client.run_and_wait(...)`` with no ``await``). Discovery (``tools``/``models``/
+    ``swarm_templates``) lands in the next Phase 9 task. Nothing in Tiers 1-3 (``Korch``/``Swarm``/
+    the kernel) depends on this client, and the base install never imports it.
 
     Example:
         >>> from korchestrator.remote import KorchestratorClient
@@ -795,6 +801,117 @@ class KorchestratorClient:
 
     async def _revoke_key_async(self, key_id: str, *, timeout: float | None) -> None:
         await self._request("DELETE", f"/v1/keys/{key_id}", timeout=timeout)
+
+    # --- streaming (spec 04 §7.3/§7.5, P9.5) --------------------------------------------------
+
+    async def stream(self, run_id: str, *, timeout: float | None = None) -> AsyncIterator[RunEvent]:
+        """Stream a run's live events (``GET /v1/run/{id}/stream``, Server-Sent Events).
+
+        Unlike every other method on this class, ``stream`` is a native async generator — SSE is
+        inherently incremental, so wrapping it in :func:`asyncio.run` would defeat the point
+        (spec 04 §7.5: "Streaming: SSE, exposed as an async iterator").
+
+        Reconnects automatically (up to ``max_retries`` *consecutive* failures, the same
+        full-jitter backoff :meth:`_request` uses) if the connection drops before the engine
+        closes the stream. The wire format (:class:`~korchestrator.models.remote.RunEvent`, one
+        SSE frame per event) carries no event id, so a reconnect resumes from "now", not from the
+        last event actually delivered — events emitted while disconnected are not replayed. The
+        generator returns normally once the engine closes the stream (the run reached a terminal
+        state).
+
+        Args:
+            run_id: The run to stream.
+            timeout: Overrides the client's default timeout for this call only.
+
+        Yields:
+            Each :class:`~korchestrator.models.remote.RunEvent` as the engine emits it.
+
+        Raises:
+            ApiError: The engine rejected the request or the run does not exist.
+            NetworkError: The connection failed after retries were exhausted.
+            TimeoutError: The connection timed out after retries were exhausted.
+
+        Example:
+            >>> import asyncio
+            >>> from korchestrator.remote import KorchestratorClient
+            >>> async def _demo():
+            ...     client = KorchestratorClient(
+            ...         "https://engine.example.com", api_key="sk-example"
+            ...     )
+            ...     async for event in client.stream("r1"):
+            ...         print(event.name)
+            ...     await client.aclose()
+            >>> asyncio.run(_demo())  # doctest: +SKIP
+        """
+        path = f"/v1/run/{run_id}/stream"
+        attempt = 0
+        while True:
+            try:
+                async with self._client.stream("GET", path, timeout=timeout) as response:
+                    if response.status_code >= 400:
+                        await response.aread()
+                        raise _api_error("GET", path, response)
+                    attempt = 0  # a connection was established — the retry budget resets
+                    async for event in _iter_sse_events(response, run_id=run_id):
+                        yield event
+                    return
+            except httpx.TimeoutException as exc:
+                if attempt >= self._max_retries:
+                    raise KorchTimeoutError(
+                        f"GET {path} timed out after {attempt + 1} reconnect attempt(s) against "
+                        f"{self._client.base_url}.",
+                        code="KORCH_TIMEOUT",
+                    ) from exc
+                await self._sleep_backoff(attempt)
+                attempt += 1
+            except httpx.HTTPError as exc:
+                if attempt >= self._max_retries:
+                    raise NetworkError(
+                        f"GET {path} could not stay connected to {self._client.base_url} after "
+                        f"{attempt + 1} reconnect attempt(s): {exc}.",
+                        code="KORCH_NETWORK_UNAVAILABLE",
+                    ) from exc
+                await self._sleep_backoff(attempt)
+                attempt += 1
+
+
+async def _iter_sse_events(response: httpx.Response, *, run_id: str) -> AsyncIterator[RunEvent]:
+    """Parse an SSE body into one :class:`RunEvent` per blank-line-terminated frame.
+
+    The inverse of ``korchestrator.events.format_sse``'s ``event:``/``data:`` frame shape.
+    """
+    event_name: str | None = None
+    data_lines: list[str] = []
+    async for line in response.aiter_lines():
+        if line == "":
+            if event_name is not None or data_lines:
+                payload = _parse_sse_data("\n".join(data_lines))
+                yield RunEvent(run_id=run_id, name=event_name or "message", payload=payload)
+            event_name = None
+            data_lines = []
+        elif line.startswith("event:"):
+            event_name = line.removeprefix("event:").strip()
+        elif line.startswith("data:"):
+            data_lines.append(line.removeprefix("data:").strip())
+        # Other SSE fields (id:/retry:, ':'-prefixed comments) are ignored — format_sse never
+        # emits them, and a byte-perfect general SSE parser is out of scope here.
+
+
+def _parse_sse_data(raw: str) -> Mapping[str, JSONValue]:
+    """Parse one SSE frame's ``data:`` payload as a JSON object, wrapping a mismatch as an error."""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except ValueError as exc:
+        raise ApiError(
+            f"The engine sent a non-JSON SSE data payload: {raw!r}.", status=502
+        ) from exc
+    if not isinstance(parsed, Mapping):
+        raise ApiError(
+            f"The engine sent an SSE data payload that was not a JSON object: {raw!r}.", status=502
+        )
+    return parsed
 
 
 def _parse_json_body(response: httpx.Response) -> object:
