@@ -4,6 +4,11 @@
 The single-reader rule: only ``korchestrator.config`` may read ``os.environ`` / ``os.getenv``
 or load a ``.env`` file. Every other module receives configuration by injection. This gate
 greps the package source and exits non-zero if any other module reaches the environment.
+
+The scan itself (:func:`find_offenders`) is also imported directly by
+``tests/unit/test_config_isolation.py`` (spec 08 §1.4's own pytest requirement), so there is one
+canonical implementation of the check, exercised both by this standalone CLI script and by the
+normal ``pytest`` run.
 """
 
 from __future__ import annotations
@@ -16,17 +21,23 @@ FORBIDDEN = re.compile(r"\b(os\.environ|os\.getenv|load_dotenv|dotenv_values)\b"
 PACKAGE = pathlib.Path("src/korchestrator")
 
 
+def find_offenders(package: pathlib.Path = PACKAGE) -> list[str]:
+    """Return the paths, under ``package``, outside ``config/`` that read the environment."""
+    return [
+        str(path)
+        for path in sorted(package.rglob("*.py"))
+        if path.relative_to(package).parts[0] != "config"
+        and FORBIDDEN.search(path.read_text(encoding="utf-8"))
+    ]
+
+
 def main() -> int:
     """Scan the package for out-of-bounds environment reads; return an exit code."""
     if not PACKAGE.is_dir():
         print(f"FAIL: {PACKAGE} not found", file=sys.stderr)
         return 1
 
-    offenders = [
-        str(path)
-        for path in sorted(PACKAGE.rglob("*.py"))
-        if path.parts[2] != "config" and FORBIDDEN.search(path.read_text(encoding="utf-8"))
-    ]
+    offenders = find_offenders(PACKAGE)
 
     if offenders:
         print(f"FAIL: environment read outside config/: {offenders}", file=sys.stderr)
