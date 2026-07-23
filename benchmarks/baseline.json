@@ -1,0 +1,101 @@
+{
+  "bench_import": {
+    "commit": "5a4fd9f04bb56651cdb7e23de0a91dffc5b058b5",
+    "environment": {
+      "implementation": "CPython",
+      "platform": "Windows-10-10.0.19045-SP0",
+      "python": "3.11.6"
+    },
+    "measurements": {
+      "heavy_modules_eagerly_imported": [],
+      "korchestrator_cumulative_us": 1608154,
+      "total_imports": 349
+    }
+  },
+  "bench_memory": {
+    "commit": "5a4fd9f04bb56651cdb7e23de0a91dffc5b058b5",
+    "environment": {
+      "implementation": "CPython",
+      "platform": "Windows-10-10.0.19045-SP0",
+      "python": "3.11.6"
+    },
+    "measurements": {
+      "20_supersteps": {
+        "n_agents": 10,
+        "peak_bytes": 48050
+      },
+      "50_supersteps": {
+        "n_agents": 10,
+        "peak_bytes": 47898
+      },
+      "5_supersteps": {
+        "n_agents": 10,
+        "peak_bytes": 52208
+      }
+    }
+  },
+  "bench_serde": {
+    "commit": "5a4fd9f04bb56651cdb7e23de0a91dffc5b058b5",
+    "environment": {
+      "implementation": "CPython",
+      "platform": "Windows-10-10.0.19045-SP0",
+      "python": "3.11.6"
+    },
+    "measurements": {
+      "1_messages": {
+        "deserialize_ops_per_sec": 20191.210793038877,
+        "payload_bytes": 615,
+        "serialize_ops_per_sec": 10191.290546948423
+      },
+      "500_messages": {
+        "deserialize_ops_per_sec": 78.54965292354628,
+        "payload_bytes": 124385,
+        "serialize_ops_per_sec": 75.41520500987595
+      },
+      "50_messages": {
+        "deserialize_ops_per_sec": 863.474717265503,
+        "payload_bytes": 12635,
+        "serialize_ops_per_sec": 687.9831363172834
+      }
+    }
+  },
+  "bench_superstep": {
+    "commit": "5a4fd9f04bb56651cdb7e23de0a91dffc5b058b5",
+    "environment": {
+      "implementation": "CPython",
+      "platform": "Windows-10-10.0.19045-SP0",
+      "python": "3.11.6"
+    },
+    "measurements": {
+      "delay_seconds": 0.05,
+      "ratio_vs_n1": {
+        "1": 1.0,
+        "100": 22.54974777013427,
+        "25": 5.379445572829032,
+        "5": 1.7928493562102392
+      },
+      "wall_seconds": {
+        "1": 0.07687980006448925,
+        "100": 1.733620100072585,
+        "25": 0.4135707000968978,
+        "5": 0.13783390005119145
+      }
+    }
+  },
+  "bench_telemetry_overhead": {
+    "commit": "5a4fd9f04bb56651cdb7e23de0a91dffc5b058b5",
+    "environment": {
+      "implementation": "CPython",
+      "platform": "Windows-10-10.0.19045-SP0",
+      "python": "3.11.6"
+    },
+    "measurements": {
+      "bare_seconds": 0.003456900012679398,
+      "off_seconds": 0.0036047999747097492,
+      "off_vs_bare_ratio": 1.0427839860822923,
+      "on_seconds": 0.0036165000637993217,
+      "on_vs_off_ratio": 1.0032456971736732,
+      "repetitions": 25
+    }
+  }
+}

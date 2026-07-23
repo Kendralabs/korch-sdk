@@ -93,7 +93,7 @@ ignore = ["D203", "D213", "ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["D", "ANN", "S101"]
-"benchmarks/**" = ["D", "ANN"]
+"benchmarks/**" = ["D", "ANN", "S101"]
 "examples/**" = ["D", "ANN", "T201"]
 
 [tool.ruff.lint.pydocstyle]
@@ -125,6 +125,10 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+# "bench_*.py" (not "test_*.py") is the benchmarks/ naming convention (spec 09 §8) — without it,
+# bare-directory collection (`pytest benchmarks -m benchmark`) silently finds nothing; only an
+# explicit file path bypasses python_files' default glob.
+python_files = ["test_*.py", "bench_*.py"]
 # Repo root on sys.path so tests/unit/test_config_isolation.py can import the reusable
 # scripts.check_env_reads module (one canonical env-isolation check, not two).
 pythonpath = ["."]
