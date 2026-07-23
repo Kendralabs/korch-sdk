@@ -236,6 +236,15 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   `AgentState` and returns a `StateUpdate` delta; the base implementation raises until a subclass
   overrides it or the façade supplies the default reasoning agent. See ADR 0012.
 
+### Fixed
+
+- **Exception audit (Phase 8):** `TemporalRuntime.start`/`wait`/`signal` (and, through them,
+  `Korch`/`Swarm.pause`/`resume`/`cancel`/`edit_resume`) no longer let a raw `temporalio` exception
+  cross the façade boundary. A lost/refused connection now raises `NetworkError`, the run's own
+  failure raises `RunFailedError`, and any other Temporal-reported error raises `ProviderError` —
+  all with `__cause__` set to the original exception. Also: `Settings.from_env()`'s `.env` reader
+  now wraps an unreadable file into `ConfigurationError` instead of letting a raw `OSError` escape.
+
 ### Changed
 
 - **`Agent` is now defined in `korchestrator.agents`** (its canonical home) and re-exported from

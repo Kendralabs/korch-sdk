@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1–P8.3 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
-| **Last completed milestone** | **P8.3 — namespaced, disable-able logging.** `korchestrator.logging.enable_logging()`/`disable_logging()`; a `NullHandler` is attached at import so the SDK stays silent by default (closing a real pre-existing gap — no handler anywhere meant WARNING+ logs could already leak to stderr via Python's last-resort handler). `enable_logging` joins top-level `__all__`. The `T20` (no-`print()`) ruff rule is now enforced. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.4 (exception audit), P8.5 (serialization), P8.6 (validation), P8.7 (telemetry). |
-| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.3 committed locally, not yet pushed. |
+| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1–P8.4 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
+| **Last completed milestone** | **P8.4 — exception audit.** Audited every third-party/I/O boundary; found and fixed the one real gap — `TemporalRuntime.start`/`wait`/`signal` let raw `temporalio` exceptions escape all the way to `Korch.pause`/`resume`/`cancel`/`edit_resume`. Now wraps into `NetworkError`/`RunFailedError`/`ProviderError` with `__cause__` set. Also closed a minor `.env`-read `OSError` gap. New mock-based tests (no real Temporal server) exercise the wrapping directly. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.5 (serialization), P8.6 (validation), P8.7 (telemetry). |
+| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.4 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (98 source files), `pytest` (dspy + non-dspy paths; **567 passed**,
-94.77% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+ruff-format, `mypy --strict` (98 source files), `pytest` (dspy + non-dspy paths; **605 passed**,
+95.23% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
 confinement), the isolation gate, env-confinement, and version single-sourcing. `import
 korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
 `pydantic`-only.
