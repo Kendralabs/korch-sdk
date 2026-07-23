@@ -10,6 +10,63 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P9.8] TypeScript parity matrix — v0.1.0 (closes Phase 9)
+
+**Type:** docs · **Phase:** P9 (remote client, final task) · **Author:** Claude (agent)
+
+**What.** `docs/parity-matrix.md` (new): every `KorchestratorClient` method (20 total: 19 sync +
+`stream`), the constructor, `ApiError`'s shape and retry policy, and the nine `models.remote`
+types, each paired with its settled TypeScript name/signature and marked `TS: planned` (ADR
+0008). Three real discrepancies between the *original* TS-facing design sketch (summarized in ADR
+0008's context section, drawn from an earlier, pre-implementation version of spec 04 §7) and what
+the Python reference implementation actually does are called out explicitly, each resolved in
+favor of Python per ADR 0008's own reconciliation rule ("where the spec and the Python client
+disagree, the discrepancy is resolved and the spec updated"): (1) the constructor takes one
+`api_key` covering both a static key and a JWT, not two mutually exclusive options; (2) the retry
+policy is `429`/`502`/`503`/`504` (spec 04 §7.5, what P9.1 actually implemented), not the ADR
+context's paraphrase of "429 and 503"; (3) `ToolDescriptor`'s schema field is `input_schema` in
+Python (forced by a `pydantic.BaseModel` naming collision — §"P9.6" below) and should stay
+`inputSchema` in TS for cross-language consistency, not `schema`.
+
+**Why.** P9.8 — "docs/parity-matrix.md — every Python method marked TS: planned" (spec 11 Phase
+9, spec 12 P9.8) — the last task of Phase 9.
+
+**Design decisions.** (1) **Every ADR-0008-referencing hyperlink was converted to plain text** —
+`docs/adr/` is excluded from the published mkdocs site (`exclude_docs` in `mkdocs.yml`), so a
+markdown link to it would be a dead link on the live site; `mkdocs build --strict` confirmed this
+by emitting "contains a link to '...' which is excluded from the built site" before the fix, and
+building clean after. Matches the existing precedent in `docs/status/how-to-continue.md`, which
+already mentions ADR numbers as plain text for the same reason. (2) **The document is not added
+to `mkdocs.yml`'s `nav`** — the existing `nav` list has exactly one entry (`Home: index.md`) with
+a docstring stating the full site/nav is a Phase 11 deliverable; adding this one page to `nav`
+now would be inconsistent with that already-stated plan and is deferred to P11 rather than done
+piecemeal. The page still builds and is reachable directly (confirmed via `mkdocs build --strict`,
+which flags un-navigated pages as `INFO`, not a build failure). (3) **Discrepancies are resolved
+in the matrix itself, not silently absorbed** — ADR 0008 explicitly wants "planned gaps labelled";
+resolving a stale design detail without a visible note would look like the original sketch was
+simply repeated, and a future TS implementer would have no way to tell a deliberate reconciliation
+from an oversight.
+
+**Architecture changes.** None — a new documentation file only.
+
+**Files/modules affected.** `docs/parity-matrix.md` (new); `CHANGELOG.md`.
+
+**Breaking changes.** None.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `mkdocs build --strict` passes clean (no warnings). No `src/` or `tests/`
+changes in this task, so the full gate suite (`ruff`/`mypy`/`pytest`/import-linter/isolation) is
+unchanged from P9.7's last green run and was not re-run for this docs-only change.
+
+**Known limitations / future improvements.** This closes Phase 9's task list (P9.1–P9.8). The
+document itself carries its own forward-looking limitation by design: every wire-format detail it
+pins down is the Python client's own documented assumption (see the P9.3, P9.5, P9.6 entries),
+not a transcription of a published, engine-verified schema — the TS client, when eventually built,
+inherits whatever that reconciliation looks like by then, not necessarily this exact page verbatim.
+
 ## 2026-07-23 · [P9.7] Remote client contract-conformance suite — v0.1.0
 
 **Type:** test · **Phase:** P9 (remote client) · **Author:** Claude (agent)
