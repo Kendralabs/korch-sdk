@@ -8,7 +8,7 @@ up. Written for a quick read; the authoritative technical records stay in `.clau
 
 ## Files in this folder
 
-- **[what-has-been-built.md](what-has-been-built.md)** — every phase so far (P0–P7), each explained
+- **[what-has-been-built.md](what-has-been-built.md)** — every phase so far (P0–P8), each explained
   in simple points.
 - **[how-to-continue.md](how-to-continue.md)** — what is left to do, and the exact prompt to paste
   into a new session to continue.
@@ -25,7 +25,7 @@ up. Written for a quick read; the authoritative technical records stay in `.clau
 | P5 | Model routing | ✅ Done — merged & pushed |
 | P6 | Integration & observability | ✅ Done — merged & pushed |
 | P7 | Governance, security & context graph | ✅ Done — all 6 tasks (P7.1–P7.6) |
-| P8 | Cross-cutting foundations | ⬜ Not started |
+| P8 | Cross-cutting foundations | ✅ Done — all 7 tasks (P8.1–P8.7) |
 | P9 | Remote client (Python) | ⬜ Not started |
 | P10 | Testing, benchmarks & quality | ⬜ Not started |
 | P11 | Docs, examples & DX | ⬜ Not started |
@@ -34,15 +34,17 @@ up. Written for a quick read; the authoritative technical records stay in `.clau
 
 ## Where the code lives right now
 
-- **`develop` branch** (pushed to GitHub): contains **P0 through P6** — everything is merged and
+- **`develop` branch** (pushed to GitHub): contains **P0 through P8** — everything is merged and
   green.
-- **`feat/p7-governance-security` branch** (local only, not yet pushed): contains all of **P7.1–P7.6**
-  on top of `develop`, about to be pushed and merged.
+- **`feat/p8-cross-cutting-foundations` branch** (pushed, merged into `develop`): contains all of
+  **P8.1–P8.7**.
+- Next: **Phase 9 — Remote client**, on a new `feat/p9-*` branch off `develop`.
 
 ## One-line summary
 
 The SDK already runs a full multi-agent job end-to-end offline: `Korch().run("...")` plans a team,
 runs them in deterministic parallel supersteps, routes a model per agent, and returns an answer —
 with tools, MCP, streaming, hooks, PII redaction, trust-scored governance with durable
-human-in-the-loop pause/resume, and a bitemporal Context Graph for decisions and events. Phase 8
-(cross-cutting foundations — config/logging/telemetry/serialization finalization) is next.
+human-in-the-loop pause/resume, and a bitemporal Context Graph for decisions and events. Configuration,
+logging, serialization, validation, and telemetry are now all finalized and settings-injected
+end to end. Phase 9 (the optional Python remote client, `korchestrator.remote`) is next.
