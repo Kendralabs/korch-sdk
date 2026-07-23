@@ -12,18 +12,18 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P10 — Testing, benchmarks & quality gates — **in progress** (P10.1–P10.5 done) on branch `feat/p10-testing-benchmarks-quality` (off `develop`). Phase 9 is complete and merged. |
-| **Last completed milestone** | **P10.5 — Benchmarks, complete.** Populated `benchmarks/` with all four spec-09 §8 suites (`bench_superstep`/`bench_import`/`bench_memory`/`bench_serde`) plus `bench_telemetry_overhead` (spec 08 §4's telemetry-on/off delta requirement, previously tracked as a known gap) and committed `benchmarks/baseline.json`. `bench_superstep` proves real sub-linear concurrency (N=100 agents ≈12x N=1's wall time, not ~100x) once a warm-up run absorbs DSPy/thread-pool start-up cost; `bench_import` and `bench_telemetry_overhead` hard-assert (no heavy optional dependency eagerly imported — B5; telemetry-off stays within 2x of no-telemetry-at-all, measured at ~1.23x) — the two benchmarks spec text actually says MUST assert, not just record. Fixed a real gap while wiring this: `pytest benchmarks -m benchmark` (spec 09's own gate command) silently collected zero tests until `pyproject.toml`'s `python_files` was widened to include `bench_*.py`. |
-| **Blocking** | Nothing for this work. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s coverage gap is this same issue, left untouched; re-confirmed via `git stash` that these 13 failures are identical on the pre-ReAct commit). Next: P10.6 (ratchet coverage floors + wire benchmark regression detection into CI) — the last P10 task. |
-| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1–P10.4 pushed; P10.5 is staged, not yet committed. Phase merges to `develop` only once all of P10 (P10.1–P10.6) is done. |
+| **Active phase** | **P10 — Testing, benchmarks & quality gates — complete (P10.1–P10.6).** Phase 9 is also complete and merged. Next: Phase 11 (Documentation, examples & DX). |
+| **Last completed milestone** | **P10.6 — Ratchet coverage floors + wire benchmark regression detection, complete.** Floors raised (with headroom, not pinned): global 80%→90%, `core/` 95%→97%, `models/` 95%→99%, in `pyproject.toml`/CI/spec 09 §7/`.claude/rules/testing.md`. New `scripts/check_benchmark_regression.py` (+ its own unit tests) diffs a fresh benchmark run against the committed `baseline.json` and prints a `::warning::` for a >1.5x regression on three watched metrics; wired into a new CI `benchmarks` job, gated to `workflow_dispatch`/`push:main` only, `continue-on-error: true` — matching spec 09 §8's "never blocks a merge." This closes Phase 10. |
+| **Blocking** | Nothing. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; `runtime/temporal_runtime.py`'s coverage gap is this same issue, left untouched). Next: Phase 11. |
+| **Pushed / merged** | `develop` (P0–P9) is pushed to `origin`. `feat/p10-testing-benchmarks-quality` has P10.1–P10.5 pushed; P10.6 is staged. Per the standing autonomous-progression authorization, this phase-completion commit is followed by push → merge into `develop` (`--no-ff`) → push `develop` → begin Phase 11. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
 ruff-format, `mypy --strict` (105 source files), `pytest` (dspy + non-dspy paths, excluding the one
-Temporal-dependent file; **796 passed**, 96.88% cov), import-linter (**4 contracts
-kept**, incl. the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version
-single-sourcing. `import korchestrator.agents`/`korchestrator.routing`/`korchestrator.telemetry`
-stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, and
-`korchestrator.clients`/`korchestrator.remote` are never imported by
+Temporal-dependent file; **802 passed**, 96.88% cov, comfortably above the new 90% floor),
+import-linter (**4 contracts kept**, incl. the ADR-0011 httpx confinement), the isolation gate,
+env-confinement, and version single-sourcing. `import korchestrator.agents`/
+`korchestrator.routing`/`korchestrator.telemetry` stay `dspy`/`[routing]`/`[otel]`-free; the base
+install stays `pydantic`-only, and `korchestrator.clients`/`korchestrator.remote` are never imported by
 `korchestrator/__init__.py` (statically checked, `test_remote.py`).
 
 ## 2. Phase progress
@@ -40,7 +40,7 @@ stay `dspy`/`[routing]`/`[otel]`-free; the base install stays `pydantic`-only, a
 | P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merged to `develop`) |
 | P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
 | P9 | Remote client (Python only — TS deferred) | **Complete** (P9.1–P9.8; merged to `develop`) |
-| P10 | Testing, benchmarks & quality gates | **In progress** (P10.1–P10.4 done; P10.5–P10.6 next) |
+| P10 | Testing, benchmarks & quality gates | **Complete** (P10.1–P10.6) |
 | P11 | Documentation, examples & DX | Not started |
 | P12 | CI/CD, packaging & publishing | Not started |
 | P13 | External backend adapter | **Out of scope** — separate repository |
