@@ -15,6 +15,14 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Bitemporal Context Graph client (Phase 7, **closes Phase 7**): `korchestrator.persistence` gains
+  `ContextGraphClient` — `record_decision()`/`record_event()` write immutable, tenant-scoped
+  `DecisionNode`/`EventNode`s (each carrying `valid_time`, `transaction_time`, `confidence`, and
+  `provenance`) through Shield redaction first; `query()` reads them back tenant-scoped, with
+  `as_of`/`valid_at` time-travel and an optional `run_id` filter. A correction is always a new node
+  with a later `transaction_time` — nodes are never mutated (event sourcing). `GraphRepository`
+  (the P1 protocol) gains `record_node()`/`query_nodes()` — the extension its own docstring
+  anticipated — and `InMemoryGraphRepository` implements both.
 - Graph repository (Phase 7): `korchestrator.persistence` gains `InMemoryGraphRepository` (the
   `GraphRepository` protocol's default, zero-infrastructure implementation, tenant-scoped and
   concurrency-safe) and `resolve_repository()` (the one place `PERSISTENCE_BACKEND` becomes a

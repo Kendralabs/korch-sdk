@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P7 — Governance, security & context graph — **in progress** (P7.1–P7.5 done) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
-| **Last completed milestone** | **P7.5 — graph repository.** `korchestrator.persistence` gained `InMemoryGraphRepository` (the P1 `GraphRepository` protocol's default, tenant-scoped, concurrency-safe implementation) and `resolve_repository()` (`PERSISTENCE_BACKEND`: `none`→standalone, `memory`→in-memory (default), `kcg`→actionable "not yet implemented"). `Korch`/`Swarm` now actually consult their `repository` — a `_PersistenceMiddleware` checkpoints `AgentState` after every superstep via the existing hook seam, closing a gap flagged since P4.9. |
-| **Blocking** | `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7 work — see the P7.4 engineering-log entry); not blocking further Phase 7 work. Next: P7.6 (bitemporal `ContextGraphClient`), the last P7 task. |
-| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has P7.1–P7.5 committed locally, not yet pushed — pushes/merges to `develop` when Phase 7 completes. |
+| **Active phase** | P7 — Governance, security & context graph — **complete** (P7.1–P7.6) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
+| **Last completed milestone** | **P7.6 — bitemporal Context Graph client, closing Phase 7.** `korchestrator.persistence.ContextGraphClient` records `DecisionNode`/`EventNode`s (bitemporal — `valid_time` + `transaction_time`, plus `confidence`/`provenance`) through Shield redaction, and queries them tenant-scoped with `as_of`/`valid_at` time-travel. `GraphRepository` (P1) gained `record_node`/`query_nodes` — the extension its own docstring anticipated. Nodes are immutable/append-only (event sourcing); not yet auto-wired into a live run (flagged as future work). |
+| **Blocking** | Nothing for Phase 7 itself. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7 work — see the P7.4 engineering-log entry) — a residual risk for full CI confidence, not for merging. Next: push `feat/p7-governance-security`, merge `--no-ff` into `develop`, push `develop`, then start P8. |
+| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has all of P7.1–P7.6 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (94 source files), `pytest` (dspy + non-dspy paths; **511 passed**,
-94.48% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+ruff-format, `mypy --strict` (96 source files), `pytest` (dspy + non-dspy paths; **525 passed**,
+94.61% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
 confinement), the isolation gate, env-confinement, and version single-sourcing. `import
 korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
 `pydantic`-only.
@@ -35,7 +35,7 @@ korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the 
 | P4 | Cognitive layer (agents, signatures, taxonomy) | **Complete** (P4.1–P4.9; first end-to-end run) |
 | P5 | Model routing | **Complete** (P5.1–P5.6; routing wired into execution) |
 | P6 | Integration & observability (AUB, MCP, A2A, streaming, context) | **Complete** (P6.1–P6.8; hooks wired into the local runtime) |
-| P7 | Governance, security & context graph | **In progress** (P7.1 Shield done; P7.2 trust scoring done; P7.3–P7.6 next) |
+| P7 | Governance, security & context graph | **Complete** (P7.1–P7.6; merges to `develop` next) |
 | P8 | Cross-cutting foundations | Not started |
 | P9 | Remote client (Python only — TS deferred) | Not started |
 | P10 | Testing, benchmarks & quality gates | Not started |
@@ -68,7 +68,7 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `events/` | Events | **tested** (`EventPublisher`/`Subscription`/`format_sse`; emits, does not serve HTTP) | P6 |
 | `governance/` | Governance (L5) | **tested** (`ControlTowerTelemetry`/`check_governance` — trust score read; `evaluate_policy`/`GovernanceDecision`/`AuditLog` — policy + audit, P7.3) | P7 |
 | `security/` | Leaf utility | **tested** (Shield redactor, P7.1) | P7 |
-| `persistence/` | Context (L3) | **tested** (`InMemoryGraphRepository` + `resolve_repository`; wired into `Korch`/`Swarm` via `_PersistenceMiddleware`; bitemporal `ContextGraphClient` lands in P7.6) | P7 |
+| `persistence/` | Context (L3) | **tested** (`InMemoryGraphRepository` + `resolve_repository`, wired into `Korch`/`Swarm` via `_PersistenceMiddleware`; `ContextGraphClient` — bitemporal `DecisionNode`/`EventNode`, Shield-redacted, tenant-scoped, time-travel query, P7.6) | P7 |
 | `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
 
 ## 4. Public surface

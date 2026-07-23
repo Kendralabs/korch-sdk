@@ -10,6 +10,95 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P7.6] Bitemporal Context Graph client — v0.1.0 · closes P7
+
+**Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
+
+**What.** Three pieces, closing Phase 7. `models/context_graph.py`: `GraphNode` (the shared
+bitemporal shape — `id`, `tenant_id`, `run_id`, `content`, `provenance`, `confidence`,
+`valid_time`, `transaction_time`) with two thin subclasses, `DecisionNode` (+ `rationale`) and
+`EventNode` (+ `event_type`), both frozen. `interfaces/repository.py`: `GraphRepository` (P1) gains
+`record_node(node, *, tenant_id)` and `query_nodes(*, tenant_id, run_id=None, as_of=None,
+valid_at=None)` — the extension its own docstring had anticipated ("layered on this protocol when
+it lands"). `persistence/repository.py`: `InMemoryGraphRepository` implements both, append-only,
+tenant-scoped. `persistence/context_graph.py`: `ContextGraphClient` — `record_decision()`/
+`record_event()` redact `content` through `Shield` before building a node and writing it via the
+repository; `query()` reads tenant-scoped nodes back with `as_of`/`valid_at` time-travel and an
+optional `run_id` filter.
+
+**Why.** P7.6, the last Phase 7 task — "`ContextGraphClient` — bitemporal decision/event nodes,
+valid+transaction time, confidence, provenance, event sourcing, tenant scoping, time-travel query"
+(spec 12), depending on P7.5 (the repository to sit behind) and P7.1 (Shield, since "governance
+audit and trace ingestion depend on redaction existing").
+
+**Design decisions.** (1) **`GraphRepository` is extended, not duplicated** — spec 05's own P1
+docstring already said the bitemporal node API "is layered on this protocol when it lands"; adding
+`record_node`/`query_nodes` to the existing `Protocol` (rather than inventing a second repository
+type) is the anticipated, sanctioned evolution, and it's additive (existing `save_state`/
+`load_state` callers are unaffected). The structural-conformance test's `_Repository` fake needed
+the two new methods to keep satisfying `isinstance(..., GraphRepository)` — updated alongside. (2)
+**`persistence` importing `security` (Shield) is legal** — `security` is a *leaf utility*
+(CLAUDE.md §3: "config, exceptions, logging, telemetry, serializers, validators, security"), not a
+sibling feature module, so it has no upward dependencies and anything may depend on it; the
+`.importlinter` `features-are-independent` contract doesn't list `security` at all. Documented on
+`persistence/__init__.py`'s "Allowed imports" line, which previously omitted it. (3) **Nodes are
+immutable and append-only** — `record_decision`/`record_event` always create a brand-new node
+(`uuid4()` id, matching the existing `run_id=uuid.uuid4().hex` precedent in `_composition.py`'s
+composition root); there is no update/delete method. A correction is a new node with a later
+`transaction_time`; the old node is never touched, so `as_of`/`valid_at` time-travel queries stay
+meaningful — the entire point of bitemporal event sourcing. (4) `ContextGraphClient` takes
+`valid_time`/`transaction_time` as **required, caller-supplied** parameters rather than reading a
+wall clock internally, mirroring the discipline `AgentState`/`Message`/`StateUpdate` already hold
+to everywhere else in the codebase (even though `persistence/` isn't strict workflow-path code, the
+same discipline avoids `datetime.now()` creeping in and keeps every timestamp traceable to an
+injected clock). (5) Kept deliberately **standalone, not auto-wired** into every run's message/
+governance-decision stream — deciding which run-time events become recorded `EventNode`s is a real
+design question the task list doesn't scope, and P7.3's `AuditLog` docstring already flagged this
+as a *future* composition-root wiring, not this phase's job (§ known limitations).
+
+**Architecture changes.** `models/context_graph.py` (new, re-exported from `models/__init__.py`);
+`interfaces/repository.py` (`GraphRepository` gains two methods — no new import-linter contract
+needed, `interfaces` already depends on `models`); `persistence/repository.py` (`InMemoryGraphRepository`
+extended) and `persistence/context_graph.py` (new); `persistence/__init__.py`'s allowed-imports
+line now names `security`. Import-linter 4/4 kept.
+
+**Files/modules affected.** `src/korchestrator/models/{context_graph,__init__}.py`;
+`src/korchestrator/interfaces/repository.py`;
+`src/korchestrator/persistence/{repository,context_graph,__init__}.py`;
+`tests/unit/persistence/{test_repository,test_context_graph}.py` (node/client tests, new);
+`tests/unit/interfaces/test_protocols.py` (`_Repository` fake extended); `CHANGELOG.md`.
+
+**Breaking changes.** None. `GraphRepository` gains two protocol methods (additive — existing
+callers of `save_state`/`load_state` are unaffected; a hypothetical third-party implementation that
+only had the P1 methods would newly fail `isinstance` against the *widened* protocol, which is why
+this is called out explicitly here and in the CHANGELOG rather than treated as silent). New
+`korchestrator.models`/`korchestrator.persistence` names are additive; top-level `__all__`
+untouched.
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (96 source files);
+import-linter 4/4 kept; the isolation gate and env-confinement check both `OK`. New: node
+recording/round-trip/tenant-isolation/run_id-filter/time-travel-on-both-clocks at the repository
+level; `ContextGraphClient` decision/event recording, tenant scoping, time-travel, **redaction on
+the ingest path** (an email in `content` comes back masked), and that two recordings of identical
+content produce two distinct, coexisting nodes (event sourcing, not an overwrite). 3 doctests pass.
+Full gate results land in the P7 phase-close summary once the branch merges.
+
+**Known limitations / future improvements.** (1) Not wired into any run automatically — no code
+path yet turns a `Message`/`GovernanceDecision`/tool call into a recorded node; a future composition-
+root change would add this (P7.3's `AuditLog` docstring already anticipated forwarding entries
+here). (2) External backends (Neo4j/Postgres, per the background spec) remain post-1.0 —
+`PERSISTENCE_BACKEND=kcg` still raises the P7.5 `ConfigurationError`. (3) No pagination or size
+bound on `query_nodes` — fine for the in-memory/test scope; worth revisiting alongside a real
+backend. **Phase 7 is functionally complete**: governance trust scoring, policy + audit, durable
+HITL, and the bitemporal Context Graph are all usable from the SDK, and the default install still
+needs no external services.
+
+---
+
 ## 2026-07-23 · [P7.5] Graph repository — in-memory GraphRepository, wired into the façade — v0.1.0
 
 **Type:** feature · **Phase:** P7 (governance, security & context graph) · **Author:** Claude (agent)
