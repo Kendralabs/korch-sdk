@@ -15,6 +15,13 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Remote client control + identity (Phase 9): `KorchestratorClient` gains `resume`, `cancel`,
+  `edit_resume` (mirrors the local kernel's own `edit_resume` signal shape), `me`, `my_quota`,
+  `my_runs`, and key management (`create_key`, `list_keys`, `revoke_key`) — spec 04 §7.3. New
+  `korchestrator.models.remote.CallerIdentity`/`Quota`/`ApiKey`/`ApiKeySummary`. `ApiKey.key` (the
+  secret, returned once at creation) is a `pydantic.SecretStr`, never a bare `str` — an accidental
+  `repr`/log can't leak it; call `.get_secret_value()` to use it. `list_keys` never returns the
+  secret at all.
 - Remote client run lifecycle (Phase 9): `KorchestratorClient` gains `run`, `run_swarm`,
   `run_and_wait`, `get_run`, `wait`, `list_runs`, `get_run_summary` (spec 04 §7.3). Every numeric
   run status the engine can return is normalized to the `RunStatus` string vocabulary before

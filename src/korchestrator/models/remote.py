@@ -1,23 +1,32 @@
 """Contract layer. Imports: korchestrator.models.state, stdlib, pydantic.
 
-The remote engine's run-outcome shapes (spec 04 §7.3/§7.4) — what
-:class:`~korchestrator.clients.KorchestratorClient`'s run-lifecycle methods return. Deliberately
-distinct from the local kernel's :class:`~korchestrator.models.result.RunResult`: spec 04 §7
-pins the documented *concepts* (§7.1) and the lifecycle/status vocabulary (§7.4), not a full wire
-schema, and the engine's response never carries the kernel's internal nested ``AgentState``
-snapshot — reusing ``RunResult`` verbatim would mean fabricating fields the engine never sends.
-Frozen and ``extra="forbid"``.
+The remote engine's wire-facing shapes (spec 04 §7.3/§7.4) — what
+:class:`~korchestrator.clients.KorchestratorClient`'s methods return: run outcomes
+(``RemoteRunResult``/``RunSummary``), caller identity and usage (``CallerIdentity``/``Quota``),
+and API key management (``ApiKey``/``ApiKeySummary``). Deliberately distinct from the local
+kernel's :class:`~korchestrator.models.result.RunResult`: spec 04 §7 pins the documented
+*concepts* (§7.1) and the lifecycle/status vocabulary (§7.4), not a full wire schema, and the
+engine's response never carries the kernel's internal nested ``AgentState`` snapshot — reusing
+``RunResult`` verbatim would mean fabricating fields the engine never sends. Frozen and
+``extra="forbid"``.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from korchestrator.models.state import RunStatus
 
-__all__ = ["RemoteRunResult", "RunSummary"]
+__all__ = [
+    "ApiKey",
+    "ApiKeySummary",
+    "CallerIdentity",
+    "Quota",
+    "RemoteRunResult",
+    "RunSummary",
+]
 
 
 class RemoteRunResult(BaseModel):
@@ -56,3 +65,49 @@ class RunSummary(BaseModel):
     final_answer: str = ""
     message_count: int = Field(default=0, ge=0)
     completed_at: datetime | None = None
+
+
+class CallerIdentity(BaseModel):
+    """The authenticated caller's identity (``GET /v1/me``, spec 04 §7.3)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    tenant_id: str
+    scopes: tuple[str, ...] = ()
+
+
+class Quota(BaseModel):
+    """The caller's usage quota (``GET /v1/me/quota``, spec 04 §7.3)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    limit: int = Field(ge=0)
+    used: int = Field(ge=0)
+    remaining: int = Field(ge=0)
+    resets_at: datetime | None = None
+
+
+class ApiKey(BaseModel):
+    """A newly created API key (``POST /v1/keys``, spec 04 §7.3).
+
+    The secret is returned once, at creation — the engine never returns it again, matching every
+    common API-key UX. ``key`` is a :class:`~pydantic.SecretStr` so an accidental ``repr``/``str``
+    (a log line, a stray ``print``) never leaks it; call ``key.get_secret_value()`` to use it.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    key: SecretStr
+    scopes: tuple[str, ...] = ()
+    created_at: datetime
+
+
+class ApiKeySummary(BaseModel):
+    """An existing API key's metadata (``GET /v1/keys``, spec 04 §7.3) — never the secret."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: str
+    scopes: tuple[str, ...] = ()
+    created_at: datetime
