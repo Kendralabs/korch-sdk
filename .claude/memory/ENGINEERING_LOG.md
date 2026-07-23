@@ -10,6 +10,64 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P8.2] Config isolation test — v0.1.0
+
+**Type:** test · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** `tests/unit/test_config_isolation.py` — a pytest test asserting no environment read
+(`os.environ`, `os.getenv`, `load_dotenv`, `dotenv_values`) appears anywhere under
+`src/korchestrator` outside `config/` (spec 08 §1.4's literal requirement). Reuses the existing
+`scripts/check_env_reads.py` gate's scan rather than reimplementing it: extracted its logic into
+`find_offenders(package)`, added `scripts/__init__.py` so it's importable, and added
+`pythonpath = ["."]` to `pyproject.toml`'s pytest config so the repo root resolves. A second test
+proves the scan itself actually detects a real violation (a scan that always returned `[]` would
+otherwise pass the main assertion vacuously).
+
+**Why.** P8.2 — this exact check already ran as a standalone script (`python scripts/
+check_env_reads.py`, part of the documented gate sequence since P0), but was never wired into
+`pytest tests`, so a violation wouldn't fail the normal test run — only a separate, easy-to-forget
+manual/CI step. Spec 08 §1.4 explicitly wants it as a pytest test.
+
+**Design decisions.** (1) **One canonical scan, not two** — rather than duplicating the regex and
+walk logic inline in the new test module (which is what spec 08 §1.4's own snippet literally
+shows), the existing script's logic was extracted into a reusable `find_offenders()` and imported.
+Engineering-rules "one canonical implementation per cross-cutting concern" outweighs matching the
+spec snippet verbatim here, since the spec's intent (assert the isolation property in pytest) is
+fully met either way. (2) Writing the regression-detection test caught a **real latent bug**:
+`find_offenders`'s original subdir check indexed `path.parts[2]`, which only worked because the
+script always calls it with the literal relative path `"src/korchestrator"` — passing any other
+package root (as the new regression test does, using `tmp_path`) silently produced wrong results.
+Fixed to `path.relative_to(package).parts[0]`, which is correct regardless of how deep or where
+`package` sits. This is exactly the kind of latent fragility a reused, tested function surfaces
+that a fire-and-forget script does not. (3) `scripts/__init__.py` documents plainly that `scripts/`
+is never imported by `src/korchestrator` — it exists only so the test can reuse the scan.
+
+**Architecture changes.** None to `src/korchestrator`. `scripts/check_env_reads.py` refactored
+(same behaviour, `find_offenders` extracted + the `parts[2]` → `relative_to(...).parts[0]` fix);
+`scripts/__init__.py` added; `pyproject.toml` gains `pythonpath = ["."]` under
+`[tool.pytest.ini_options]`.
+
+**Files/modules affected.** `scripts/check_env_reads.py`, `scripts/__init__.py` (new),
+`pyproject.toml`, `tests/unit/test_config_isolation.py` (new).
+
+**Breaking changes.** None. Internal tooling/test-infrastructure only; no public surface change,
+so no CHANGELOG entry (nothing user-visible changed).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean; `mypy --strict` clean (97 source files, `scripts/`
+is outside its configured scope, consistent with existing precedent); import-linter 4/4 kept; the
+isolation gate, env-confinement CLI script, and version-validate all still `OK` after the refactor.
+Non-Temporal suite: **555 passed**, 94.71% coverage (≥80 floor). New: the real package passes
+(`find_offenders(...) == []`); a synthetic package with one compliant and one offending file is
+correctly flagged (proves the scan isn't vacuously always-empty).
+
+**Known limitations / future improvements.** None — this closes the P8.2 task as scoped.
+
+---
+
 ## 2026-07-23 · [P8.1] Settings finalized — full variable table, `.env`, `configure()` — v0.1.0
 
 **Type:** feature · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent) · **ADR:** 0016

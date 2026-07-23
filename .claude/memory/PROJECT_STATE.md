@@ -12,10 +12,10 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
-| **Last completed milestone** | **P8.1 — Settings finalized.** The full spec 08 §1.3 variable table (16 new fields: gateway, kernel/runtime bounds, logging/telemetry toggles, remote engine client, Temporal), `SecretStr` for secrets, opt-in `.env` loading (`Settings.from_env(dotenv_path=...)`, `None` by default so no ambient `.env` affects internal callers), and the gateway-key-aware `mock_llm` default. New `configure()`/`get_settings()` (`config/process.py`); `configure` joins top-level `__all__`. ADR 0016 settles two questions: no `pydantic-settings` (reopened from ADR 0009, declined), and the `ConfigurationError`/`ValidationError` split (`ConfigurationError` stays submodule-only, matching spec 04 §6 exactly). |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.2 (config isolation test), P8.3 (logging), P8.4 (exception audit), P8.5 (serialization), P8.6 (validation), P8.7 (telemetry). |
-| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1 committed locally, not yet pushed. |
+| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1–P8.2 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
+| **Last completed milestone** | **P8.2 — config isolation test.** `tests/unit/test_config_isolation.py` now asserts, as part of the normal `pytest` run, that no environment read escapes `config/` (spec 08 §1.4) — previously only checked by a separately-invoked script. Reuses `scripts/check_env_reads.py`'s scan (`find_offenders`, extracted + a latent `path.parts[2]` indexing bug fixed) rather than duplicating it. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.3 (logging), P8.4 (exception audit), P8.5 (serialization), P8.6 (validation), P8.7 (telemetry). |
+| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.2 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
 ruff-format, `mypy --strict` (97 source files), `pytest` (dspy + non-dspy paths; **553 passed**,

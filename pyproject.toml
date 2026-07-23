@@ -125,6 +125,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+# Repo root on sys.path so tests/unit/test_config_isolation.py can import the reusable
+# scripts.check_env_reads module (one canonical env-isolation check, not two).
+pythonpath = ["."]
 addopts = "-ra --strict-markers --strict-config"
 xfail_strict = true
 asyncio_mode = "auto"
