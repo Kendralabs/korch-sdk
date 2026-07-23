@@ -7,41 +7,71 @@ What is left, and the exact prompt to paste into a new session.
 ## Where we stopped
 
 - `develop` (pushed to GitHub) = **P0–P6 complete**.
-- `feat/p7-governance-security` (local, **not pushed**) = **P7.1 (Shield redactor)** committed on top
-  of `develop`.
-- The next task is **P7.2 (trust scoring)**.
+- `feat/p7-governance-security` (local, **not yet pushed**) = **P7.1–P7.6 complete** — all of
+  Phase 7 (governance, security, bitemporal Context Graph) committed on top of `develop`.
+- Immediate next step: push the branch, merge into `develop` (`--no-ff`), push `develop`, then
+  start **Phase 8 — cross-cutting foundations**.
 
-## What is left in Phase 7 (current phase)
+## What Phase 7 shipped
 
-Build these in order; the plan groups them into 3 more commits (see
-`docs/specs/12-implementation-plan.md`, Phase 7).
+1. **P7.1 — Shield**: the consolidated PII/secret redactor (`security/`).
+2. **P7.2 — Trust scoring**: the kernel barrier folds `trust_delta` into `AgentState.trust_score`
+   every superstep; `governance.check_governance` reads it back with per-superstep telemetry.
+3. **P7.3 — Policy + audit**: `evaluate_policy(...)` (per-agent `hitl_threshold` with a
+   `GOVERNANCE_TRUST_THRESHOLD` fallback) and an append-only `AuditLog`.
+4. **P7.4 — HITL controls**: the Temporal runtime auto-pauses on a trust-threshold breach (the
+   same mechanism an operator's `pause` signal uses); a new `edit_resume` signal; `Korch`/`Swarm`
+   expose `pause`/`resume`/`cancel`/`edit_resume`.
+5. **P7.5 — Graph repository**: `InMemoryGraphRepository` (the default, `PERSISTENCE_BACKEND=
+   memory`); `Korch`/`Swarm` now checkpoint state to it after each superstep.
+6. **P7.6 — Context Graph client**: `ContextGraphClient` — bitemporal `DecisionNode`/`EventNode`s
+   (valid-time + transaction-time, confidence, provenance), Shield-redacted on write, tenant-scoped
+   and time-travel-queryable.
 
-1. **P7.2 — Trust scoring** (`governance/`): a 0.0–1.0 score, checked each superstep, that persists
-   across supersteps.
-2. **P7.3 — Policy + audit**: a policy engine, an audit log, and per-agent `hitl_threshold` with a
-   global `GOVERNANCE_TRUST_THRESHOLD` fallback.
-   → Commit: `feat(governance): add trust scoring and policy engine [P7]`
-3. **P7.4 — Human-in-the-loop controls**: when trust drops below threshold, the run pauses; expose
-   `pause` / `resume` / `cancel` / `edit_resume` on the façade (uses the Temporal runtime's signals).
-   → Commit: `feat(governance): add durable HITL controls [P7]`
-4. **P7.5 — Graph repository** (`persistence/`): an in-memory `GraphRepository` as the default;
-   `PERSISTENCE_BACKEND=none` still runs fully standalone.
-5. **P7.6 — Context Graph client**: `ContextGraphClient` with bitemporal nodes (valid-time +
-   transaction-time), confidence, provenance, event sourcing, tenant scoping, and time-travel queries.
-   → Commit: `feat(persistence): add bitemporal context graph client [P7]`
+**Phase 7 acceptance, met:** a run auto-pauses below the trust threshold and resumes on a signal;
+redaction covers every required format and fails closed; graph queries are tenant-scoped; a fully
+standalone run (`PERSISTENCE_BACKEND=none`) completes with no external store.
 
-**Phase 7 acceptance:** a run auto-pauses below the trust threshold and resumes on a signal; redaction
-covers every required format and fails closed; graph queries are tenant-scoped; a fully standalone run
-completes with no external store.
+**One open item, not blocking the merge:** `pytest -m temporal` cannot run in *this* dev machine's
+environment — a pre-existing conflict between Temporal's sandboxed workflow validation and
+`beartype` (pulled in by unrelated globally-installed packages, not a `korchestrator` dependency).
+Confirmed via `git stash` that it reproduces identically against the unmodified P3 code, so it
+predates Phase 7 entirely. The P7.4 HITL logic was independently verified correct via an
+unsandboxed diagnostic harness (see the P7.4 engineering-log entry). A clean CI environment should
+not hit this — worth confirming once CI exists (P12), or sooner if convenient.
 
-When all four P7 commit groups are done: push the branch, merge into `develop` (`--no-ff`), push
-`develop`.
+## Phase 8 — Cross-cutting foundations (next)
 
-## Phases after P7
+**Branch prefix:** `feat/p8-*` · **Goal:** finalize what P0.3 started, plus the remaining utilities
+(spec 12, Phase 8).
 
-- **P8** — Cross-cutting foundations (finalize config/logging/telemetry/serializers/validators;
-  `.env` loading; `configure()`/`get_settings()`; also resolve the `ConfigurationError` vs
-  `ValidationError` decision noted in `PROJECT_STATE.md`).
+1. **P8.1 — Settings finalized**: the full variable table from spec 08 §1.3, precedence
+   `arg > env > .env > default`, `configure()`/`get_settings()`, zero-config `MockLM` default.
+   Also resolve the `ConfigurationError` vs `ValidationError` overlap flagged in
+   `PROJECT_STATE.md` §6 before `configure()` lands.
+2. **P8.2 — Config isolation test**: assert no `os.getenv`/`os.environ` outside `config/`.
+3. **P8.3 — Logging**: `logging/` — namespaced logger, `NullHandler`, `enable_logging()`,
+   structured fields, secret-safe.
+4. **P8.4 — Exception audit**: every internal exception wrapped; boundary tests asserting only
+   `KorchError` subclasses ever escape.
+5. **P8.5 — Serialization**: `serializers/` — deterministic, version-tagged round-trip for
+   `AgentState`/`AgentGraph`/`ExecutionPlan`/`ModelCard`/`RunResult`; stable key ordering; a
+   migration rule.
+6. **P8.6 — Validation**: `validators/` — trust-boundary validation, fail-fast with actionable
+   messages.
+7. **P8.7 — Telemetry**: `telemetry/` — optional OTel spans/metrics (`[otel]` extra), the GenAI
+   span tree `agent.run → agent.plan → tool.call → gen_ai.call`, zero overhead when off.
+
+**Phase 8 acceptance:** env read only in `config/` (test-enforced); logging fully disable-able; no
+raw internal exception escapes; serde round-trips stay stable across a version bump.
+
+**Commits:** `feat(config): finalize typed Settings and configure() [P8]` ·
+`feat(logging): add namespaced disable-able logging [P8]` ·
+`feat(serializers): add version-tagged deterministic serialization [P8]` ·
+`feat(telemetry): add optional OTel instrumentation [P8]`
+
+## Phases after P8
+
 - **P9** — Remote client (`KorchestratorClient`, `[remote]` extra).
 - **P10** — Testing, benchmarks, quality ratchet.
 - **P11** — Docs, examples, developer experience.
@@ -58,7 +88,7 @@ When all four P7 commit groups are done: push the branch, merge into `develop` (
    isolation gate, `lint-imports`, and doctests.
 5. Update `.claude/memory/ENGINEERING_LOG.md` **before** committing (a hook enforces this), and the
    `CHANGELOG.md` for user-visible changes.
-6. Commit with a Conventional Commit message tagged `[P7]` (etc.).
+6. Commit with a Conventional Commit message tagged `[P8]` (etc.).
 7. Keep the base install `pydantic`-only; keep the kernel deterministic; never edit `version.py`;
    never use `--no-verify`.
 
@@ -98,9 +128,11 @@ First, read these to load context (in this order):
 
 Current state:
 - Branch `develop` (pushed) = Phases P0 through P6 complete and merged.
-- Branch `feat/p7-governance-security` (local, NOT pushed) = P7.1 (Shield PII redactor) committed.
-- Next task = P7.2 (trust scoring), then P7.3 (policy + audit), P7.4 (HITL controls),
-  P7.5 (in-memory GraphRepository), P7.6 (bitemporal ContextGraphClient).
+- Branch `feat/p7-governance-security` = P7.1-P7.6 complete (all of Phase 7), pushed and merged
+  into develop (if this hasn't happened yet, do it first: push the branch, merge --no-ff into
+  develop, push develop).
+- Next phase = P8 (cross-cutting foundations): P8.1 Settings finalized, P8.2 config isolation
+  test, P8.3 logging, P8.4 exception audit, P8.5 serialization, P8.6 validation, P8.7 telemetry.
 
 Standing authorization (already given by the user): after finishing a phase, automatically
 commit → push the feature branch → merge into `develop` with --no-ff → push `develop` → start the
@@ -108,7 +140,8 @@ next phase, without asking for per-phase approval. Do NOT push/merge to `main`. 
 version.py. Never use --no-verify.
 
 How to work each task:
-- Build task-by-task on the current P7 branch; use the commit groupings the build-phase plan lists.
+- Build task-by-task on a new feat/p8-* branch off develop; use the commit groupings the
+  build-phase plan lists.
 - Design the public surface first, put code in the correct layer, write tests that fail without the
   change, then make every gate green: ruff, ruff format, mypy --strict, pytest + coverage (floor
   80% global, 95% for core/ and models/), the import-isolation gate, lint-imports (4 contracts),
@@ -118,9 +151,10 @@ How to work each task:
   deterministic (no wall-clock/randomness in core/ or workflow scope).
 - Update .claude/memory/ENGINEERING_LOG.md BEFORE each commit (a hook enforces it) and CHANGELOG.md
   for user-visible changes. Record structural decisions as short ADRs in docs/adr/.
-- When P7's four commit groups are done, push + merge P7 into develop, then continue to P8.
+- When P8's commit groups are done, push + merge P8 into develop, then continue to P9.
 - Keep docs/status/*.md and .claude/memory/PROJECT_STATE.md up to date as phases complete.
 
-Start now with P7.2: read its objective/acceptance in the specs, design the governance trust-scoring
-surface, implement it, and drive it to green.
+Start now with P8.1: read its objective/acceptance in the specs, finalize the Settings surface
+(full variable table, configure()/get_settings(), and resolve the ConfigurationError vs
+ValidationError overlap noted in PROJECT_STATE.md), and drive it to green.
 ```
