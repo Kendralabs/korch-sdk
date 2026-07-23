@@ -48,6 +48,19 @@ def test_swarm_rejects_a_short_objective() -> None:
         Swarm(objective="too short").add(Agent(id="a", role="a")).run()
 
 
+@pytest.mark.parametrize("max_supersteps", [0, -1, 101])
+def test_korch_rejects_an_out_of_range_max_supersteps(max_supersteps: int) -> None:
+    with pytest.raises(ValidationError):
+        Korch().run("Summarize the quarterly incident reports", max_supersteps=max_supersteps)
+
+
+@pytest.mark.parametrize("max_supersteps", [0, -1, 101])
+def test_swarm_rejects_an_out_of_range_max_supersteps(max_supersteps: int) -> None:
+    swarm = Swarm(objective="Summarize the quarterly incident reports").add(Agent(id="a", role="a"))
+    with pytest.raises(ValidationError):
+        swarm.run(max_supersteps=max_supersteps)
+
+
 def test_korch_reasoning_without_dspy_raises_missing_extra() -> None:
     with mock.patch.dict(sys.modules, {"dspy": None}), pytest.raises(MissingExtraError):
         Korch().run("Summarize the quarterly incident reports")

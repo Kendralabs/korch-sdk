@@ -88,7 +88,8 @@ class Korch:
             The terminal :class:`RunResult`, including ``final_answer``.
 
         Raises:
-            ValidationError: If ``objective`` is shorter than 10 characters.
+            ValidationError: If ``objective`` is shorter than 10 characters, or ``max_supersteps``
+                is outside 1-100.
             MissingExtraError: If reasoning is used without the ``[dspy]`` extra.
 
         Example:
@@ -96,6 +97,7 @@ class Korch:
             >>> Korch().run("Summarize durable agent execution")  # doctest: +SKIP
         """
         comp.validate_objective(objective)
+        comp.validate_max_supersteps(max_supersteps)
         settings = self._settings or Settings.from_env()
         gateway = comp.resolve_gateway(settings, self._model_gateway)
         clock = comp.wall_clock()

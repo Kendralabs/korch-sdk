@@ -247,6 +247,14 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Fixed
 
+- **Validation (Phase 8):** `Swarm.add()` now rejects a duplicate agent `id` with a
+  `ValidationError` instead of silently overwriting the earlier agent (the dict-keyed-by-id
+  storage previously discarded it with no warning). `Korch.run`/`Swarm.run` now validate
+  `max_supersteps` is between 1 and 100 (spec 08 §7) — previously any integer, including 0 or
+  negative, was accepted with no check. New `korchestrator.validators` module
+  (`validate_objective`/`validate_max_supersteps`/`validate_unique_agent_id`) centralizes these
+  domain rules; `services/_composition.py`'s objective-length check now delegates to it instead of
+  a local copy.
 - **Exception audit (Phase 8):** `TemporalRuntime.start`/`wait`/`signal` (and, through them,
   `Korch`/`Swarm.pause`/`resume`/`cancel`/`edit_resume`) no longer let a raw `temporalio` exception
   cross the façade boundary. A lost/refused connection now raises `NetworkError`, the run's own

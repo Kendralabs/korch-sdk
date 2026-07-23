@@ -17,7 +17,7 @@ from korchestrator.agents import Agent, WorkerAgent
 from korchestrator.config import Settings
 from korchestrator.core.graph import AgentGraph, Edge, Node
 from korchestrator.core.pregel import Clock, SuperstepObserver
-from korchestrator.exceptions import MissingExtraError, ValidationError
+from korchestrator.exceptions import MissingExtraError
 from korchestrator.interfaces import BaseRouter, GraphRepository, IDurableRuntime, IModelGateway
 from korchestrator.models.agent import AgentConfig
 from korchestrator.models.result import RunResult
@@ -30,8 +30,15 @@ from korchestrator.runtime import resolve_runtime
 from korchestrator.services.hooks import EventHandler, HookRegistry, Middleware
 from korchestrator.taxonomy import TaxonomyClassifier
 from korchestrator.types import JSONValue
-
-_MIN_OBJECTIVE_CHARS = 10
+from korchestrator.validators import (
+    validate_max_supersteps as validate_max_supersteps,
+)
+from korchestrator.validators import (
+    validate_objective as validate_objective,
+)
+from korchestrator.validators import (
+    validate_unique_agent_id as validate_unique_agent_id,
+)
 
 
 class _PersistenceMiddleware(Middleware):
@@ -103,15 +110,6 @@ def resolve_routing(
 ) -> tuple[BaseRouter, tuple[ModelCard, ...]]:
     """Resolve the router (injected or configured) and load the candidate model cards."""
     return resolve_router(settings, router=router), load_model_cards(settings)
-
-
-def validate_objective(objective: str) -> None:
-    """Reject an objective shorter than the kernel's minimum (a fast, offline check)."""
-    if len(objective) < _MIN_OBJECTIVE_CHARS:
-        raise ValidationError(
-            f"Objective must be at least {_MIN_OBJECTIVE_CHARS} characters, got {len(objective)}. "
-            "Describe the goal in a sentence, e.g. 'Summarize the Q3 incident reports'."
-        )
 
 
 def worker_node_from_config(
