@@ -10,6 +10,60 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P10.4] Regression harness — v0.1.0
+
+**Type:** test · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
+
+**What.** New `tests/regression/` (spec 12 P10.4: "one locked test per fixed bug, each naming the
+issue"). Audited the engineering log's full history for genuinely fixed bugs first — most already
+carry a dedicated regression test in their own unit-test file from the original fix commit (T7 has
+been followed consistently throughout: duplicate-agent-id rejection, `max_supersteps` bounds,
+`Agent`'s pydantic-error wrapping, every `TemporalRuntime` exception-wrapping path, the telemetry
+DI-boundary bug caught before it shipped — all already locked where they were fixed). Two real bugs
+turned up with **no existing regression coverage anywhere**, and one is added for discoverability:
+
+- `test_kernel_message_log_keeps_every_kind.py` — the P10.2 kernel bug (`PregelRunner
+  ._route_messages` silently dropped every non-`"answer"`-kind message from the run's message log).
+  It was fixed as part of the ReAct-loop work and is exercised *indirectly* by the tools/MCP
+  integration tests' `tool_messages` assertions, but had no test pinned directly at the kernel
+  level naming the bug. This one does, with a synthetic node (no DSPy) so it runs in milliseconds.
+- `test_dotenv_unreadable_file_wraps_as_configuration_error.py` — the P8.4 exception-audit fix
+  where an unreadable `.env` file let a raw `OSError` escape `Settings.from_env` instead of raising
+  `ConfigurationError`. This one had **no test at all**, in `tests/regression/` or anywhere else —
+  a genuine coverage gap the P8.4 entry's own testing-status note didn't catch. Uses
+  `mock.patch.object(Path, "read_text", side_effect=OSError(...))` rather than real filesystem
+  permissions, which behave inconsistently across OSes (T1/T2).
+
+**Why.** Spec 12 P10.4's stated purpose: a locked, named, easy-to-scan regression suite separate
+from ordinary unit tests (which are organised by module, not by "bug history"). Writing it required
+actually re-deriving the project's bug history rather than assuming coverage existed — and surfaced
+one real gap (the `.env` `OSError` path) that had silently gone untested since P8.4.
+
+**Design decisions.** Did not duplicate every already-covered bug into `tests/regression/` just to
+pad the directory — each existing regression test already lives next to the code it locks, is
+already run on every `pytest` invocation, and copying it here would only create a second place to
+keep in sync. `tests/regression/` holds only the bugs that had no direct lock anywhere, so every
+file in it justifies its own existence.
+
+**Architecture changes.** None — test-only.
+
+**Files/modules affected.** `tests/regression/test_kernel_message_log_keeps_every_kind.py` (new),
+`tests/regression/test_dotenv_unreadable_file_wraps_as_configuration_error.py` (new).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** Both new tests pass; `ruff check`, `ruff format --check`, `mypy --strict` clean.
+
+**Known limitations / future improvements.** `tests/regression/` currently holds two tests; it is
+meant to grow by exactly one file per future bug fix (T7), not to be backfilled further now. Next:
+P10.5 (benchmarks), P10.6 (coverage/benchmark ratchet).
+
+---
+
 ## 2026-07-23 · [P10.3] E2E suite: streaming consumption — v0.1.0
 
 **Type:** test · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)
