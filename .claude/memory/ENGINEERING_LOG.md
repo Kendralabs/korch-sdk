@@ -10,6 +10,89 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-23 · [P8.3] Namespaced, disable-able logging — v0.1.0
+
+**Type:** feature · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)
+
+**What.** `logging/logger.py` (new): the single namespaced `logging.getLogger("korchestrator")`
+logger, with a `NullHandler` attached the moment the module is imported. `enable_logging(level=
+"INFO", *, stream=None)` attaches one `StreamHandler` (idempotent — a second call replaces the
+handler and level rather than stacking), validates `level` against the six recognised Python level
+names, and raises `ValidationError` on garbage. `disable_logging()` removes the handler if present;
+idempotent. Neither touches the root logger or calls `logging.basicConfig()`. `enable_logging`
+joins top-level `korchestrator.__all__` (golden snapshot updated); `disable_logging` stays
+submodule-only, matching spec 04 §6's `__init__.py` example exactly (same treatment as
+`ConfigurationError`/`get_settings` in P8.1). Also added the `T20` (`flake8-print`) ruff rule to
+`pyproject.toml`'s lint selection — "no `print()` anywhere in `src/`" (spec 08 §3) is now
+machine-enforced, not just a style guideline; the package was already clean (the only two matches
+were inside docstrings/doctest text, not real calls).
+
+**Why.** P8.3 — "`logging/` — namespaced logger, `NullHandler`, `enable_logging()`, structured
+fields, secret-safe." Eight modules already logged via child loggers
+(`korchestrator.events`/`.mcp`/`.routing`/`.tools`, and two bare `korchestrator`) with no
+`NullHandler` anywhere in the hierarchy — meaning a WARNING+ log call (e.g. `services/hooks.py`'s
+isolated-hook error log) would already reach Python's "handler of last resort" and print to
+stderr in any embedding application with no logging configured of its own, a real, silent
+violation of "off by default" that existed before this phase closed it.
+
+**Design decisions.** (1) **The `NullHandler` attaches at import time**, which is an explicit,
+narrow, sanctioned exception to B8's "no import-time side effects" — this is the standard,
+universally-recommended Python library pattern specifically to suppress the "no handlers could be
+found" warning, and spec 08 §3 prescribes it directly ("configured once in `logging/` with a
+`NullHandler` attached"). It has no effect on business logic and is itself idempotent (attaching
+the same `NullHandler` type is harmless even if re-imported). (2) **`logging/` is allowed to
+import `exceptions`**, not just `config` as spec 05's module table literally lists — a narrow,
+low-risk gap-fill (both are leaf utilities, no cycle, no layering violation) needed so an invalid
+`level` argument raises the required `KorchError` subclass rather than a bare `ValueError`; every
+other leaf utility (`config`, `security`) already imports `exceptions` for the same reason. (3)
+**Validated against an explicit level-name set**, not by catching whatever `Logger.setLevel()`
+raises — keeps the failure path independent of stdlib `logging`'s exact error type/wording, and
+produces the actionable, valid-values-listing message style spec 08 §2.3 requires. (4) Test
+isolation: since `enable_logging`/`disable_logging` mutate genuinely global (module-level, process
+lifetime) state, `tests/unit/logging/test_logger.py` uses an autouse fixture calling
+`disable_logging()` before and after every test so no test's `enable_logging()` call leaks into
+another — the same discipline P8.1's `settings` fixture already established for `configure()`.
+
+**Architecture changes.** `logging/logger.py` (new); `logging/__init__.py` re-exports; top-level
+`korchestrator/__init__.py` imports and exports `enable_logging`. No import-linter contract
+changes needed (`logging/` isn't in any of the four contracts' module lists — it's a leaf utility
+like `config`/`exceptions`, already outside their scope).
+
+**Files/modules affected.** `src/korchestrator/logging/{logger,__init__}.py`;
+`src/korchestrator/__init__.py`; `tests/unit/public_surface.json`;
+`tests/unit/logging/test_logger.py` (new); `pyproject.toml` (`T20` added to ruff `select`);
+`CHANGELOG.md`.
+
+**Breaking changes.** None. New `korchestrator.logging` surface; `enable_logging` added to
+top-level `__all__` (additive, MINOR — golden snapshot updated in this PR).
+
+**Feature version/revision.** v0.1.0 (unreleased).
+
+**Migration notes.** None.
+
+**Testing status.** `ruff` + `ruff format` clean (incl. the new `T20` rule — zero real `print()`
+calls in `src/`); `mypy --strict` clean (98 source files); import-linter 4/4 kept; the isolation
+gate and env-confinement check both `OK`. Non-Temporal suite: **567 passed**, 94.77% coverage
+(≥80 floor). New (12 tests): the default `NullHandler`-only state; `enable_logging` attaches
+exactly one `StreamHandler` at the right level; idempotent re-enabling replaces rather than stacks
+and re-routes subsequent output to the new stream; an invalid level raises `ValidationError`;
+case-insensitive level names; `disable_logging` removes the handler and is idempotent when
+called with nothing attached; the root logger's handlers/level are provably untouched (compared
+against a snapshot taken inside the test, not at import time, since pytest's own log-capture
+plugin legitimately touches root between tests); and an end-to-end check that a logged message
+actually reaches the configured stream. 2 doctests pass.
+
+**Known limitations / future improvements.** (1) "Structured fields go through `extra=`... never
+string interpolation of variable data" (spec 08 §3) is a per-call-site discipline, not something
+this module enforces mechanically — existing call sites (`events`, `mcp`, `routing`, `tools`, the
+two `services`/`providers` ones) were not audited for this in P8.3; worth a follow-up pass. (2) No
+log-record redaction filter yet (Shield integration on the logging path) — spec 08 §5 requires
+secrets/PII never reach a log record; today that discipline rests entirely on call sites not
+logging raw prompts/secrets in the first place, not on a mechanical guard. Consider a
+`logging.Filter` wired in P8.7 (telemetry) or as its own follow-up.
+
+---
+
 ## 2026-07-23 · [P8.2] Config isolation test — v0.1.0
 
 **Type:** test · **Phase:** P8 (cross-cutting foundations) · **Author:** Claude (agent)

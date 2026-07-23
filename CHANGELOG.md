@@ -15,6 +15,12 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Namespaced, disable-able logging (Phase 8): `korchestrator.logging` gains `enable_logging(level=
+  "INFO", *, stream=None)` (attaches a single `StreamHandler` to the `korchestrator` logger,
+  idempotent) and `disable_logging()`. Off by default — only a `NullHandler` is attached at import
+  time, so the SDK never touches the root logger or calls `logging.basicConfig()`, and an embedding
+  application's own logging configuration is untouched. `enable_logging` joins top-level
+  `korchestrator.__all__`; `disable_logging` stays submodule-only, matching spec 04 §6 exactly.
 - Settings finalized (Phase 8): the full spec 08 §1.3 variable table — 16 new fields covering the
   model gateway, kernel/runtime bounds, logging/telemetry toggles, the remote engine client, and
   the Temporal runtime (`TEMPORAL_ADDRESS`, `TEMPORAL_API_KEY`, etc.). Secret-bearing fields
