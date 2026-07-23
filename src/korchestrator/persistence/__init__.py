@@ -5,4 +5,9 @@ serializers. The bitemporal Context Graph client behind GraphRepository (in-memo
 backend).
 """
 
-__all__: list[str] = []
+from __future__ import annotations
+
+from korchestrator.persistence.factory import resolve_repository
+from korchestrator.persistence.repository import InMemoryGraphRepository
+
+__all__ = ["InMemoryGraphRepository", "resolve_repository"]

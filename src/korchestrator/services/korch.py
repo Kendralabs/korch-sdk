@@ -99,6 +99,7 @@ class Korch:
         settings = self._settings or Settings.from_env()
         gateway = comp.resolve_gateway(settings, self._model_gateway)
         clock = comp.wall_clock()
+        repository = comp.resolve_repository(settings, self._repository)
 
         async def _flow() -> RunResult:
             semantics = comp.classify(objective)
@@ -128,7 +129,9 @@ class Korch:
                 clock=clock,
                 objective=objective,
                 max_supersteps=plan.max_supersteps,
-                observer=comp.build_observer(self._middleware, self._handlers),
+                observer=comp.build_observer(
+                    self._middleware, self._handlers, repository=repository
+                ),
             )
 
         return asyncio.run(_flow())

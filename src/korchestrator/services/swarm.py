@@ -123,6 +123,7 @@ class Swarm:
         gateway = comp.resolve_gateway(settings, self._model_gateway)
         clock = comp.wall_clock()
         agents = tuple(self._agents.values())
+        repository = comp.resolve_repository(settings, self._repository)
 
         async def _flow() -> RunResult:
             semantics = comp.classify(self._objective)
@@ -142,7 +143,9 @@ class Swarm:
                 clock=clock,
                 objective=self._objective,
                 max_supersteps=max_supersteps,
-                observer=comp.build_observer(self._middleware, self._handlers),
+                observer=comp.build_observer(
+                    self._middleware, self._handlers, repository=repository
+                ),
             )
 
         return asyncio.run(_flow())

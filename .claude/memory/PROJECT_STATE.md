@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P7 — Governance, security & context graph — **in progress** (P7.1–P7.4 done) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
-| **Last completed milestone** | **P7.4 — HITL controls.** `PregelMaster` (Temporal) auto-pauses itself when a superstep's `trust_score` breaches any active node's effective HITL threshold — the same mechanism an operator's `pause` signal uses. A new `edit_resume` signal applies an operator's context/trust edit and resumes; a `status` query reports `governance_paused` without blocking. `Korch`/`Swarm` gained `pause`/`resume`/`cancel`/`edit_resume` façade methods. **Residual risk:** `pytest -m temporal` cannot currently run in this dev environment (a pre-existing, unrelated `beartype`/site-packages conflict — confirmed via `git stash` to predate P7.4); the HITL logic was verified correct via an unsandboxed diagnostic harness instead. See the P7.4 engineering-log entry. |
-| **Blocking** | The `[temporal]` test gate above, for full CI confidence (not blocking further Phase 7 work). Next: P7.5 (in-memory `GraphRepository`), P7.6 (bitemporal `ContextGraphClient`). |
-| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has P7.1 (Shield), P7.2 (trust scoring), P7.3 (policy + audit), and P7.4 (HITL controls) committed locally, not yet pushed — pushes/merges to `develop` when Phase 7 completes. |
+| **Active phase** | P7 — Governance, security & context graph — **in progress** (P7.1–P7.5 done) on branch `feat/p7-governance-security` (off `develop`, not yet pushed). |
+| **Last completed milestone** | **P7.5 — graph repository.** `korchestrator.persistence` gained `InMemoryGraphRepository` (the P1 `GraphRepository` protocol's default, tenant-scoped, concurrency-safe implementation) and `resolve_repository()` (`PERSISTENCE_BACKEND`: `none`→standalone, `memory`→in-memory (default), `kcg`→actionable "not yet implemented"). `Korch`/`Swarm` now actually consult their `repository` — a `_PersistenceMiddleware` checkpoints `AgentState` after every superstep via the existing hook seam, closing a gap flagged since P4.9. |
+| **Blocking** | `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7 work — see the P7.4 engineering-log entry); not blocking further Phase 7 work. Next: P7.6 (bitemporal `ContextGraphClient`), the last P7 task. |
+| **Pushed / merged** | `develop` (P0–P6) is pushed to `origin`. `feat/p7-governance-security` has P7.1–P7.5 committed locally, not yet pushed — pushes/merges to `develop` when Phase 7 completes. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (92 source files), `pytest` (dspy + non-dspy paths; **498 passed**,
-94.49% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+ruff-format, `mypy --strict` (94 source files), `pytest` (dspy + non-dspy paths; **511 passed**,
+94.48% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
 confinement), the isolation gate, env-confinement, and version single-sourcing. `import
 korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
 `pydantic`-only.
@@ -66,9 +66,10 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `context/` | Context (L3) | **tested** (`ContextCompiler` MVC extraction, off the hot loop, graceful summariser degradation) | P6 |
 | `a2a/` | Integration (L4) | **tested** (`directed_message`, `HandoffTransformer`) | P6 |
 | `events/` | Events | **tested** (`EventPublisher`/`Subscription`/`format_sse`; emits, does not serve HTTP) | P6 |
-| `governance/` | Governance (L5) | **tested** (`ControlTowerTelemetry`, `derive_telemetry`, `check_governance` — trust scoring's read-only observer; policy/threshold/audit land in P7.3) | P7 |
+| `governance/` | Governance (L5) | **tested** (`ControlTowerTelemetry`/`check_governance` — trust score read; `evaluate_policy`/`GovernanceDecision`/`AuditLog` — policy + audit, P7.3) | P7 |
 | `security/` | Leaf utility | **tested** (Shield redactor, P7.1) | P7 |
-| `persistence/` · `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P7–P9 |
+| `persistence/` | Context (L3) | **tested** (`InMemoryGraphRepository` + `resolve_repository`; wired into `Korch`/`Swarm` via `_PersistenceMiddleware`; bitemporal `ContextGraphClient` lands in P7.6) | P7 |
+| `clients/` · `serializers/` · `validators/` · `telemetry/` · `logging/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
 
 ## 4. Public surface
 
