@@ -12,14 +12,14 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1–P8.4 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
-| **Last completed milestone** | **P8.4 — exception audit.** Audited every third-party/I/O boundary; found and fixed the one real gap — `TemporalRuntime.start`/`wait`/`signal` let raw `temporalio` exceptions escape all the way to `Korch.pause`/`resume`/`cancel`/`edit_resume`. Now wraps into `NetworkError`/`RunFailedError`/`ProviderError` with `__cause__` set. Also closed a minor `.env`-read `OSError` gap. New mock-based tests (no real Temporal server) exercise the wrapping directly. |
-| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.5 (serialization), P8.6 (validation), P8.7 (telemetry). |
-| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.4 committed locally, not yet pushed. |
+| **Active phase** | P8 — Cross-cutting foundations — **in progress** (P8.1–P8.5 done) on branch `feat/p8-cross-cutting-foundations` (off `develop`, not yet pushed). Phase 7 is complete and merged. |
+| **Last completed milestone** | **P8.5 — deterministic, version-tagged serialization.** `korchestrator.to_json`/`from_json` round-trip `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult` byte-for-byte, version-tagged, with a working migration mechanism. `AgentGraph` is deliberately excluded (ADR 0017 — its nodes carry live compute callables). Golden fixtures in `tests/fixtures/serde/`. |
+| **Blocking** | Nothing. `pytest -m temporal` still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any P7/P8 work — see the P7.4 engineering-log entry). Next: P8.6 (validation), P8.7 (telemetry) — the last two P8 tasks. |
+| **Pushed / merged** | `develop` (P0–P7) is pushed to `origin`. `feat/p8-cross-cutting-foundations` has P8.1–P8.5 committed locally, not yet pushed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (98 source files), `pytest` (dspy + non-dspy paths; **605 passed**,
-95.23% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
+ruff-format, `mypy --strict` (99 source files), `pytest` (dspy + non-dspy paths; **629 passed**,
+95.33% cov, 16 Temporal excluded), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx
 confinement), the isolation gate, env-confinement, and version single-sourcing. `import
 korchestrator.agents`/`korchestrator.routing` stay `dspy`/`[routing]`-free; the base install stays
 `pydantic`-only.
@@ -70,19 +70,20 @@ Every module is **not created**. Populate this table as modules land: `not creat
 | `security/` | Leaf utility | **tested** (Shield redactor, P7.1) | P7 |
 | `persistence/` | Context (L3) | **tested** (`InMemoryGraphRepository` + `resolve_repository`, wired into `Korch`/`Swarm` via `_PersistenceMiddleware`; `ContextGraphClient` — bitemporal `DecisionNode`/`EventNode`, Shield-redacted, tenant-scoped, time-travel query, P7.6) | P7 |
 | `logging/` | Leaf utility | **tested** (namespaced logger, `NullHandler` by default, `enable_logging`/`disable_logging`, P8.3) | P8.3 |
-| `clients/` · `serializers/` · `validators/` · `telemetry/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
+| `serializers/` | Leaf utility | **tested** (`to_json`/`from_json` — `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult`, version-tagged, migration mechanism; `AgentGraph` excluded, ADR 0017) | P8.5 |
+| `clients/` · `validators/` · `telemetry/` | see spec 05 | **stub** (skeleton `__init__` with docstring + `__all__`) | P8–P9 |
 
 ## 4. Public surface
 
-**Currently exported:** 29 names — `Agent`, `AgentState`, `Korch`, `Swarm`, `configure` (P8.1),
-`enable_logging` (P8.3), the 4 ARI ports (`IDurableRuntime`/`IExecutionSandbox`/`IIdentityProvider`/
-`IModelGateway`), the 13 top-level `KorchError` subclasses,
-`Message`/`RunResult`/`RunStatus`/`StateUpdate`, `Settings`, and `__version__`. Full list in
-`tests/unit/public_surface.json`. Frozen at P1 with 27 names; `configure`/`enable_logging` are the
-first deliberate, ADR-considered additions (ADR 0016).
+**Currently exported:** 31 names — `Agent`, `AgentState`, `Korch`, `Swarm`, `configure` (P8.1),
+`enable_logging` (P8.3), `from_json`/`to_json` (P8.5), the 4 ARI ports
+(`IDurableRuntime`/`IExecutionSandbox`/`IIdentityProvider`/`IModelGateway`), the 13 top-level
+`KorchError` subclasses, `Message`/`RunResult`/`RunStatus`/`StateUpdate`, `Settings`, and
+`__version__`. Full list in `tests/unit/public_surface.json`. Frozen at P1 with 27 names; all four
+P8 additions are deliberate, ADR-considered (ADR 0016).
 
-**Grows further in P8** by two more names (`from_json`/`to_json` — P8.5) — each a MINOR addition
-that updates the golden snapshot. `korchestrator.exceptions.TimeoutError` and `ConfigurationError`,
+**P8 additions are now complete** (`configure`, `enable_logging`, `from_json`, `to_json` — the
+four names anticipated since P1). `korchestrator.exceptions.TimeoutError` and `ConfigurationError`,
 and `korchestrator.logging.disable_logging`, are all part of the compatibility surface but
 intentionally not top-level (ADR 0016 for the latter two — matches spec 04 §6's `__init__.py`
 example exactly).
@@ -112,6 +113,7 @@ All recorded in [`docs/adr/`](../../docs/adr/README.md) and binding.
 | Custom router registration | By injection (`Korch(router=)`/`resolve_router`); `ROUTING_STRATEGY` selects built-ins only; entry-point discovery deferred | 0014 |
 | Tool/connector registration | On a `ConnectorRegistry` + `Korch(connectors=)` + entry points; no process-global `register_*` (B8) | 0015 |
 | Settings finalization | No `pydantic-settings` (hand-written `.env` reader instead); `configure()` wraps into `korchestrator.ValidationError`, `ConfigurationError` covers resolution failures and stays submodule-only | 0016 |
+| `AgentGraph` serialization | Excluded from `to_json`/`from_json` — live compute callables have no safe JSON representation | 0017 |
 
 ## 6. Known gaps and open items
 

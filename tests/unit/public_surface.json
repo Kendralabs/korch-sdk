@@ -28,6 +28,8 @@
     "ValidationError",
     "__version__",
     "configure",
-    "enable_logging"
+    "enable_logging",
+    "from_json",
+    "to_json"
   ]
 }
