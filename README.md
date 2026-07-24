@@ -7,9 +7,9 @@
 [![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-blue)](docs/specs/02-repository-structure.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](docs/adr/0003-license-apache-2-0.md)
 
-> **Pre-implementation.** This repository currently contains the specification set, the architecture
-> decision records, and the engineering configuration. The package source does not exist yet —
-> Phase 0 scaffolds it. See [Project status](#project-status).
+> **Pre-release.** The SDK is implemented and tested (Phases 0–10 complete; Phase 11 — docs,
+> examples & DX — in progress) but has not yet been published to PyPI (Phase 12). Install from
+> source until then — see [Installation](#installation). See [Project status](#project-status).
 
 ---
 
@@ -40,7 +40,7 @@ loop rather than a fixed path:
 event → decision → branch → parallel agents → merge → feedback → repeat
 ```
 
-## How it will be used
+## How it's used
 
 Four tiers, all from `from korchestrator import ...`. Tiers 1–3 run entirely in-process with no
 service and no network.
@@ -72,12 +72,17 @@ Full surface: [docs/specs/04-public-api.md](docs/specs/04-public-api.md).
 
 ## Installation
 
+**Not yet published to PyPI** (packaging/publishing is Phase 12). Until then, install from source:
+
 ```bash
-pip install korchestrator                 # core — depends on pydantic alone
-pip install 'korchestrator[dspy]'         # cognitive layer (agents, compiled signatures)
-pip install 'korchestrator[temporal]'     # durable runtime
-pip install 'korchestrator[all]'          # everything
+git clone <repository-url> && cd korch-sdk
+pip install -e '.[dspy]'      # cognitive layer (agents, compiled signatures) — most users need this
+pip install -e '.[all]'       # everything
 ```
+
+Once published, the same extras will work the ordinary way — `pip install korchestrator`,
+`pip install 'korchestrator[dspy]'`, etc. See [docs/installation.md](docs/installation.md) for the
+full extras table.
 
 The base install has **one runtime dependency**. Everything heavy is an optional extra, lazy-imported
 so `import korchestrator` stays fast and the kernel stays embeddable. The default configuration runs
@@ -85,16 +90,18 @@ offline against a deterministic mock model — no keys, no services, no infrastr
 
 ## Project status
 
-Pre-alpha, private, and **not yet published**. Built in ordered phases:
+Pre-release. Built in ordered phases:
 
 | Phase | Delivers | Status |
 |---|---|---|
-| P0–P1 | Scaffold, decisions, frozen API contracts | Not started |
-| P2–P3 | Pregel kernel; local + Temporal runtimes | Not started |
-| P4–P5 | Agents, compiled signatures, model routing | Not started |
-| P6–P7 | Tools/MCP/A2A, streaming, governance, context graph | Not started |
-| P8–P9 | Cross-cutting foundations; remote client | Not started |
-| P10–P12 | Testing, docs, CI/CD and publishing | Not started |
+| P0–P1 | Scaffold, decisions, frozen API contracts | **Complete** |
+| P2–P3 | Pregel kernel; local + Temporal runtimes | **Complete** |
+| P4–P5 | Agents, compiled signatures, model routing | **Complete** |
+| P6–P7 | Tools/MCP/A2A, streaming, governance, context graph | **Complete** |
+| P8–P9 | Cross-cutting foundations; remote client | **Complete** |
+| P10 | Testing, benchmarks & quality gates | **Complete** |
+| P11 | Documentation, examples & DX | In progress |
+| P12 | CI/CD, packaging & publishing | Not started |
 
 Current state, including known gaps: [`.claude/memory/PROJECT_STATE.md`](.claude/memory/PROJECT_STATE.md).
 
@@ -104,14 +111,25 @@ carries one. From `1.0.0` the full compatibility policy applies without exceptio
 
 ## Documentation
 
+The published docs site ([`docs/`](docs/), built with MkDocs — `mkdocs serve` to preview locally):
+
+| Start here | For |
+|---|---|
+| [docs/installation.md](docs/installation.md) | The base install and every optional extra |
+| [docs/quickstart.md](docs/quickstart.md) | Install to your first completed run |
+| [docs/tutorials/](docs/tutorials/index.md) | Swarms, custom agents/tools/routers, MCP, HITL, streaming |
+| [docs/reference/](docs/reference/index.md) | Auto-generated API reference |
+
+The engineering record (not published to the docs site — internal, for anyone building the SDK
+itself):
+
 | Start here | For |
 |---|---|
 | [docs/specs/README.md](docs/specs/README.md) | The authoritative specification set (00–12) |
 | [docs/specs/00-overview.md](docs/specs/00-overview.md) | What Korchestrator is, and the glossary |
 | [docs/specs/03-architecture.md](docs/specs/03-architecture.md) | Layering, ARI ports, the dependency rule |
 | [docs/specs/04-public-api.md](docs/specs/04-public-api.md) | Public surface and compatibility contract |
-| [docs/specs/11-build-phase-plan.md](docs/specs/11-build-phase-plan.md) | Phase objectives and acceptance criteria |
-| [docs/specs/12-implementation-plan.md](docs/specs/12-implementation-plan.md) | **The step-by-step task list — start here to build** |
+| [docs/specs/12-implementation-plan.md](docs/specs/12-implementation-plan.md) | The step-by-step task list |
 | [docs/adr/](docs/adr/README.md) | Why things were decided the way they were |
 | [docs/background/](docs/background/README.md) | Superseded source inputs, kept for provenance |
 
