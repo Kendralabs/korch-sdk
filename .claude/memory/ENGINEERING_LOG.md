@@ -10,6 +10,70 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-24 · [P11.6] Examples — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** Populated `examples/` (previously a `.gitkeep` placeholder) with seven standalone,
+directly-executable scripts, one per tutorial that has a genuinely offline-runnable core (HITL is
+the one tutorial without a standalone example — it needs real Temporal infrastructure, as already
+noted in `tutorials/hitl.md`):
+
+- `01_one_liner.py` — the Tier-1 one-liner with a scripted `MockLM` response
+- `02_swarm.py` — an explicit three-agent topology, per-agent models
+- `03_custom_agent.py` — a fully custom `Agent` subclass, no DSPy, no model gateway at all
+- `04_custom_tool.py` — `register_tool` + a scripted ReAct loop that actually calls it
+- `05_mcp_tool.py` — MCP discovery and mounting via a fake, injectable session
+- `06_custom_router.py` — a router that reads `RoutingContext.task.difficulty`
+- `07_streaming.py` — `.on("superstep", ...)` → `EventPublisher` → `format_sse`
+
+Each script was executed directly (`python examples/NN_*.py`) and confirmed to run to completion
+with the correct output before being considered done — matching the CI `examples` job's own
+invocation (`for f in examples/*.py; do python "$f"; done`, already wired since P0.7/P0.8 and
+previously a no-op for lack of any files).
+
+**Why.** Spec 12 P11.6: "every script runs unmodified on a clean install; CI executes them." This
+also closes Phase 11 (P11.1–P11.6, all done).
+
+**Design decisions.** (1) **Examples are adapted from, not identical to, the tutorial snippets and
+`tests/unit/test_tutorial_examples.py`** — same proven logic, restructured as standalone scripts
+with `print()` progress output and a closing `assert` proving success, since a reader runs these
+directly rather than under pytest. (2) **`pyproject.toml`'s `benchmarks/**`-style `S101` (assert)
+ruff ignore was extended to `examples/**`** — an example asserting its own outcome is the same
+correct idiom as a test or a benchmark asserting one, not a defect ruff should flag. (3) **No HITL
+example** — a standalone script can't demonstrate a real Temporal pause/resume round trip without
+a running server, exactly the same reasoning `tutorials/hitl.md` already documented; forcing a fake
+one would misrepresent what the reader could actually reproduce. (4) **One genuine flake caught
+while verifying**: `04_custom_tool.py` appeared to hang under a 30s timeout immediately after a
+`ruff format` pass; re-run with a longer timeout (90s) completed normally — a cold DSPy/thread-pool
+start-up cost (the same effect `bench_superstep.py`'s P10.5 entry documented), not a real hang or a
+formatting-induced regression. Confirmed by re-running successfully multiple times after.
+
+**Architecture changes.** None — `examples/` only imports the public surface plus stdlib, same
+constraint as `benchmarks/`.
+
+**Files/modules affected.** `examples/{01_one_liner,02_swarm,03_custom_agent,04_custom_tool,
+05_mcp_tool,06_custom_router,07_streaming}.py` (all new, `.gitkeep` removed), `pyproject.toml`
+(`examples/**` ruff ignore gains `S101`).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** All seven scripts run to completion (verified individually, some needing more
+than 30s on a cold DSPy start — see design decision 4). `ruff check`/`ruff format --check` clean
+over `src/korchestrator tests examples benchmarks` (the full spec-09 gate-1/2 file set).
+`mypy --strict src/korchestrator` clean (105 files, unaffected — `examples/` isn't part of that
+command, matching `benchmarks/`'s precedent).
+
+**Known limitations / future improvements.** **Phase 11 is now complete (P11.1–P11.6).** Per the
+standing autonomous-progression authorization: commit → push → merge `docs/p11-getting-started`
+into `develop` → push `develop` → begin Phase 12 (CI/CD, packaging & publishing).
+
+---
+
 ## 2026-07-24 · [P11.5] Guides — v0.1.0
 
 **Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
