@@ -10,6 +10,82 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-24 · [P11.3] Tutorials — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** All seven tutorials spec 12 P11.3 names, under `docs/tutorials/` (+ an overview
+`index.md`), wired into `mkdocs.yml`'s nav as a nested section:
+
+- **`swarm.md`** — an explicit three-agent topology with per-agent models, then reads
+  `RunResult.messages` to show every agent (including `lead`) runs in superstep 0 (the kernel
+  activates every node on the first superstep regardless of declared edges), and `lead` runs again
+  in superstep 1 once its inbox has the reviewers' messages.
+- **`custom-agent.md`** — subclassing `Agent` and overriding `think`, the frozen-snapshot contract
+  it must follow, a standalone no-DSPy-no-gateway example, and mixing a custom agent with a default
+  one in the same topology.
+- **`custom-tool.md`** — `ConnectorRegistry.register_tool` for a bare function, mounting it via
+  `tools=`, and a scripted-gateway example that actually drives the ReAct loop through a real tool
+  call (mirrors the P10.2 integration-test pattern).
+- **`mcp.md`** — `MCPClient.discover` against a real transport and against a fake, injectable
+  session (the same pattern `tests/integration/test_mcp_integration.py` uses) so the tutorial is
+  runnable offline.
+- **`custom-router.md`** — `UserFunctionRouter` wrapping a plain function (the quick path), a
+  second example that actually reads `RoutingContext.task.difficulty` rather than ignoring context,
+  and a full `BaseRouter` subclass for stateful strategies.
+- **`hitl.md`** — `pause`/`resume`/`cancel`/`edit_resume`, the two ways a run pauses (governance
+  auto-pause vs. an operator call), and the 24h timeout failure mode. Explicitly does not claim an
+  inline runnable snippet for the full round trip — that needs a running Temporal server, which a
+  docs page can't provide — and points to `tests/integration/test_temporal_runtime.py` as the
+  executable proof instead.
+- **`streaming.md`** — `.on("superstep", handler)` → `EventPublisher` → `Subscription` →
+  `format_sse`, adapted from the P10.3 e2e test (`tests/e2e/test_streaming_consumption.py`).
+
+New `tests/unit/test_tutorial_examples.py` (9 tests) locks the exact runnable snippets from six of
+the seven tutorials (`hitl.md` has none to lock, by design — see above).
+
+**Why.** Spec 12 P11.3's exact seven-tutorial list.
+
+**Design decisions.** (1) **Every runnable snippet was executed directly before being written
+down**, the same discipline as P11.2 — one genuine bug surfaced this way:
+`custom-router.md`'s first draft used `strategy="my_router"` in a hand-written `RoutingResult`,
+which raised a pydantic `ValidationError` (`strategy` is a fixed `Literal` —
+`explicit`/`semantic`/`algorithmic`/`composite`/`user_function`/`fallback` — not open text);
+fixed to `"user_function"`, the closest fit for any non-built-in strategy, with a comment
+explaining why. (2) **`streaming.md`'s worked example was corrected against real output, not
+assumption**: a first draft claimed the last event's `status` would read `"completed"`; running it
+showed `"running"` for every event, since `after_superstep` fires before the run's terminal status
+is known — corrected with an explanation of *why* (`result.status` is where the terminal outcome
+actually is), not just a silent fix. (3) **No tutorial links to a not-yet-written page** (API
+reference, guides land in P11.4–P11.5) — verified via `mkdocs build --strict`. (4) **HITL's tutorial
+doesn't fabricate a fake "look, it ran!" for the pause/resume round trip** — since that needs real
+Temporal infrastructure a docs page can't spin up, the tutorial says so plainly and points at the
+real, CI-verified test suite instead of a misleadingly self-contained-looking snippet that a reader
+couldn't actually run as shown.
+
+**Architecture changes.** None — documentation and one new test file.
+
+**Files/modules affected.** `docs/tutorials/{index,swarm,custom-agent,custom-tool,mcp,
+custom-router,hitl,streaming}.md` (all new), `mkdocs.yml`, `tests/unit/test_tutorial_examples.py`
+(new).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `python -m mkdocs build --strict` passes (exit 0), no broken links. New
+`tests/unit/test_tutorial_examples.py`: 9/9 pass. `ruff check`/`ruff format --check` clean over
+`src/korchestrator tests`; `mypy --strict src/korchestrator` clean (105 files, unaffected — no
+`src/` changes this task).
+
+**Known limitations / future improvements.** The auto-generated API reference (P11.4), the user
+guides (P11.5), and executable `examples/` scripts wired into CI (P11.6) are still outstanding for
+Phase 11.
+
+---
+
 ## 2026-07-24 · [P11.2] Getting started: installation + quickstart — v0.1.0
 
 **Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
