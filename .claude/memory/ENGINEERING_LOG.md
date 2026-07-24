@@ -10,6 +10,75 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-24 · [P11.2] Getting started: installation + quickstart — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** `docs/installation.md` and `docs/quickstart.md`, both added to `mkdocs.yml`'s `nav`;
+`docs/index.md` trimmed to link out to them instead of duplicating the install instructions it
+previously carried inline (one canonical page per topic). `installation.md` documents the base
+`pydantic`-only install and the full extras table (`[dspy]`/`[temporal]`/`[routing]`/`[mcp]`/
+`[remote]`/`[otel]`/`[all]`), naming what each unlocks. `quickstart.md` walks the Tier-1 one-liner
+(`Korch().run(objective)`), a scripted-`MockLM` variant with clean output, pointing at a real
+gateway via `KENDRA_AI_GATEWAY_URL`/`KENDRA_GATEWAY_API_KEY`, and the Tier-2 explicit `Swarm`/
+`Agent` topology. New `tests/unit/test_quickstart_examples.py` locks the exact code shown on the
+page (3 tests) so a future API change that breaks the documented examples is caught by the normal
+suite, not discovered by a reader.
+
+**Why.** Spec 12 P11.2: "install to first successful run using the quickstart alone." P11.1's own
+deliverables (`mkdocs.yml`, a stub `docs/index.md`, `docs/background`/`specs`/`adr` excluded from
+the site, strict build passing) turned out to already exist — landed early, in P0.8 (see that
+entry) — so this is the first genuinely new Phase 11 content.
+
+**Design decisions.** (1) **The default one-liner's real output is shown honestly, not
+prettified.** `Korch().run(...)` with no `model_gateway=` uses `MockLM`'s default completion, which
+is a raw echo of the rendered prompt — not a polished answer. Fabricating a clean fake "answer" in
+the docs would mislead a reader who copy-pastes the exact snippet and sees something different;
+instead the page shows the real output's nature honestly, then immediately demonstrates
+`MockLM(default_response=...)` for a clean, equally-real demo. (2) **Verified, not assumed, that
+the documented snippets actually run** — ran each one directly before writing it down (`Korch().run`,
+the scripted-MockLM variant, and the `Swarm`/`Agent` topology), per the documentation rule that
+examples must be tested when practical. (3) **Investigated a real spec/behavior discrepancy before
+writing "no extras needed" anywhere**: spec 04 §2's Tier-1 example reads as if a bare `pip install
+korchestrator` can run the one-liner; in fact `Korch().run(...)` raises `MissingExtraError` without
+`[dspy]` — confirmed by directly patching `dspy` out of `sys.modules` and calling it. This is not a
+bug: [ADR 0013](../docs/adr/0013-cognitive-layer-requires-dspy-target-3x.md) already settled it
+deliberately — "base install with no configuration" means *no API key, no network*, **with
+`[dspy]` present**; the pydantic-only floor is the *import* contract, not the *run* contract. The
+docs are written to match that ADR precisely (`pip install "korchestrator[dspy]"` as the quickstart's
+first command), not spec 04's looser wording. (4) **No links to not-yet-written pages** (tutorials,
+API reference, guides land in P11.3–P11.5) — `mkdocs build --strict` would fail on a broken link,
+and a dead link in a getting-started guide is worse than no link.
+
+**Architecture changes.** None — documentation and one new test file only.
+
+**Files/modules affected.** `docs/installation.md` (new), `docs/quickstart.md` (new), `docs/index.md`,
+`mkdocs.yml`, `tests/unit/test_quickstart_examples.py` (new).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `python -m mkdocs build --strict` passes (exit 0), no broken links. New
+`tests/unit/test_quickstart_examples.py`: 3/3 pass. `ruff check`/`ruff format --check` clean over
+`src/korchestrator tests`; `mypy --strict src/korchestrator` clean (105 files, unaffected — no
+`src/` changes this task). Full `pytest tests --cov=korchestrator --cov-report=term-missing`: 810
+passed, 97.09% coverage (floor 90%); the only 13 failures are the pre-existing, already-documented
+local `beartype`/Temporal-sandbox environment conflict (`tests/integration/test_temporal_runtime.py`,
+`tests/e2e/test_runtime_equivalence.py`) — unrelated to this change, which touches neither file.
+Import-linter 4/4 kept; isolation gate `OK`; env-read confinement `OK`; determinism grep clean (the
+two matches are rule-explaining comments, not code, verified by reading the exact lines).
+
+**Known limitations / future improvements.** Tutorials (P11.3), the auto-generated API reference
+(P11.4), the user guides — architecture/versioning/releases/deployment/migration/FAQ/troubleshooting
+(P11.5) — and executable `examples/` scripts wired into CI (P11.6) are still outstanding for Phase 11.
+`docs/index.md`'s "Documentation in progress" admonition reflects this honestly rather than
+overclaiming.
+
+---
+
 ## 2026-07-24 · [P10.6] Ratchet coverage floors + wire benchmark regression detection — v0.1.0
 
 **Type:** feature · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)

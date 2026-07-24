@@ -25,6 +25,8 @@ theme:
 
 nav:
   - Home: index.md
+  - Installation: installation.md
+  - Quick Start: quickstart.md
 
 # docs/specs/ and docs/adr/ are the engineering record, and docs/background/ holds superseded
 # source inputs — none of them are part of the published user site (spec 02 §5.2). Excluding
