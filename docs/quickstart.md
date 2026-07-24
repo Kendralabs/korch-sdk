@@ -11,7 +11,7 @@ pip install "korchestrator[dspy]"
 
 `[dspy]` is required: every reasoning agent is built on [DSPy](https://dspy.ai), so it's needed to
 actually *run* a swarm, not just import the package. See [Installation](installation.md) for the
-full extras table.
+full extras table — and, until the package is published, how to install from source instead.
 
 ## Run your first swarm
 

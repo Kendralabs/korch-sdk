@@ -2,7 +2,7 @@
 
 The seams the SDK is built to swap. A port exists only where there's more than one real
 implementation — one local, in-process default, and one Kendra-hosted or otherwise networked
-alternative.
+alternative. See the [architecture guide](../architecture.md) for how these fit into the layering.
 
 ## ARI ports
 

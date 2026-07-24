@@ -10,6 +10,98 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-24 · [P11.5] Guides — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** All seven guides spec 12 P11.5 names, at `docs/{architecture,versioning,releases,
+deployment,migration,faq,troubleshooting}.md` (top-level, not under a `guides/` subdirectory — see
+design decisions), wired into `mkdocs.yml`'s nav, plus a significant, previously-undiscovered
+**README.md refresh**:
+
+- **`architecture.md`** — the Pregel BSP execution model, the two-runtime contract (local vs.
+  Temporal, one `IDurableRuntime` port), the four-layer dependency rule, the three ARI ports, the
+  frozen-snapshot mechanism, bitemporality — a user-facing translation of spec 03, not a copy of it.
+- **`versioning.md`** — the SemVer policy, the compatibility-surface table, and **the 0.x notice
+  verbatim**, which spec 10 §1.2 requires to appear identically in three places (`README.md`, the
+  top of `CHANGELOG.md`, and this page) — confirmed the wording matches both other locations
+  exactly, not just "close enough."
+- **`releases.md`** — honest about what's live vs. not: `release.yml` today only builds and
+  verifies an artifact in a clean environment on a tag push; it does not publish anything.
+  Everything Phase 12 will add (PyPI via Trusted Publishing, SBOM, provenance, the GitHub release,
+  the docs deploy) is labelled explicitly as not-yet-shipped, not described as already working.
+- **`deployment.md`** — carefully scoped to stay inside spec 01 §3's non-goals ("no server, no
+  deployment manifests for a hosted service ships from this repo"): reframed as configuring the
+  SDK for *your* production application (the `Settings` env-var table, choosing local vs. Temporal,
+  the remote client's own versioned wire contract) rather than deploying anything from this repo.
+- **`migration.md`** — honest that nothing has been deprecated yet (still pre-`0.1.0`-release);
+  explains the deprecation mechanism with a worked hypothetical, and separately documents the real,
+  already-working `schema_version`-tagged data-migration mechanism in `to_json`/`from_json` with a
+  verified runnable example.
+- **`faq.md`** — real questions (why `[dspy]` is needed, `Korch` vs. `Swarm`, is this
+  production-ready, how it differs from other agent frameworks, custom model providers, state
+  durability, timeouts) — the "is this production-ready" answer deliberately does not claim
+  "production ready" (documentation.md's explicit rule against unverified claims); it points at the
+  real phase-by-phase status instead.
+- **`troubleshooting.md`** — concrete errors mapped to fixes, including the **exact `beartype`/
+  Temporal-workflow-sandbox `RuntimeError`** this session hit repeatedly and diagnosed first-hand
+  across P10 (confirmed via `git stash` to be environment-caused, not a code regression) — this
+  page is the first place that diagnosis is written down for a reader hitting the same thing.
+
+**README.md** was also refreshed — discovered mid-task to be entirely Phase-0-era and actively
+false: it opened with "the package source does not exist yet," and its "Project status" table
+listed every phase P0–P12 as "Not started," when in fact P0–P10 are complete and P11 is well
+underway. Updated the banner, the phase table, the installation section (added the
+not-yet-on-PyPI/install-from-source caveat this task's `release.yml` investigation surfaced — see
+below), and the Documentation section to point at the new user-facing docs site pages instead of
+only the internal spec set.
+
+**A real spec-vs-reality gap surfaced and was corrected**: writing `releases.md` required actually
+reading `.github/workflows/release.yml`, which revealed the package **is not yet published to
+PyPI** — `pip install korchestrator` (as written in `docs/installation.md` and `docs/quickstart.md`
+since P11.2) is not yet actionable for an external reader. Added an explicit "install from source"
+note to both pages and to README.md rather than leaving a getting-started guide's first command
+silently broken for anyone following it before the first release.
+
+**Why.** Spec 12 P11.5's exact seven-guide list; the README staleness and the PyPI-publication gap
+were found while doing that work, not assigned separately, and were significant enough (a reader's
+very first command not working; the front page of the repository actively lying about project
+state) to fix in the same pass rather than deferring.
+
+**Design decisions.** (1) **Guides live at `docs/*.md`, not `docs/guides/*.md`.** `CHANGELOG.md`
+already says "See docs/versioning.md" (written back in the P8.1/ADR-0009 era, before this phase
+existed) — matching that existing reference avoids a second, inconsistent path for the same
+document. (2) **`interfaces.md`'s forward link to `architecture.md`, deferred in P11.4, is now
+wired** — the referenced page exists. (3) **Every runnable snippet was verified directly**, same
+discipline as P11.2/P11.3; `migration.md`'s serde example was expanded from an illustrative
+fragment (an undefined `state` variable) into a complete, executed snippet after review — a
+fragment that merely *looks* runnable is worse than either a real snippet or clearly-marked prose.
+
+**Architecture changes.** None — documentation only; no `src/` changes.
+
+**Files/modules affected.** `docs/{architecture,versioning,releases,deployment,migration,faq,
+troubleshooting}.md` (all new), `docs/reference/interfaces.md` (forward link added), `mkdocs.yml`
+(nav), `README.md` (refreshed).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `python -m mkdocs build --strict` passes (exit 0), no broken links — including
+every new cross-reference and every heading anchor link, each checked against the actual rendered
+`id=` attribute in the built HTML, not assumed from the heading text. `migration.md`'s serde
+snippet executes and asserts round-trip equality. `ruff check`/`ruff format --check`/`mypy --strict
+src/korchestrator` clean and unaffected (no `src/` changes).
+
+**Known limitations / future improvements.** Executable `examples/` scripts wired into CI (P11.6)
+are the last outstanding Phase 11 task. Once Phase 12 actually publishes to PyPI, the
+not-yet-published caveats added to `README.md`/`installation.md`/`quickstart.md` in this task
+should be removed in that release's own PR.
+
+---
+
 ## 2026-07-24 · [P11.4] API reference — v0.1.0
 
 **Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)

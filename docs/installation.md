@@ -2,6 +2,18 @@
 
 Korchestrator requires **Python 3.10 or newer**.
 
+!!! note "Not yet on PyPI"
+    Korchestrator hasn't been published yet (packaging/publishing is a later phase of this
+    project). Until it is, install from a clone instead of from PyPI:
+
+    ```bash
+    git clone <repository-url> && cd korch-sdk
+    pip install -e ".[dspy]"
+    ```
+
+    Everything below still applies — just replace `pip install korchestrator` with
+    `pip install -e .` from the cloned repository root.
+
 ## Base install
 
 ```bash
