@@ -45,6 +45,14 @@ nav:
       - Configuration: reference/config.md
       - Serialization: reference/serialization.md
       - Remote client: reference/remote.md
+  - Guides:
+      - Architecture: architecture.md
+      - Versioning: versioning.md
+      - Releases: releases.md
+      - Deployment: deployment.md
+      - Migration: migration.md
+      - FAQ: faq.md
+      - Troubleshooting: troubleshooting.md
 
 # docs/specs/ and docs/adr/ are the engineering record, and docs/background/ holds superseded
 # source inputs — none of them are part of the published user site (spec 02 §5.2). Excluding
