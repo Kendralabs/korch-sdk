@@ -27,6 +27,15 @@ nav:
   - Home: index.md
   - Installation: installation.md
   - Quick Start: quickstart.md
+  - Tutorials:
+      - Overview: tutorials/index.md
+      - Building a swarm: tutorials/swarm.md
+      - Writing a custom agent: tutorials/custom-agent.md
+      - Writing a custom tool: tutorials/custom-tool.md
+      - Connecting an MCP server: tutorials/mcp.md
+      - Writing a custom router: tutorials/custom-router.md
+      - Human-in-the-loop: tutorials/hitl.md
+      - Streaming a run's events: tutorials/streaming.md
 
 # docs/specs/ and docs/adr/ are the engineering record, and docs/background/ holds superseded
 # source inputs — none of them are part of the published user site (spec 02 §5.2). Excluding
