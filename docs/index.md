@@ -6,21 +6,17 @@ Korchestrator runs multi-agent workflows ("swarms") as a Pregel-style Bulk Synch
 Parallel computation, with an in-process runtime for zero-infrastructure local execution and
 a Temporal runtime for durable, replayable execution — selected by configuration alone.
 
-!!! note "Documentation under construction"
-    The full user documentation — installation, quickstart, tutorials, guides, and the
-    auto-generated API reference — is authored in Phase 11. This landing page exists so the
-    site builds today. The authoritative design record lives in the repository under
-    `docs/specs/` (the specification set) and `docs/adr/` (the decision records); those are
+!!! note "Documentation in progress"
+    Installation and the Quick Start are published. Tutorials, the auto-generated API reference,
+    and the user guides (architecture, versioning, deployment, migration, FAQ, troubleshooting)
+    are still being authored (Phase 11). The authoritative design record lives in the repository
+    under `docs/specs/` (the specification set) and `docs/adr/` (the decision records); those are
     intentionally **not** published to this site.
 
-## Install
+## Get started
 
-```bash
-pip install korchestrator
-```
-
-The base install depends on `pydantic` alone. Heavier capabilities are optional extras —
-`[dspy]`, `[temporal]`, `[routing]`, `[mcp]`, `[remote]`, `[otel]`, and `[all]`.
+- [Installation](installation.md) — the base install and every optional extra
+- [Quick Start](quickstart.md) — install to your first completed run
 
 ## Status
 

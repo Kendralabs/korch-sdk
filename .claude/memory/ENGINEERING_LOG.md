@@ -10,6 +10,375 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-24 · [P11.6] Examples — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** Populated `examples/` (previously a `.gitkeep` placeholder) with seven standalone,
+directly-executable scripts, one per tutorial that has a genuinely offline-runnable core (HITL is
+the one tutorial without a standalone example — it needs real Temporal infrastructure, as already
+noted in `tutorials/hitl.md`):
+
+- `01_one_liner.py` — the Tier-1 one-liner with a scripted `MockLM` response
+- `02_swarm.py` — an explicit three-agent topology, per-agent models
+- `03_custom_agent.py` — a fully custom `Agent` subclass, no DSPy, no model gateway at all
+- `04_custom_tool.py` — `register_tool` + a scripted ReAct loop that actually calls it
+- `05_mcp_tool.py` — MCP discovery and mounting via a fake, injectable session
+- `06_custom_router.py` — a router that reads `RoutingContext.task.difficulty`
+- `07_streaming.py` — `.on("superstep", ...)` → `EventPublisher` → `format_sse`
+
+Each script was executed directly (`python examples/NN_*.py`) and confirmed to run to completion
+with the correct output before being considered done — matching the CI `examples` job's own
+invocation (`for f in examples/*.py; do python "$f"; done`, already wired since P0.7/P0.8 and
+previously a no-op for lack of any files).
+
+**Why.** Spec 12 P11.6: "every script runs unmodified on a clean install; CI executes them." This
+also closes Phase 11 (P11.1–P11.6, all done).
+
+**Design decisions.** (1) **Examples are adapted from, not identical to, the tutorial snippets and
+`tests/unit/test_tutorial_examples.py`** — same proven logic, restructured as standalone scripts
+with `print()` progress output and a closing `assert` proving success, since a reader runs these
+directly rather than under pytest. (2) **`pyproject.toml`'s `benchmarks/**`-style `S101` (assert)
+ruff ignore was extended to `examples/**`** — an example asserting its own outcome is the same
+correct idiom as a test or a benchmark asserting one, not a defect ruff should flag. (3) **No HITL
+example** — a standalone script can't demonstrate a real Temporal pause/resume round trip without
+a running server, exactly the same reasoning `tutorials/hitl.md` already documented; forcing a fake
+one would misrepresent what the reader could actually reproduce. (4) **One genuine flake caught
+while verifying**: `04_custom_tool.py` appeared to hang under a 30s timeout immediately after a
+`ruff format` pass; re-run with a longer timeout (90s) completed normally — a cold DSPy/thread-pool
+start-up cost (the same effect `bench_superstep.py`'s P10.5 entry documented), not a real hang or a
+formatting-induced regression. Confirmed by re-running successfully multiple times after.
+
+**Architecture changes.** None — `examples/` only imports the public surface plus stdlib, same
+constraint as `benchmarks/`.
+
+**Files/modules affected.** `examples/{01_one_liner,02_swarm,03_custom_agent,04_custom_tool,
+05_mcp_tool,06_custom_router,07_streaming}.py` (all new, `.gitkeep` removed), `pyproject.toml`
+(`examples/**` ruff ignore gains `S101`).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** All seven scripts run to completion (verified individually, some needing more
+than 30s on a cold DSPy start — see design decision 4). `ruff check`/`ruff format --check` clean
+over `src/korchestrator tests examples benchmarks` (the full spec-09 gate-1/2 file set).
+`mypy --strict src/korchestrator` clean (105 files, unaffected — `examples/` isn't part of that
+command, matching `benchmarks/`'s precedent).
+
+**Known limitations / future improvements.** **Phase 11 is now complete (P11.1–P11.6).** Per the
+standing autonomous-progression authorization: commit → push → merge `docs/p11-getting-started`
+into `develop` → push `develop` → begin Phase 12 (CI/CD, packaging & publishing).
+
+---
+
+## 2026-07-24 · [P11.5] Guides — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** All seven guides spec 12 P11.5 names, at `docs/{architecture,versioning,releases,
+deployment,migration,faq,troubleshooting}.md` (top-level, not under a `guides/` subdirectory — see
+design decisions), wired into `mkdocs.yml`'s nav, plus a significant, previously-undiscovered
+**README.md refresh**:
+
+- **`architecture.md`** — the Pregel BSP execution model, the two-runtime contract (local vs.
+  Temporal, one `IDurableRuntime` port), the four-layer dependency rule, the three ARI ports, the
+  frozen-snapshot mechanism, bitemporality — a user-facing translation of spec 03, not a copy of it.
+- **`versioning.md`** — the SemVer policy, the compatibility-surface table, and **the 0.x notice
+  verbatim**, which spec 10 §1.2 requires to appear identically in three places (`README.md`, the
+  top of `CHANGELOG.md`, and this page) — confirmed the wording matches both other locations
+  exactly, not just "close enough."
+- **`releases.md`** — honest about what's live vs. not: `release.yml` today only builds and
+  verifies an artifact in a clean environment on a tag push; it does not publish anything.
+  Everything Phase 12 will add (PyPI via Trusted Publishing, SBOM, provenance, the GitHub release,
+  the docs deploy) is labelled explicitly as not-yet-shipped, not described as already working.
+- **`deployment.md`** — carefully scoped to stay inside spec 01 §3's non-goals ("no server, no
+  deployment manifests for a hosted service ships from this repo"): reframed as configuring the
+  SDK for *your* production application (the `Settings` env-var table, choosing local vs. Temporal,
+  the remote client's own versioned wire contract) rather than deploying anything from this repo.
+- **`migration.md`** — honest that nothing has been deprecated yet (still pre-`0.1.0`-release);
+  explains the deprecation mechanism with a worked hypothetical, and separately documents the real,
+  already-working `schema_version`-tagged data-migration mechanism in `to_json`/`from_json` with a
+  verified runnable example.
+- **`faq.md`** — real questions (why `[dspy]` is needed, `Korch` vs. `Swarm`, is this
+  production-ready, how it differs from other agent frameworks, custom model providers, state
+  durability, timeouts) — the "is this production-ready" answer deliberately does not claim
+  "production ready" (documentation.md's explicit rule against unverified claims); it points at the
+  real phase-by-phase status instead.
+- **`troubleshooting.md`** — concrete errors mapped to fixes, including the **exact `beartype`/
+  Temporal-workflow-sandbox `RuntimeError`** this session hit repeatedly and diagnosed first-hand
+  across P10 (confirmed via `git stash` to be environment-caused, not a code regression) — this
+  page is the first place that diagnosis is written down for a reader hitting the same thing.
+
+**README.md** was also refreshed — discovered mid-task to be entirely Phase-0-era and actively
+false: it opened with "the package source does not exist yet," and its "Project status" table
+listed every phase P0–P12 as "Not started," when in fact P0–P10 are complete and P11 is well
+underway. Updated the banner, the phase table, the installation section (added the
+not-yet-on-PyPI/install-from-source caveat this task's `release.yml` investigation surfaced — see
+below), and the Documentation section to point at the new user-facing docs site pages instead of
+only the internal spec set.
+
+**A real spec-vs-reality gap surfaced and was corrected**: writing `releases.md` required actually
+reading `.github/workflows/release.yml`, which revealed the package **is not yet published to
+PyPI** — `pip install korchestrator` (as written in `docs/installation.md` and `docs/quickstart.md`
+since P11.2) is not yet actionable for an external reader. Added an explicit "install from source"
+note to both pages and to README.md rather than leaving a getting-started guide's first command
+silently broken for anyone following it before the first release.
+
+**Why.** Spec 12 P11.5's exact seven-guide list; the README staleness and the PyPI-publication gap
+were found while doing that work, not assigned separately, and were significant enough (a reader's
+very first command not working; the front page of the repository actively lying about project
+state) to fix in the same pass rather than deferring.
+
+**Design decisions.** (1) **Guides live at `docs/*.md`, not `docs/guides/*.md`.** `CHANGELOG.md`
+already says "See docs/versioning.md" (written back in the P8.1/ADR-0009 era, before this phase
+existed) — matching that existing reference avoids a second, inconsistent path for the same
+document. (2) **`interfaces.md`'s forward link to `architecture.md`, deferred in P11.4, is now
+wired** — the referenced page exists. (3) **Every runnable snippet was verified directly**, same
+discipline as P11.2/P11.3; `migration.md`'s serde example was expanded from an illustrative
+fragment (an undefined `state` variable) into a complete, executed snippet after review — a
+fragment that merely *looks* runnable is worse than either a real snippet or clearly-marked prose.
+
+**Architecture changes.** None — documentation only; no `src/` changes.
+
+**Files/modules affected.** `docs/{architecture,versioning,releases,deployment,migration,faq,
+troubleshooting}.md` (all new), `docs/reference/interfaces.md` (forward link added), `mkdocs.yml`
+(nav), `README.md` (refreshed).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `python -m mkdocs build --strict` passes (exit 0), no broken links — including
+every new cross-reference and every heading anchor link, each checked against the actual rendered
+`id=` attribute in the built HTML, not assumed from the heading text. `migration.md`'s serde
+snippet executes and asserts round-trip equality. `ruff check`/`ruff format --check`/`mypy --strict
+src/korchestrator` clean and unaffected (no `src/` changes).
+
+**Known limitations / future improvements.** Executable `examples/` scripts wired into CI (P11.6)
+are the last outstanding Phase 11 task. Once Phase 12 actually publishes to PyPI, the
+not-yet-published caveats added to `README.md`/`installation.md`/`quickstart.md` in this task
+should be removed in that release's own PR.
+
+---
+
+## 2026-07-24 · [P11.4] API reference — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** `docs/reference/` — the auto-generated API reference, built with `mkdocstrings[python]`
+from the source docstrings directly (always in sync with the installed version, never hand-copied
+out of date), covering exactly the curated public surface the api-and-compatibility rule names:
+
+- `services.md` — `Korch`, `Swarm`, `Agent`
+- `models.md` — every model in spec 05 §4's compatibility-surface table: `AgentState`,
+  `StateUpdate`, `Message`, `RunStatus`, `RunResult`, `ToolResult`, `AgentConfig`, `AgentPersona`,
+  `ExecutionPlan`, `TaskDecomposition`, `ModelCard`, `TaskSemantics`, `RoutingContext`,
+  `RoutingResult`
+- `interfaces.md` — the four ARI ports (`IModelGateway`/`IDurableRuntime`/`IExecutionSandbox`/
+  `IIdentityProvider`) plus the supporting protocols (`GraphRepository`, `TenantStore`,
+  `BaseRouter`, `AUBConnector`, `Connector`, `IToolInvoker`)
+- `exceptions.md` — the full `KorchError` tree, including the two names deliberately not
+  re-exported at top level (`korchestrator.exceptions.TimeoutError`, `...ConfigurationError` — kept
+  off `korchestrator.__all__` so `from korchestrator import *` never shadows the builtin, per ADR
+  0016)
+- `config.md` — `Settings`, `configure`, `enable_logging`/`disable_logging`
+- `serialization.md` — `to_json`/`from_json`
+- `remote.md` — `KorchestratorClient` and every `korchestrator.models.remote` wire-facing model
+  (Tier 4, `[remote]` extra)
+
+`docs/reference/index.md` states the scope explicitly: this reference covers `__all__` + ARI ports
++ compatibility-surface models + the remote contract — the four things that are actually public;
+everything else is internal regardless of importability.
+
+**Why.** Spec 12 P11.4: "Auto-generated from docstrings (`mkdocstrings`) into `docs/reference/`."
+
+**Design decisions.** (1) **`mkdocstrings[python]` was declared in `pyproject.toml`'s `[dev]` extra
+since P0.8 but was not actually installed in this dev environment** — `pip show mkdocstrings`
+returned nothing; installed it directly (`pip install "mkdocstrings[python]>=0.25"`) before this
+task could be verified at all. Not a pyproject.toml gap, an environment-install gap; CI's `docs` job
+already runs `pip install -e ".[dev]"` before `mkdocs build --strict`, so this was never actually
+missing there. (2) **One page per logical group** (services / models / interfaces / exceptions /
+config / serialization / remote), each with explicit `::: module.Symbol` directives naming exactly
+the curated members — not one directive per top-level module dumping everything importable, which
+would blur the "curated surface" boundary the rest of the docs are careful to keep. (3) **No
+forward link to the not-yet-written architecture guide** — `interfaces.md`'s first draft linked
+`../guides/architecture.md` (P11.5, not yet written); `mkdocs build --strict` would have failed on
+it, so the sentence was rewritten to stand on its own instead of pointing at a page that doesn't
+exist yet.
+
+**Architecture changes.** None — documentation only; no `src/` changes.
+
+**Files/modules affected.** `docs/reference/{index,services,models,interfaces,exceptions,config,
+serialization,remote}.md` (all new), `mkdocs.yml` (`plugins: [search, mkdocstrings]`, nav).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `python -m mkdocs build --strict` passes (exit 0), no broken links, no
+`mkdocstrings`/griffe rendering errors (checked the built HTML directly for error markers — none
+found — and confirmed all 14 `models.md` symbols rendered with correct anchor ids). `ruff check`/
+`ruff format --check`/`mypy --strict src/korchestrator` clean and unaffected (no `src/` changes).
+
+**Known limitations / future improvements.** The user guides (architecture, versioning, releases,
+deployment, migration, FAQ, troubleshooting — P11.5) and executable `examples/` scripts wired into
+CI (P11.6) are still outstanding for Phase 11. Once the architecture guide lands, `interfaces.md`
+should link to it (see design decision 3 above).
+
+---
+
+## 2026-07-24 · [P11.3] Tutorials — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** All seven tutorials spec 12 P11.3 names, under `docs/tutorials/` (+ an overview
+`index.md`), wired into `mkdocs.yml`'s nav as a nested section:
+
+- **`swarm.md`** — an explicit three-agent topology with per-agent models, then reads
+  `RunResult.messages` to show every agent (including `lead`) runs in superstep 0 (the kernel
+  activates every node on the first superstep regardless of declared edges), and `lead` runs again
+  in superstep 1 once its inbox has the reviewers' messages.
+- **`custom-agent.md`** — subclassing `Agent` and overriding `think`, the frozen-snapshot contract
+  it must follow, a standalone no-DSPy-no-gateway example, and mixing a custom agent with a default
+  one in the same topology.
+- **`custom-tool.md`** — `ConnectorRegistry.register_tool` for a bare function, mounting it via
+  `tools=`, and a scripted-gateway example that actually drives the ReAct loop through a real tool
+  call (mirrors the P10.2 integration-test pattern).
+- **`mcp.md`** — `MCPClient.discover` against a real transport and against a fake, injectable
+  session (the same pattern `tests/integration/test_mcp_integration.py` uses) so the tutorial is
+  runnable offline.
+- **`custom-router.md`** — `UserFunctionRouter` wrapping a plain function (the quick path), a
+  second example that actually reads `RoutingContext.task.difficulty` rather than ignoring context,
+  and a full `BaseRouter` subclass for stateful strategies.
+- **`hitl.md`** — `pause`/`resume`/`cancel`/`edit_resume`, the two ways a run pauses (governance
+  auto-pause vs. an operator call), and the 24h timeout failure mode. Explicitly does not claim an
+  inline runnable snippet for the full round trip — that needs a running Temporal server, which a
+  docs page can't provide — and points to `tests/integration/test_temporal_runtime.py` as the
+  executable proof instead.
+- **`streaming.md`** — `.on("superstep", handler)` → `EventPublisher` → `Subscription` →
+  `format_sse`, adapted from the P10.3 e2e test (`tests/e2e/test_streaming_consumption.py`).
+
+New `tests/unit/test_tutorial_examples.py` (9 tests) locks the exact runnable snippets from six of
+the seven tutorials (`hitl.md` has none to lock, by design — see above).
+
+**Why.** Spec 12 P11.3's exact seven-tutorial list.
+
+**Design decisions.** (1) **Every runnable snippet was executed directly before being written
+down**, the same discipline as P11.2 — one genuine bug surfaced this way:
+`custom-router.md`'s first draft used `strategy="my_router"` in a hand-written `RoutingResult`,
+which raised a pydantic `ValidationError` (`strategy` is a fixed `Literal` —
+`explicit`/`semantic`/`algorithmic`/`composite`/`user_function`/`fallback` — not open text);
+fixed to `"user_function"`, the closest fit for any non-built-in strategy, with a comment
+explaining why. (2) **`streaming.md`'s worked example was corrected against real output, not
+assumption**: a first draft claimed the last event's `status` would read `"completed"`; running it
+showed `"running"` for every event, since `after_superstep` fires before the run's terminal status
+is known — corrected with an explanation of *why* (`result.status` is where the terminal outcome
+actually is), not just a silent fix. (3) **No tutorial links to a not-yet-written page** (API
+reference, guides land in P11.4–P11.5) — verified via `mkdocs build --strict`. (4) **HITL's tutorial
+doesn't fabricate a fake "look, it ran!" for the pause/resume round trip** — since that needs real
+Temporal infrastructure a docs page can't spin up, the tutorial says so plainly and points at the
+real, CI-verified test suite instead of a misleadingly self-contained-looking snippet that a reader
+couldn't actually run as shown.
+
+**Architecture changes.** None — documentation and one new test file.
+
+**Files/modules affected.** `docs/tutorials/{index,swarm,custom-agent,custom-tool,mcp,
+custom-router,hitl,streaming}.md` (all new), `mkdocs.yml`, `tests/unit/test_tutorial_examples.py`
+(new).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `python -m mkdocs build --strict` passes (exit 0), no broken links. New
+`tests/unit/test_tutorial_examples.py`: 9/9 pass. `ruff check`/`ruff format --check` clean over
+`src/korchestrator tests`; `mypy --strict src/korchestrator` clean (105 files, unaffected — no
+`src/` changes this task).
+
+**Known limitations / future improvements.** The auto-generated API reference (P11.4), the user
+guides (P11.5), and executable `examples/` scripts wired into CI (P11.6) are still outstanding for
+Phase 11.
+
+---
+
+## 2026-07-24 · [P11.2] Getting started: installation + quickstart — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** `docs/installation.md` and `docs/quickstart.md`, both added to `mkdocs.yml`'s `nav`;
+`docs/index.md` trimmed to link out to them instead of duplicating the install instructions it
+previously carried inline (one canonical page per topic). `installation.md` documents the base
+`pydantic`-only install and the full extras table (`[dspy]`/`[temporal]`/`[routing]`/`[mcp]`/
+`[remote]`/`[otel]`/`[all]`), naming what each unlocks. `quickstart.md` walks the Tier-1 one-liner
+(`Korch().run(objective)`), a scripted-`MockLM` variant with clean output, pointing at a real
+gateway via `KENDRA_AI_GATEWAY_URL`/`KENDRA_GATEWAY_API_KEY`, and the Tier-2 explicit `Swarm`/
+`Agent` topology. New `tests/unit/test_quickstart_examples.py` locks the exact code shown on the
+page (3 tests) so a future API change that breaks the documented examples is caught by the normal
+suite, not discovered by a reader.
+
+**Why.** Spec 12 P11.2: "install to first successful run using the quickstart alone." P11.1's own
+deliverables (`mkdocs.yml`, a stub `docs/index.md`, `docs/background`/`specs`/`adr` excluded from
+the site, strict build passing) turned out to already exist — landed early, in P0.8 (see that
+entry) — so this is the first genuinely new Phase 11 content.
+
+**Design decisions.** (1) **The default one-liner's real output is shown honestly, not
+prettified.** `Korch().run(...)` with no `model_gateway=` uses `MockLM`'s default completion, which
+is a raw echo of the rendered prompt — not a polished answer. Fabricating a clean fake "answer" in
+the docs would mislead a reader who copy-pastes the exact snippet and sees something different;
+instead the page shows the real output's nature honestly, then immediately demonstrates
+`MockLM(default_response=...)` for a clean, equally-real demo. (2) **Verified, not assumed, that
+the documented snippets actually run** — ran each one directly before writing it down (`Korch().run`,
+the scripted-MockLM variant, and the `Swarm`/`Agent` topology), per the documentation rule that
+examples must be tested when practical. (3) **Investigated a real spec/behavior discrepancy before
+writing "no extras needed" anywhere**: spec 04 §2's Tier-1 example reads as if a bare `pip install
+korchestrator` can run the one-liner; in fact `Korch().run(...)` raises `MissingExtraError` without
+`[dspy]` — confirmed by directly patching `dspy` out of `sys.modules` and calling it. This is not a
+bug: [ADR 0013](../docs/adr/0013-cognitive-layer-requires-dspy-target-3x.md) already settled it
+deliberately — "base install with no configuration" means *no API key, no network*, **with
+`[dspy]` present**; the pydantic-only floor is the *import* contract, not the *run* contract. The
+docs are written to match that ADR precisely (`pip install "korchestrator[dspy]"` as the quickstart's
+first command), not spec 04's looser wording. (4) **No links to not-yet-written pages** (tutorials,
+API reference, guides land in P11.3–P11.5) — `mkdocs build --strict` would fail on a broken link,
+and a dead link in a getting-started guide is worse than no link.
+
+**Architecture changes.** None — documentation and one new test file only.
+
+**Files/modules affected.** `docs/installation.md` (new), `docs/quickstart.md` (new), `docs/index.md`,
+`mkdocs.yml`, `tests/unit/test_quickstart_examples.py` (new).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `python -m mkdocs build --strict` passes (exit 0), no broken links. New
+`tests/unit/test_quickstart_examples.py`: 3/3 pass. `ruff check`/`ruff format --check` clean over
+`src/korchestrator tests`; `mypy --strict src/korchestrator` clean (105 files, unaffected — no
+`src/` changes this task). Full `pytest tests --cov=korchestrator --cov-report=term-missing`: 810
+passed, 97.09% coverage (floor 90%); the only 13 failures are the pre-existing, already-documented
+local `beartype`/Temporal-sandbox environment conflict (`tests/integration/test_temporal_runtime.py`,
+`tests/e2e/test_runtime_equivalence.py`) — unrelated to this change, which touches neither file.
+Import-linter 4/4 kept; isolation gate `OK`; env-read confinement `OK`; determinism grep clean (the
+two matches are rule-explaining comments, not code, verified by reading the exact lines).
+
+**Known limitations / future improvements.** Tutorials (P11.3), the auto-generated API reference
+(P11.4), the user guides — architecture/versioning/releases/deployment/migration/FAQ/troubleshooting
+(P11.5) — and executable `examples/` scripts wired into CI (P11.6) are still outstanding for Phase 11.
+`docs/index.md`'s "Documentation in progress" admonition reflects this honestly rather than
+overclaiming.
+
+---
+
 ## 2026-07-24 · [P10.6] Ratchet coverage floors + wire benchmark regression detection — v0.1.0
 
 **Type:** feature · **Phase:** P10 (testing, benchmarks & quality gates) · **Author:** Claude (agent)

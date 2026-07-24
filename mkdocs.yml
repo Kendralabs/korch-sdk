@@ -25,6 +25,34 @@ theme:
 
 nav:
   - Home: index.md
+  - Installation: installation.md
+  - Quick Start: quickstart.md
+  - Tutorials:
+      - Overview: tutorials/index.md
+      - Building a swarm: tutorials/swarm.md
+      - Writing a custom agent: tutorials/custom-agent.md
+      - Writing a custom tool: tutorials/custom-tool.md
+      - Connecting an MCP server: tutorials/mcp.md
+      - Writing a custom router: tutorials/custom-router.md
+      - Human-in-the-loop: tutorials/hitl.md
+      - Streaming a run's events: tutorials/streaming.md
+  - API Reference:
+      - Overview: reference/index.md
+      - Services: reference/services.md
+      - Models: reference/models.md
+      - Interfaces: reference/interfaces.md
+      - Exceptions: reference/exceptions.md
+      - Configuration: reference/config.md
+      - Serialization: reference/serialization.md
+      - Remote client: reference/remote.md
+  - Guides:
+      - Architecture: architecture.md
+      - Versioning: versioning.md
+      - Releases: releases.md
+      - Deployment: deployment.md
+      - Migration: migration.md
+      - FAQ: faq.md
+      - Troubleshooting: troubleshooting.md
 
 # docs/specs/ and docs/adr/ are the engineering record, and docs/background/ holds superseded
 # source inputs — none of them are part of the published user site (spec 02 §5.2). Excluding
@@ -34,6 +62,20 @@ exclude_docs: |
   background/
   specs/
   adr/
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            merge_init_into_class: true
+            separate_signature: true
+            show_signature_annotations: true
 
 markdown_extensions:
   - admonition
