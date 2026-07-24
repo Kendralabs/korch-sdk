@@ -10,6 +10,74 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-24 · [P11.4] API reference — v0.1.0
+
+**Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)
+
+**What.** `docs/reference/` — the auto-generated API reference, built with `mkdocstrings[python]`
+from the source docstrings directly (always in sync with the installed version, never hand-copied
+out of date), covering exactly the curated public surface the api-and-compatibility rule names:
+
+- `services.md` — `Korch`, `Swarm`, `Agent`
+- `models.md` — every model in spec 05 §4's compatibility-surface table: `AgentState`,
+  `StateUpdate`, `Message`, `RunStatus`, `RunResult`, `ToolResult`, `AgentConfig`, `AgentPersona`,
+  `ExecutionPlan`, `TaskDecomposition`, `ModelCard`, `TaskSemantics`, `RoutingContext`,
+  `RoutingResult`
+- `interfaces.md` — the four ARI ports (`IModelGateway`/`IDurableRuntime`/`IExecutionSandbox`/
+  `IIdentityProvider`) plus the supporting protocols (`GraphRepository`, `TenantStore`,
+  `BaseRouter`, `AUBConnector`, `Connector`, `IToolInvoker`)
+- `exceptions.md` — the full `KorchError` tree, including the two names deliberately not
+  re-exported at top level (`korchestrator.exceptions.TimeoutError`, `...ConfigurationError` — kept
+  off `korchestrator.__all__` so `from korchestrator import *` never shadows the builtin, per ADR
+  0016)
+- `config.md` — `Settings`, `configure`, `enable_logging`/`disable_logging`
+- `serialization.md` — `to_json`/`from_json`
+- `remote.md` — `KorchestratorClient` and every `korchestrator.models.remote` wire-facing model
+  (Tier 4, `[remote]` extra)
+
+`docs/reference/index.md` states the scope explicitly: this reference covers `__all__` + ARI ports
++ compatibility-surface models + the remote contract — the four things that are actually public;
+everything else is internal regardless of importability.
+
+**Why.** Spec 12 P11.4: "Auto-generated from docstrings (`mkdocstrings`) into `docs/reference/`."
+
+**Design decisions.** (1) **`mkdocstrings[python]` was declared in `pyproject.toml`'s `[dev]` extra
+since P0.8 but was not actually installed in this dev environment** — `pip show mkdocstrings`
+returned nothing; installed it directly (`pip install "mkdocstrings[python]>=0.25"`) before this
+task could be verified at all. Not a pyproject.toml gap, an environment-install gap; CI's `docs` job
+already runs `pip install -e ".[dev]"` before `mkdocs build --strict`, so this was never actually
+missing there. (2) **One page per logical group** (services / models / interfaces / exceptions /
+config / serialization / remote), each with explicit `::: module.Symbol` directives naming exactly
+the curated members — not one directive per top-level module dumping everything importable, which
+would blur the "curated surface" boundary the rest of the docs are careful to keep. (3) **No
+forward link to the not-yet-written architecture guide** — `interfaces.md`'s first draft linked
+`../guides/architecture.md` (P11.5, not yet written); `mkdocs build --strict` would have failed on
+it, so the sentence was rewritten to stand on its own instead of pointing at a page that doesn't
+exist yet.
+
+**Architecture changes.** None — documentation only; no `src/` changes.
+
+**Files/modules affected.** `docs/reference/{index,services,models,interfaces,exceptions,config,
+serialization,remote}.md` (all new), `mkdocs.yml` (`plugins: [search, mkdocstrings]`, nav).
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0`.
+
+**Migration notes.** N/A.
+
+**Testing status.** `python -m mkdocs build --strict` passes (exit 0), no broken links, no
+`mkdocstrings`/griffe rendering errors (checked the built HTML directly for error markers — none
+found — and confirmed all 14 `models.md` symbols rendered with correct anchor ids). `ruff check`/
+`ruff format --check`/`mypy --strict src/korchestrator` clean and unaffected (no `src/` changes).
+
+**Known limitations / future improvements.** The user guides (architecture, versioning, releases,
+deployment, migration, FAQ, troubleshooting — P11.5) and executable `examples/` scripts wired into
+CI (P11.6) are still outstanding for Phase 11. Once the architecture guide lands, `interfaces.md`
+should link to it (see design decision 3 above).
+
+---
+
 ## 2026-07-24 · [P11.3] Tutorials — v0.1.0
 
 **Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)

@@ -12,10 +12,10 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | P11 — Documentation, examples & DX — **in progress** (P11.1–P11.3 done) on branch `docs/p11-getting-started` (off `develop`, not yet pushed with P11.3). Phase 10 is complete and merged. |
-| **Last completed milestone** | **P11.3 — Tutorials.** All seven tutorials spec 12 names, under `docs/tutorials/` (swarm, custom agent, custom tool, MCP, custom router, HITL, streaming), wired into `mkdocs.yml`'s nav. Every runnable snippet was executed directly before being written down — this caught a real bug (`RoutingResult.strategy` is a fixed `Literal`, not open text — a first draft used an invalid value) and a real doc-accuracy error (a streaming example's claimed `"completed"` status doesn't actually appear on any "superstep" event — corrected to match real output). `hitl.md` deliberately does not fabricate an inline runnable round trip (needs real Temporal infra) and points to the real integration suite instead. New `tests/unit/test_tutorial_examples.py` (9 tests) locks six of the seven tutorials' snippets. |
-| **Blocking** | Nothing for this work. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: P11.4 (API reference), P11.5 (guides), P11.6 (examples). |
-| **Pushed / merged** | `develop` (P0–P10) is pushed to `origin`. `docs/p11-getting-started` has P11.2 pushed; P11.3 is staged, not yet committed. |
+| **Active phase** | P11 — Documentation, examples & DX — **in progress** (P11.1–P11.4 done) on branch `docs/p11-getting-started` (off `develop`, not yet pushed with P11.4). Phase 10 is complete and merged. |
+| **Last completed milestone** | **P11.4 — API reference.** `docs/reference/` — `mkdocstrings[python]`-generated from source docstrings, covering exactly the curated public surface: `Korch`/`Swarm`/`Agent`, every spec-05-§4 compatibility-surface model, the 4 ARI ports + supporting protocols, the full `KorchError` tree, `Settings`/`configure`/logging, `to_json`/`from_json`, and the remote (`[remote]`) contract. Installed `mkdocstrings[python]` directly — it was declared in `pyproject.toml`'s `[dev]` extra since P0.8 but wasn't actually present in this dev environment. |
+| **Blocking** | Nothing for this work. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry). Next: P11.5 (guides), P11.6 (examples). |
+| **Pushed / merged** | `develop` (P0–P10) is pushed to `origin`. `docs/p11-getting-started` has P11.2–P11.3 pushed; P11.4 is staged, not yet committed. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
 ruff-format, `mypy --strict` (105 source files, unaffected by P11 so far), `pytest` (dspy +
@@ -42,7 +42,7 @@ imported by `korchestrator/__init__.py` (statically checked, `test_remote.py`).
 | P8 | Cross-cutting foundations | **Complete** (P8.1–P8.7; merged to `develop`) |
 | P9 | Remote client (Python only — TS deferred) | **Complete** (P9.1–P9.8; merged to `develop`) |
 | P10 | Testing, benchmarks & quality gates | **Complete** (P10.1–P10.6) |
-| P11 | Documentation, examples & DX | **In progress** (P11.1 done via P0.8; P11.2–P11.3 done; P11.4–P11.6 next) |
+| P11 | Documentation, examples & DX | **In progress** (P11.1 done via P0.8; P11.2–P11.4 done; P11.5–P11.6 next) |
 | P12 | CI/CD, packaging & publishing | Not started |
 | P13 | External backend adapter | **Out of scope** — separate repository |
 
