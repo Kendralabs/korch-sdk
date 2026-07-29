@@ -36,3 +36,13 @@ site/
 !.env.example
 *.db
 *.sqlite3
+
+# --- Dashboard (dashboard/): Node / Vite frontend ------------------------------
+dashboard/frontend/node_modules/
+dashboard/frontend/dist/
+dashboard/frontend/.vite/
+dashboard/frontend/*.local
+npm-debug.log*
+
+# --- Dashboard: Python backend --------------------------------------------------
+dashboard/backend/.venv/
