@@ -16,7 +16,7 @@ from typing import Protocol, runtime_checkable
 from korchestrator.core.channels import ChannelSchema
 from korchestrator.core.graph import AgentGraph
 from korchestrator.core.reducers import Delta
-from korchestrator.exceptions import ValidationError
+from korchestrator.exceptions import GovernanceHaltError, ValidationError
 from korchestrator.models.result import RunResult
 from korchestrator.models.state import AgentState, Message, RunStatus, StateUpdate
 from korchestrator.types import JSONValue
@@ -36,8 +36,12 @@ class SuperstepObserver(Protocol):
 
     The runtime may inject an observer so middleware and event hooks can fire around each superstep.
     It is called only by the in-process run loop, never in Temporal workflow scope, so it cannot
-    affect the replay contract. Implementations MUST NOT raise (they isolate their own errors) and
-    MUST NOT mutate ``state`` — the barrier result is already computed when they run.
+    affect the replay contract. Implementations MUST NOT mutate ``state`` — the barrier result is
+    already computed when they run. ``before_superstep`` isolates every exception except
+    :class:`~korchestrator.exceptions.GovernanceHaltError`, which is the one sanctioned way for a
+    middleware to veto a run: the runner catches it and halts with ``GOVERNANCE_PAUSED`` (spec 07
+    §9). ``after_superstep`` isolates all exceptions, including that one — the barrier result is
+    already final by then, so there is nothing left to veto.
     """
 
     async def before_superstep(self, state: AgentState) -> None:
@@ -70,12 +74,15 @@ def build_result(
     started_at: datetime,
     completed_at: datetime,
     error_code: str | None = None,
+    error: str | None = None,
     status: RunStatus = RunStatus.COMPLETED,
 ) -> RunResult:
     """Assemble the terminal :class:`RunResult` from the final state (shared by both runtimes).
 
     ``status`` defaults to ``COMPLETED``; a runtime passes ``CANCELLED`` or ``TIMED_OUT`` when a
-    control signal or a HITL deadline ends the run.
+    control signal or a HITL deadline ends the run, or ``GOVERNANCE_PAUSED`` when a middleware
+    vetoes it (spec 07 §9). ``error`` overrides the default max-supersteps message when
+    ``error_code`` is set for a different reason; leave it ``None`` to keep that default.
     """
     final_answer = "\n".join(
         message.content for message in state.messages if message.kind == "answer"
@@ -89,7 +96,8 @@ def build_result(
         state=state.model_copy(update={"status": status}),
         trust_score=state.trust_score,
         error_code=error_code,
-        error=("Run reached the max_supersteps bound before completing." if error_code else None),
+        error=error
+        or ("Run reached the max_supersteps bound before completing." if error_code else None),
         started_at=started_at,
         completed_at=completed_at,
     )
@@ -300,13 +308,16 @@ class PregelRunner:
     async def run(self, state: AgentState) -> RunResult:
         """Drive supersteps to a terminal :class:`RunResult`.
 
-        Halts when no node is active, when every active node halted, or when the ``max_supersteps``
-        bound is reached (spec 06 §2). The kernel always terminates in ``completed``; the paused,
-        failed, and timed-out statuses belong to the runtime and governance layers.
+        Halts when no node is active, when every active node halted, when the ``max_supersteps``
+        bound is reached (spec 06 §2), or when a ``before_superstep`` middleware raises
+        :class:`~korchestrator.exceptions.GovernanceHaltError` (spec 07 §9) — the one sanctioned
+        veto, resulting in ``GOVERNANCE_PAUSED`` instead of ``COMPLETED``. The ``CANCELLED`` and
+        ``TIMED_OUT`` statuses still belong to the runtime layer (control signals, HITL deadlines).
         """
         started_at = self._clock()
         current = state.model_copy(update={"status": RunStatus.RUNNING})
         error_code: str | None = None
+        status = RunStatus.COMPLETED
 
         while True:
             if not self.active_node_ids(current):
@@ -315,7 +326,19 @@ class PregelRunner:
                 error_code = "MAX_SUPERSTEPS_REACHED"
                 break
             if self._observer is not None:
-                await self._observer.before_superstep(current)
+                try:
+                    await self._observer.before_superstep(current)
+                except GovernanceHaltError as exc:
+                    error_code = exc.code
+                    status = RunStatus.GOVERNANCE_PAUSED
+                    return build_result(
+                        current,
+                        started_at=started_at,
+                        completed_at=self._clock(),
+                        error_code=error_code,
+                        error=exc.message,
+                        status=status,
+                    )
             current = await self.run_superstep(current)
             if self._observer is not None:
                 await self._observer.after_superstep(current)
@@ -323,5 +346,9 @@ class PregelRunner:
                 break
 
         return build_result(
-            current, started_at=started_at, completed_at=self._clock(), error_code=error_code
+            current,
+            started_at=started_at,
+            completed_at=self._clock(),
+            error_code=error_code,
+            status=status,
         )

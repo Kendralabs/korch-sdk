@@ -13,7 +13,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from korchestrator.core import Append, ChannelSchema, PregelRunner
 from korchestrator.core.graph import AgentGraph, Edge, Node
-from korchestrator.exceptions import ValidationError
+from korchestrator.exceptions import GovernanceHaltError, ValidationError
 from korchestrator.models.agent import AgentConfig, AgentPersona
 from korchestrator.models.state import AgentState, Message, StateUpdate
 from korchestrator.types import JSONValue
@@ -156,6 +156,35 @@ async def test_run_halts_at_max_supersteps(make_clock: Callable[..., object]) ->
     assert result.status.value == "completed"
     assert result.supersteps == 3
     assert result.error_code == "MAX_SUPERSTEPS_REACHED"
+
+
+async def test_a_governance_halt_from_the_observer_pauses_the_run(
+    make_clock: Callable[..., object],
+) -> None:
+    # A before_superstep veto must stop the run before that superstep's compute phase runs, and
+    # report GOVERNANCE_PAUSED rather than COMPLETED — the one sanctioned way to end a run early
+    # from an observer (spec 07 §9).
+    computed: list[str] = []
+
+    class Vetoing:
+        async def before_superstep(self, state: AgentState) -> None:
+            raise GovernanceHaltError("trust below threshold", reason="low_trust")
+
+        async def after_superstep(self, state: AgentState) -> None:
+            computed.append("after")  # must never run once before_superstep vetoes
+
+    async def compute(state: AgentState) -> StateUpdate:
+        computed.append("compute")
+        return _update("a")
+
+    graph = AgentGraph([_node("a", compute)])
+    runner = PregelRunner(graph, clock=make_clock(), observer=Vetoing())  # type: ignore[arg-type]
+    result = await runner.run(_start())
+
+    assert result.status.value == "governance_paused"
+    assert result.error_code == "KORCH_GOVERNANCE_HALT"
+    assert result.error == "trust below threshold"
+    assert computed == []
 
 
 # --- reduce -------------------------------------------------------------------------------------

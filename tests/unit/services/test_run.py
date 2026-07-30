@@ -193,6 +193,25 @@ def test_hooks_fire_around_supersteps_and_a_raising_hook_is_isolated() -> None:
     assert "superstep" in events_seen  # the event hook still fired
 
 
+def test_a_governance_halt_error_pauses_the_run_end_to_end() -> None:
+    # Unlike a plain exception, GovernanceHaltError from before_superstep is the one sanctioned
+    # veto: the run stops with GOVERNANCE_PAUSED instead of running to COMPLETED (spec 07 §9).
+    from korchestrator.exceptions import GovernanceHaltError
+    from korchestrator.services import Middleware
+
+    class Veto(Middleware):
+        async def before_superstep(self, state: object) -> None:
+            raise GovernanceHaltError("trust below threshold")
+
+    swarm = Swarm(objective="Count the words in this objective", middleware=[Veto()]).add(
+        WordCountAgent(id="counter", role="counter")
+    )
+    result = swarm.run()
+    assert result.status is RunStatus.GOVERNANCE_PAUSED
+    assert result.error_code == "KORCH_GOVERNANCE_HALT"
+    assert result.final_answer == ""  # halted before the agent ever computed an answer
+
+
 # --- telemetry (P8.7) ----------------------------------------------------------------------------
 
 
