@@ -68,15 +68,20 @@ const SCENARIOS: { id: Scenario; title: string; desc: string; defaultObjective: 
   },
 ];
 
+// The concrete Bedrock model id varies by AWS region (cross-region inference profile prefix
+// us./eu./apac./au./global. or a bare foundation-model id) — configurable at build time via
+// VITE_BEDROCK_MODEL so a redeploy to a different region never needs a source change.
+const BEDROCK_MODEL = `bedrock/${import.meta.env.VITE_BEDROCK_MODEL ?? "us.anthropic.claude-sonnet-4-20250514-v1:0"}`;
+
 const DEFAULT_AGENTS: AgentDef[] = [
-  { id: "researcher",  role: "Researcher",  model: "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0", goal: "Find information from the web." },
-  { id: "analyst",     role: "Analyst",     model: "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0", goal: "Analyze collected data." },
-  { id: "writer",      role: "Writer",      model: "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0", goal: "Produce the final report." },
+  { id: "researcher",  role: "Researcher",  model: BEDROCK_MODEL, goal: "Find information from the web." },
+  { id: "analyst",     role: "Analyst",     model: BEDROCK_MODEL, goal: "Analyze collected data." },
+  { id: "writer",      role: "Writer",      model: BEDROCK_MODEL, goal: "Produce the final report." },
 ];
 const DEFAULT_EDGES = [["researcher","analyst"],["analyst","writer"]];
 
 const MODELS = [
-  "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
+  BEDROCK_MODEL,
   "openai/gpt-4o",
   "openai/gpt-4o-mini",
   "anthropic/claude-3-5-sonnet-20241022-v2",

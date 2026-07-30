@@ -22,6 +22,11 @@ RUN npm run build
 # --- Stage 2: serve the static build + proxy /api to the backend --------------------------------
 FROM nginx:1.27-alpine
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The official image's entrypoint envsubst's *.template files in this directory into conf.d at
+# container start, substituting only real environment variables (nginx's own $host/$uri etc. are
+# left alone). Default BACKEND_HOST matches docker-compose's service name; the ECS task definition
+# overrides it to "localhost" since there both containers share one task's network namespace.
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+ENV BACKEND_HOST=backend
 
 EXPOSE 80
