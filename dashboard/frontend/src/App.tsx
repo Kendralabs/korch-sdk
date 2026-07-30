@@ -82,7 +82,9 @@ const MODELS = [
   "anthropic/claude-3-5-sonnet-20241022-v2",
 ];
 
-const API_BASE = "http://localhost:8000";
+// Empty string in production (behind the nginx reverse proxy, same-origin /api/*); defaults to the
+// local dev backend otherwise. Configure via VITE_API_BASE at build time (see .env.example).
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 // ────────────────────────────────────────────────────────────
 // Custom Node Component
