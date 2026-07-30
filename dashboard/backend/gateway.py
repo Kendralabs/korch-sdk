@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import asyncio
 from datetime import datetime, timezone
@@ -13,6 +14,20 @@ logger = logging.getLogger("dashboard.gateway")
 
 # Default Bedrock model ID, overridable via the BEDROCK_MODEL_ID env var (see dashboard/backend/.env).
 DEFAULT_BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+
+# Matches "bedrock/...", any cross-region inference profile prefix (us./eu./apac./au./global.), or
+# a bare foundation-model id ("anthropic.claude-..."). Bedrock model ids vary by AWS region — the
+# concrete id always comes from BEDROCK_MODEL_ID (or the model string itself), never hardcoded here
+# beyond the one offline default above.
+_BEDROCK_MODEL_RE = re.compile(r"^(bedrock/|(us|eu|apac|au|global)\.anthropic\.|anthropic\.)")
+
+
+def _resolve_bedrock_model_id(model: str) -> str:
+    """Strip a "bedrock/" prefix and fall back to BEDROCK_MODEL_ID for a placeholder model."""
+    bedrock_id = model.replace("bedrock/", "")
+    if bedrock_id in ("bedrock", "", "auto"):
+        bedrock_id = os.environ.get("BEDROCK_MODEL_ID", DEFAULT_BEDROCK_MODEL_ID)
+    return bedrock_id
 
 class LiteLLMGateway(IModelGateway):
     """Custom dashboard model gateway.
@@ -76,25 +91,26 @@ class LiteLLMGateway(IModelGateway):
         # 1. Format messages to standard role/content dict format
         litellm_messages = [{"role": msg.role.value, "content": msg.content} for msg in messages]
 
-        # 2. Check if this is a Bedrock model and we have a bearer token
-        is_bedrock = model.startswith("bedrock/") or model.startswith("us.anthropic") or model.startswith("anthropic.")
+        # 2. Check if this is a Bedrock model. A bearer token (AWS_BEARER_TOKEN_BEDROCK) is one way
+        # to authenticate; its absence does NOT mean Bedrock is unavailable — boto3/litellm fall
+        # back to the standard credential chain (e.g. an ECS task's IAM role), which is exactly how
+        # the AWS deployment in dashboard/aws/ authenticates (no bearer-token secret needed there).
+        is_bedrock = bool(_BEDROCK_MODEL_RE.match(model))
         bedrock_token = self._api_keys.get("AWS_BEARER_TOKEN_BEDROCK") or os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
 
         content = ""
 
         if is_bedrock and bedrock_token:
-            # Clean up the model string if it has the "bedrock/" prefix and resolve to a concrete
-            # Bedrock model ID (BEDROCK_MODEL_ID env var wins; otherwise the default Sonnet 4 ID).
-            clean_model = model.replace("bedrock/", "")
-            if clean_model in ("bedrock", "", "auto"):
-                clean_model = os.environ.get("BEDROCK_MODEL_ID", DEFAULT_BEDROCK_MODEL_ID)
+            # A bearer token is present: prefer the direct boto3 converse call over routing through
+            # LiteLLM, since LiteLLM's bearer-token support for Bedrock is newer/less consistent.
+            clean_model = _resolve_bedrock_model_id(model)
 
             os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bedrock_token
             if not os.environ.get("AWS_DEFAULT_REGION"):
                 os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
-                
+
             logger.info(f"Invoking Bedrock model {clean_model} using AWS_BEARER_TOKEN_BEDROCK")
-            
+
             try:
                 def _boto_converse():
                     session = boto3.Session()
@@ -132,14 +148,10 @@ class LiteLLMGateway(IModelGateway):
                 logger.error(f"Direct Boto3 converse failed: {e}. Falling back to LiteLLM.")
 
         if not content:
-            # 3. Standard LiteLLM flow (used when no Bedrock token is configured, or as a fallback
-            # if the direct boto3 converse call above failed).
-            clean_model = model
-            if is_bedrock and bedrock_token:
-                bedrock_id = model.replace("bedrock/", "")
-                if bedrock_id in ("bedrock", "", "auto"):
-                    bedrock_id = os.environ.get("BEDROCK_MODEL_ID", DEFAULT_BEDROCK_MODEL_ID)
-                clean_model = f"bedrock/{bedrock_id}"
+            # 3. Standard LiteLLM flow — used whenever there's no bearer token (Bedrock auth then
+            # falls through to the standard AWS credential chain, e.g. an ECS task role) or as a
+            # fallback if the direct boto3 converse call above failed.
+            clean_model = f"bedrock/{_resolve_bedrock_model_id(model)}" if is_bedrock else model
 
             try:
                 response = await litellm.acompletion(

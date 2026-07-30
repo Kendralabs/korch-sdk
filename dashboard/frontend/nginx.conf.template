@@ -5,10 +5,15 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # BACKEND_HOST is substituted at container start (this file is processed as an nginx template —
+    # see Dockerfile). docker-compose leaves it at the default "backend" (a separate service,
+    # resolved by Docker's embedded DNS); the ECS task definition overrides it to "localhost",
+    # since there both containers share one task's network namespace, not separate hostnames.
+    #
     # SSE/event-stream responses must not be buffered or the client sees nothing until the whole
     # run finishes. Long read timeout mirrors the ALB idle-timeout note in dashboard/aws/README.md.
     location /api/ {
-        proxy_pass http://backend:8000/api/;
+        proxy_pass http://${BACKEND_HOST}:8000/api/;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header Connection "";
