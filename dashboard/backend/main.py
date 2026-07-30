@@ -19,6 +19,7 @@ from korchestrator.events import Event, EventPublisher, format_sse
 from korchestrator.tools import ConnectorRegistry
 from korchestrator.models.state import AgentState, RunStatus
 from korchestrator.services.hooks import Middleware
+from korchestrator.exceptions import GovernanceHaltError
 
 # Import our custom gateway (import from same directory when run via uvicorn)
 try:
@@ -117,15 +118,11 @@ tool_registry.register_tool(
 
 # Custom Middleware for Local HITL Mocking
 #
-# NOTE: korchestrator.services.hooks.HookRegistry currently isolates every exception raised from
-# before_superstep (catch, log, continue — see hooks.py's module docstring: the GovernanceHaltError
-# veto->pause path is wired with governance in a later phase). Raising here would therefore be
-# silently swallowed and the run would continue as if nothing happened. Until that wiring lands,
-# "reject" is implemented at the dashboard level: we publish a terminal "cancelled" status_change
-# so the SSE stream and UI stop reflecting the run, and run_swarm_task skips publishing the SDK's
-# own completion event once `rejected` is set. The underlying swarm computation still runs to
-# completion on its worker thread (Python cannot forcibly interrupt synchronous code) — its result
-# is simply not surfaced to the client. This is a known limitation, not a hidden one.
+# "reject" raises GovernanceHaltError from before_superstep — the SDK's HookRegistry lets this one
+# exception type propagate (spec 07 §9), and PregelRunner.run catches it to halt the run for real
+# with RunStatus.GOVERNANCE_PAUSED, instead of the swarm computation running to completion in the
+# background regardless. We also publish our own "cancelled" status_change immediately so the SSE
+# stream/UI get a clearer, dashboard-specific terminal status than the SDK's generic paused one.
 class LocalHITLMiddleware(Middleware):
     def __init__(self, run_id: str, threshold: float, publisher: EventPublisher) -> None:
         self.run_id = run_id
@@ -176,6 +173,9 @@ class LocalHITLMiddleware(Middleware):
                         },
                         run_id=self.run_id,
                     )
+                )
+                raise GovernanceHaltError(
+                    self.feedback or "Run rejected and halted by operator.", run_id=self.run_id
                 )
 
 # REST Endpoints

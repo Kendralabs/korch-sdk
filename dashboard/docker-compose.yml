@@ -1,0 +1,38 @@
+# One-command local spin-up of the Korchestrator dashboard (both containers).
+#
+# Prerequisite: dashboard/backend/.env must exist (copy dashboard/backend/.env.example and fill in
+# real credentials — it is gitignored and never baked into the backend image).
+#
+# Usage (from the repository root):
+#   docker compose -f dashboard/docker-compose.yml up --build
+# Then open http://localhost:8080. The backend is also reachable directly at
+# http://localhost:8000 for debugging, but the frontend talks to it via nginx's /api proxy.
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: dashboard/backend/Dockerfile
+    env_file:
+      - backend/.env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/config')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: ""
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
