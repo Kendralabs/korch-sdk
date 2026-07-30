@@ -1,4 +1,4 @@
-"""Façade layer. Imports: core, events, models, logging, stdlib.
+"""Façade layer. Imports: core, events, models, exceptions, logging, stdlib.
 
 The extension framework: :class:`Middleware` (wraps a phase, may observe) and :class:`HookRegistry`
 (observes events). The registry implements the kernel's :class:`SuperstepObserver`, so the runtime
@@ -7,8 +7,10 @@ fires it around each superstep. Ordering and error isolation follow spec 07 §9:
 * ``before_*`` middleware runs in registration order; ``after_*`` in **reverse** (stack nesting).
 * Middleware runs before event hooks for the same phase; event handlers run in registration order.
 * A raising hook or ``after_superstep`` middleware is caught, logged, and the run continues — a hook
-  can never fail a run. (The ``before_superstep`` ``GovernanceHaltError`` veto → pause is wired with
-  governance in a later phase; for now every failure is isolated so runs always complete.)
+  can never fail a run. The one sanctioned exception: a ``before_superstep`` middleware may raise
+  :class:`~korchestrator.exceptions.GovernanceHaltError` to veto the run. ``HookRegistry`` lets that
+  one propagate (everything else from the same hook is still isolated); the kernel's
+  ``PregelRunner.run`` catches it and halts with ``GOVERNANCE_PAUSED`` instead of ``COMPLETED``.
 
 Hooks run in activity/in-process scope, never Temporal workflow scope, and MUST NOT mutate state.
 """
@@ -23,6 +25,7 @@ from collections.abc import Awaitable, Callable
 from typing_extensions import Self
 
 from korchestrator.events.publisher import Event, EventPublisher
+from korchestrator.exceptions import GovernanceHaltError
 from korchestrator.models.state import AgentState
 
 __all__ = ["EventHandler", "HookRegistry", "Middleware"]
@@ -51,7 +54,11 @@ class Middleware:
     """
 
     async def before_superstep(self, state: AgentState) -> None:
-        """Fired with the state about to be computed."""
+        """Fired with the state about to be computed.
+
+        Raise :class:`~korchestrator.exceptions.GovernanceHaltError` to veto the run — it is the
+        only exception that propagates out of this hook; every other exception is isolated.
+        """
 
     async def after_superstep(self, state: AgentState) -> None:
         """Fired with the state produced by the barrier."""
@@ -104,11 +111,23 @@ class HookRegistry:
         return self
 
     async def before_superstep(self, state: AgentState) -> None:
-        """Run each middleware's ``before_superstep`` in registration order (errors isolated)."""
+        """Run each middleware's ``before_superstep`` in registration order.
+
+        Every exception is isolated (logged, run continues) except
+        :class:`~korchestrator.exceptions.GovernanceHaltError`, which propagates immediately — the
+        one sanctioned way for a middleware to veto the run (spec 07 §9).
+        """
         for middleware in self._middleware:
-            await self._safe(
-                functools.partial(middleware.before_superstep, state), _name(middleware)
-            )
+            try:
+                result = middleware.before_superstep(state)
+                if inspect.isawaitable(result):
+                    await result
+            except GovernanceHaltError:
+                raise
+            except Exception as exc:
+                _logger.error(
+                    "hook.failed", extra={"handler": _name(middleware), "error": str(exc)}
+                )
 
     async def after_superstep(self, state: AgentState) -> None:
         """Run ``after_superstep`` in reverse order, then fire the ``superstep`` event."""
