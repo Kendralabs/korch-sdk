@@ -20,7 +20,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from korchestrator import Agent, Swarm
 from korchestrator.events import Event, EventPublisher
@@ -48,11 +48,33 @@ _runs: dict[str, EventPublisher] = {}
 
 # --- Request/response models ----------------------------------------------------------------
 class RunRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "objective": (
+                    "Handle this customer support escalation: 'My recurring subscription "
+                    "payment failed twice this week even though I have sufficient funds. I "
+                    "need this resolved today.'"
+                ),
+                "agent_models": {
+                    "triage": "gpt-4o-mini",
+                    "researcher": "gpt-4o-mini",
+                    "resolver": "gpt-4o",
+                    "reviewer": "gpt-4o-mini",
+                },
+            }
+        }
+    )
+
     objective: Optional[str] = None
     agent_models: dict[str, str] = Field(default_factory=dict)
 
 
 class RunResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={"example": {"run_id": "support-escalation-a1b2c3d4"}}
+    )
+
     run_id: str
 
 
