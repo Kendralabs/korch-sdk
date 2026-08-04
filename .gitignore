@@ -46,3 +46,7 @@ npm-debug.log*
 
 # --- Dashboard: Python backend --------------------------------------------------
 dashboard/backend/.venv/
+
+# --- Dashboard: root-level Playwright e2e harness (build/test output only) -----
+dashboard/node_modules/
+dashboard/test-results/
