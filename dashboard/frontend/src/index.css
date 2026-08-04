@@ -491,6 +491,73 @@ input, select, textarea { font-family: inherit; }
   animation: slide-up 0.15s ease;
 }
 
+/* ─── Investigation console (fincrime demo) ─────────────────────
+   Reuses the design tokens above (--blue/--red/--amber/--teal/--violet/--green, .panel-*,
+   .btn-*, .progress-bar, .form-*) — only new layout, no new palette. ────────────────── */
+.ic-root { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.ic-swarm-select { display: flex; gap: 6px; }
+
+.ic-rail { display: flex; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--bg-1); }
+.ic-stage { flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--glass); transition: all var(--transition); }
+.ic-stage-k { font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); }
+.ic-stage-v { font-weight: 600; font-size: 13px; color: var(--text-2); margin-top: 2px; }
+.ic-stage.active { border-color: var(--teal); background: rgba(80,200,160,0.1); box-shadow: 0 0 0 1px rgba(80,200,160,0.2); }
+.ic-stage.active .ic-stage-k, .ic-stage.active .ic-stage-v { color: var(--teal); }
+.ic-stage.done { border-color: var(--border-hi); }
+.ic-stage.done .ic-stage-v { color: var(--text-1); }
+
+.ic-grid { flex: 1; display: grid; grid-template-columns: 1.5fr 1fr; gap: 14px; padding: 14px 16px; overflow-y: auto; min-height: 0; }
+.ic-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+.ic-agents { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 900px) { .ic-agents { grid-template-columns: 1fr; } }
+.ic-agent-card { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-1); padding: 10px 12px; transition: all var(--transition); }
+.ic-agent-top { display: flex; align-items: center; gap: 8px; }
+.ic-agent-icon { font-size: 16px; }
+.ic-agent-name { font-weight: 600; font-size: 12.5px; color: var(--text-1); line-height: 1.2; }
+.ic-agent-role { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.ic-status-dot { margin-left: auto; width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; }
+.ic-status-active { border-color: var(--teal); box-shadow: 0 0 12px rgba(80,200,160,0.2); }
+.ic-status-active .ic-status-dot { background: var(--teal); animation: pulse 1.2s infinite; }
+.ic-status-done .ic-status-dot { background: var(--green); }
+.ic-model-input { margin-top: 8px; font-family: var(--mono); font-size: 11px !important; padding: 5px 8px !important; }
+.ic-agent-trace { margin-top: 8px; min-height: 30px; max-height: 130px; overflow-y: auto; background: var(--bg-0); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; font-family: var(--mono); font-size: 10.5px; color: var(--text-2); }
+.ic-trace-line { padding: 2px 0; border-top: 1px solid var(--border); }
+.ic-trace-line:first-child { border-top: none; }
+
+.ic-findings-card, .ic-assessment-card, .ic-hitl-gate { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-1); padding: 12px 14px; }
+.ic-finding { border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius-sm); background: var(--glass); padding: 9px 11px; margin-top: 8px; }
+.ic-sev-critical { border-left-color: var(--red); }
+.ic-sev-high { border-left-color: var(--amber); }
+.ic-sev-medium { border-left-color: var(--blue); }
+.ic-sev-info { border-left-color: var(--teal); }
+.ic-finding-head { display: flex; align-items: center; gap: 8px; }
+.ic-sev-badge { font-size: 9.5px; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 7px; border-radius: 5px; font-weight: 700; }
+.ic-sev-badge.ic-sev-critical { background: rgba(220,50,50,0.18); color: var(--red); }
+.ic-sev-badge.ic-sev-high { background: rgba(240,160,40,0.18); color: var(--amber); }
+.ic-sev-badge.ic-sev-medium { background: rgba(79,130,255,0.18); color: var(--blue); }
+.ic-sev-badge.ic-sev-info { background: rgba(80,200,160,0.18); color: var(--teal); }
+.ic-finding-who { margin-left: auto; color: var(--text-3); font-size: 10.5px; font-family: var(--mono); }
+.ic-finding-title { font-weight: 600; font-size: 13px; color: var(--text-1); margin-top: 6px; }
+.ic-finding-summary { font-size: 12px; color: var(--text-2); margin-top: 3px; line-height: 1.4; }
+.ic-conf-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 10.5px; color: var(--text-3); }
+.ic-conf-bar { flex: 1; height: 4px; border-radius: 3px; background: var(--border); overflow: hidden; }
+.ic-conf-fill { height: 100%; background: linear-gradient(90deg, var(--blue), var(--teal)); }
+
+.ic-grade { font-size: 26px; font-weight: 800; color: var(--amber); margin-top: 8px; }
+.ic-assessment-why { font-size: 12px; color: var(--text-2); margin-top: 8px; line-height: 1.5; max-height: 160px; overflow-y: auto; white-space: pre-wrap; }
+.ic-rec { margin-top: 10px; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--glass); }
+.ic-rec-k { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); }
+.ic-rec-v { font-weight: 600; font-size: 12.5px; color: var(--text-1); margin-top: 3px; }
+
+.ic-hitl-gate { border-color: var(--violet); background: rgba(160,120,240,0.08); }
+.ic-hitl-head { color: var(--violet); font-weight: 600; font-size: 13px; }
+.ic-hitl-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+.ic-dock { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg-1); }
+.ic-spacer { flex: 1; }
+.ic-cost-meter { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--border); border-radius: 99px; background: var(--glass); }
+
 /* ─── Utility ────────────────────────────────────────────────── */
 .flex       { display: flex; }
 .flex-col   { display: flex; flex-direction: column; }
