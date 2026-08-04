@@ -28,9 +28,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from korchestrator import Agent, Swarm
-from korchestrator.events import Event, EventPublisher
+from korchestrator.events import Event
 from korchestrator.exceptions import GovernanceHaltError
-from korchestrator.models.state import AgentState, Message, MessageRole, RunStatus
+from korchestrator.models.state import AgentState, Message, MessageRole
 from korchestrator.providers import OpenAIGateway
 from korchestrator.services.hooks import Middleware
 from korchestrator.tools import ConnectorRegistry
@@ -103,19 +103,25 @@ _OBJECTIVE = (
     "request info / close). Do NOT generate a SAR. Findings will be held for human sign-off."
 )
 
-# run_id -> (EventPublisher, HITL gate), isolated from every other router's state.
-_runs: dict[str, tuple[EventPublisher, "_HitlGate"]] = {}
+# run_id -> HITL gate, isolated from every other router's state.
+_runs: dict[str, "_HitlGate"] = {}
 
-# run_id -> every event published so far. The run starts (via asyncio.create_task) before a
-# client necessarily has its SSE GET open yet — EventPublisher.publish() only reaches subscribers
-# that already exist, so without a replay buffer a slow-to-connect client (or, worse, one that
-# connects after the HITL gate has already opened) silently misses events it can never get back.
+# run_id -> every event published so far — the SSE endpoint tails this rather than subscribing to
+# a push-based EventPublisher. Two reasons: (1) the run starts (via asyncio.create_task) before a
+# client necessarily has its SSE GET open yet, so a push-only queue would silently drop events
+# published before that subscription exists; (2) five investigator agents reason concurrently,
+# each via its own asyncio.to_thread *inside* the outer asyncio.to_thread(swarm.run, ...) worker —
+# cross-thread event-loop signaling (call_soon_threadsafe / run_coroutine_threadsafe) reaching back
+# to the outer loop from that nesting reliably hung this process the moment a GovernanceHaltError
+# (the HITL-reject path) unwound through it, confirmed in isolation without any HTTP/FastAPI layer
+# involved. A plain list append is GIL-safe from any thread with no event-loop interaction at all,
+# so the SSE generator below just polls it — sidesteps the failure mode entirely instead of
+# tracking down the exact platform-level cause.
 _event_log: dict[str, list[Event]] = {}
 
 
-async def _publish(run_id: str, publisher: EventPublisher, event: Event) -> None:
+def _publish(run_id: str, event: Event) -> None:
     _event_log.setdefault(run_id, []).append(event)
-    await publisher.publish(event)
 
 
 # --- Request/response models ------------------------------------------------------------------
@@ -466,11 +472,23 @@ class _HitlGate(Middleware):
     thread/event loop (main.py's run_task calls it via asyncio.to_thread), while the HTTP
     approve/reject handler runs on the main FastAPI event loop's thread. threading.Event is safe
     to set() across threads; asyncio.Event is bound to one loop and is not (proven in main.py).
+
+    Known SDK-level issue (not this router's code): rejecting — i.e. `before_superstep` raising
+    `GovernanceHaltError` — reliably hangs `Swarm.run()` when it's invoked via
+    `asyncio.to_thread` (or a plain background `threading.Thread`) from a process that *also* has
+    an asyncio event loop already running elsewhere (exactly the FastAPI/uvicorn shape this
+    router runs under). Confirmed in isolation, independent of this file: a bare script driving
+    the identical swarm+gate+reject with no HTTP layer at all hangs the same way the instant an
+    outer `asyncio.run(...)`/running loop exists in the process, while the *exact same call*
+    returns in under a second when made synchronously with no outer loop present. Approving does
+    not hit this — only the raised-exception (reject) path does. `run_task` below wraps the call
+    in `asyncio.wait_for(...)` so a production run can never hang indefinitely on this; it will
+    reach `run_completed` with `status: "failed"` (timeout) rather than silently stalling the SSE
+    stream forever.
     """
 
-    def __init__(self, run_id: str, publisher: EventPublisher) -> None:
+    def __init__(self, run_id: str) -> None:
         self.run_id = run_id
-        self.publisher = publisher
         self._resume_event = threading.Event()
         self.decision: Optional[str] = None
         self.feedback = ""
@@ -478,19 +496,19 @@ class _HitlGate(Middleware):
     async def before_superstep(self, state: AgentState) -> None:
         if state.superstep != 1:
             return
-        await _publish(
-            self.run_id, self.publisher,
+        _publish(
+            self.run_id,
             Event(name="human_request", payload={"approver": "Compliance Reviewer", "role": "Sign-off required"}, run_id=self.run_id),
         )
         await asyncio.to_thread(self._resume_event.wait)
         if self.decision == "reject":
-            await _publish(
-                self.run_id, self.publisher,
+            _publish(
+                self.run_id,
                 Event(name="resolved", payload={"outcome": "Rejected — investigation halted for rework."}, run_id=self.run_id),
             )
             raise GovernanceHaltError(self.feedback or "Rejected by reviewer.", run_id=self.run_id)
-        await _publish(
-            self.run_id, self.publisher,
+        _publish(
+            self.run_id,
             Event(name="resolved", payload={"outcome": f"Approved by {self.feedback or 'reviewer'} — reconciling."}, run_id=self.run_id),
         )
 
@@ -500,9 +518,18 @@ class _HitlGate(Middleware):
         self._resume_event.set()
 
 
-def _build_swarm(objective: str, models: dict[str, str], gateway, registry: ConnectorRegistry, hitl: _HitlGate) -> Swarm:
+def _build_swarm(
+    objective: str,
+    models: dict[str, str],
+    gateway,
+    registry: ConnectorRegistry,
+    hitl: Optional["_HitlGate"],
+) -> Swarm:
+    """Build the 6-agent investigation swarm. ``hitl=None`` skips the sign-off gate entirely —
+    used by the performance test, which needs runs that don't block on human approval."""
     resolved = {**_DEFAULT_MODELS, **models}
-    swarm = Swarm(objective=objective, model_gateway=gateway, connectors=registry, middleware=[hitl])
+    middleware = [hitl] if hitl is not None else []
+    swarm = Swarm(objective=objective, model_gateway=gateway, connectors=registry, middleware=middleware)
     investigator_tools = {
         "kyc_kyb": ("customer_master_lookup", "document_store_retrieval", "ubo_graph_resolver"),
         "osint_screening": ("worldcheck_one", "sanctions_lists", "pep_register", "adverse_media_search"),
@@ -524,16 +551,14 @@ _STAGES = ["collect", "understand", "assess", "report"]
 @router.post("/run", response_model=RunResponse)
 async def start_run(req: RunRequest) -> RunResponse:
     run_id = f"fincrime-{os.urandom(4).hex()}"
-    publisher = EventPublisher()
-    hitl = _HitlGate(run_id, publisher)
-    _runs[run_id] = (publisher, hitl)
+    hitl = _HitlGate(run_id)
+    _runs[run_id] = hitl
+    _event_log[run_id] = []
 
-    loop = asyncio.get_running_loop()
-
+    # Plain thread-safe append — no event-loop crossing at all (see _publish's docstring above).
+    # Called from whichever agent thread's gateway.complete() just returned.
     def on_event(name: str, payload: dict) -> None:
-        asyncio.run_coroutine_threadsafe(
-            _publish(run_id, publisher, Event(name=name, payload=payload, run_id=run_id)), loop
-        )
+        _publish(run_id, Event(name=name, payload=payload, run_id=run_id))
 
     gateway = _build_gateway(on_event)
     registry = _build_tool_registry()
@@ -541,18 +566,22 @@ async def start_run(req: RunRequest) -> RunResponse:
 
     async def on_superstep(event: Event) -> None:
         superstep_n = event.payload.get("superstep", 0)
-        await _publish(run_id, publisher, Event(name="superstep", payload=dict(event.payload), run_id=run_id))
+        _publish(run_id, Event(name="superstep", payload=dict(event.payload), run_id=run_id))
         stage = _STAGES[min(int(superstep_n), len(_STAGES) - 1)]
-        await _publish(run_id, publisher, Event(name="stage", payload={"stage": stage}, run_id=run_id))
+        _publish(run_id, Event(name="stage", payload={"stage": stage}, run_id=run_id))
 
     swarm.on("superstep", on_superstep)
 
     async def run_task() -> None:
         try:
-            await _publish(run_id, publisher, Event(name="run_started", payload={"run_id": run_id}, run_id=run_id))
-            await _publish(run_id, publisher, Event(name="stage", payload={"stage": "collect"}, run_id=run_id))
+            _publish(run_id, Event(name="run_started", payload={"run_id": run_id}, run_id=run_id))
+            _publish(run_id, Event(name="stage", payload={"stage": "collect"}, run_id=run_id))
 
-            result = await asyncio.to_thread(swarm.run, max_supersteps=8)
+            # wait_for, not a bare await: see _HitlGate's docstring — the reject path has a known
+            # SDK-level hang risk under this exact (asyncio.to_thread + already-running outer
+            # loop) shape. This bounds it so a rejected run always reaches run_completed instead
+            # of stalling the SSE stream forever; the (unkillable) worker thread is abandoned.
+            result = await asyncio.wait_for(asyncio.to_thread(swarm.run, max_supersteps=8), timeout=90)
 
             findings = []
             for agent_id, template in _FINDING_TEMPLATES.items():
@@ -562,30 +591,37 @@ async def start_run(req: RunRequest) -> RunResponse:
                 )
                 finding = {**template, "agent": agent_id, "summary": summary}
                 findings.append(finding)
-                await _publish(run_id, publisher, Event(name="finding", payload=finding, run_id=run_id))
+                _publish(run_id, Event(name="finding", payload=finding, run_id=run_id))
 
             assessment = _compute_assessment(findings)
             reconciler_answer = next(
                 (m.content for m in reversed(result.messages) if m.sender == "reconciler" and m.kind == "answer"),
                 "",
             )
-            await _publish(
-                run_id, publisher,
+            _publish(
+                run_id,
                 Event(
                     name="assessment",
                     payload={"grade": assessment["grade"], "why": reconciler_answer, "recommendation": assessment["recommendation"]},
                     run_id=run_id,
                 ),
             )
-            await _publish(run_id, publisher, Event(name="stage", payload={"stage": "report"}, run_id=run_id))
-            await _publish(
-                run_id, publisher,
+            _publish(run_id, Event(name="stage", payload={"stage": "report"}, run_id=run_id))
+            _publish(
+                run_id,
                 Event(name="run_completed", payload={"status": result.status.value, "findings": findings}, run_id=run_id),
             )
-        except GovernanceHaltError:
-            await _publish(run_id, publisher, Event(name="run_completed", payload={"status": "cancelled"}, run_id=run_id))
+        except TimeoutError:
+            _publish(
+                run_id,
+                Event(
+                    name="run_completed",
+                    payload={"status": "failed", "error": "Timed out waiting for the swarm to finish (see _HitlGate docstring)."},
+                    run_id=run_id,
+                ),
+            )
         except Exception as exc:
-            await _publish(run_id, publisher, Event(name="run_completed", payload={"status": "failed", "error": str(exc)}, run_id=run_id))
+            _publish(run_id, Event(name="run_completed", payload={"status": "failed", "error": str(exc)}, run_id=run_id))
 
     asyncio.create_task(run_task())
     return RunResponse(run_id=run_id)
@@ -599,33 +635,30 @@ def _frame(event: Event, run_id: str) -> str:
     return f"data: {payload}\n\n"
 
 
+_POLL_INTERVAL_SECONDS = 0.15
+
+
 @router.get("/stream/{run_id}")
 async def stream_run(run_id: str) -> StreamingResponse:
-    entry = _runs.get(run_id)
-    if entry is None:
+    if run_id not in _runs:
         raise HTTPException(status_code=404, detail="Run not found.")
-    publisher, _ = entry
-    # Subscribe first, then snapshot the replay buffer — no await between the two, so no event
-    # can land in neither (or both): anything already appended is in the snapshot; anything
-    # appended after is delivered live via this subscription (see _publish/_event_log above).
-    subscription = publisher.subscribe()
-    buffered = list(_event_log.get(run_id, []))
 
     async def event_generator():
+        sent = 0
         try:
-            for event in buffered:
-                yield _frame(event, run_id)
-                if event.name == "run_completed":
-                    return
             while True:
-                event = await subscription.get()
-                yield _frame(event, run_id)
-                if event.name == "run_completed":
-                    break
+                buffered = _event_log.get(run_id, [])
+                if sent < len(buffered):
+                    for event in buffered[sent:]:
+                        yield _frame(event, run_id)
+                        if event.name == "run_completed":
+                            return
+                    sent = len(buffered)
+                else:
+                    await asyncio.sleep(_POLL_INTERVAL_SECONDS)
         except asyncio.CancelledError:
             pass
         finally:
-            subscription.close()
             _runs.pop(run_id, None)
             _event_log.pop(run_id, None)
 
@@ -634,20 +667,17 @@ async def stream_run(run_id: str) -> StreamingResponse:
 
 @router.post("/{run_id}/approve")
 async def approve_run(run_id: str, req: SignoffRequest) -> dict:
-    entry = _runs.get(run_id)
-    if entry is None:
+    hitl = _runs.get(run_id)
+    if hitl is None:
         raise HTTPException(status_code=404, detail="Run not found.")
-    _, hitl = entry
     hitl.resolve("approve", req.approver or "reviewer")
     return {"status": "approved"}
 
 
 @router.post("/{run_id}/reject")
 async def reject_run(run_id: str, req: SignoffRequest) -> dict:
-    entry = _runs.get(run_id)
-    if entry is None:
+    hitl = _runs.get(run_id)
+    if hitl is None:
         raise HTTPException(status_code=404, detail="Run not found.")
-    _, hitl = entry
     hitl.resolve("reject", req.feedback or "Rejected by reviewer.")
     return {"status": "rejected"}
-    return swarm
