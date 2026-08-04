@@ -15,9 +15,14 @@ import os
 
 import httpx
 
-os.environ.pop("OPENAI_API_KEY", None)
+from main import app  # noqa: E402 — main.py's load_dotenv() runs on this import
 
-from main import app  # noqa: E402 — must follow the env pop above
+# main.py's load_dotenv() (triggered by the import above) reloads OPENAI_API_KEY from
+# dashboard/backend/.env if it's set there — popping *before* the import (the previous approach)
+# stopped working the moment a real key was added to .env, since the reload happens after. Pop
+# it here, after import, so these tests reliably exercise the offline gateway regardless of what
+# is or isn't in .env (T1/T4: no test touches the network or a real model).
+os.environ.pop("OPENAI_API_KEY", None)
 
 _TERMINAL_STATUSES = ("completed", "failed", "cancelled")
 

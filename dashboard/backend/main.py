@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # Load dashboard/backend/.env before anything reads os.environ (API keys, BEDROCK_MODEL_ID, etc).
 load_dotenv()
@@ -65,11 +65,34 @@ active_runs: Dict[str, tuple[EventPublisher, asyncio.Task, Optional[Any]]] = {}
 
 # Custom request models
 class KeyConfigRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "openai_key": "sk-demo-REPLACE_WITH_YOUR_OPENAI_KEY",
+                "anthropic_key": "sk-ant-demo-REPLACE_WITH_YOUR_ANTHROPIC_KEY",
+                "bedrock_token": "demo-bedrock-bearer-token",
+            }
+        }
+    )
+
     openai_key: Optional[str] = ""
     anthropic_key: Optional[str] = ""
     bedrock_token: Optional[str] = ""
 
 class AgentInput(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "id": "researcher",
+                "role": "Researcher",
+                "model": "gpt-4o-mini",
+                "goal": "Find information from the web.",
+                "backstory": "",
+                "tools": [],
+            }
+        }
+    )
+
     id: str
     role: str
     model: Optional[str] = None
@@ -78,6 +101,45 @@ class AgentInput(BaseModel):
     tools: List[str] = Field(default_factory=list)
 
 class SwarmStartRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "scenario": "scenario2",
+                "objective": "Write a comprehensive market analysis for the EV sector.",
+                "max_supersteps": 8,
+                "use_temporal": False,
+                "trust_threshold": 0.5,
+                "agents": [
+                    {
+                        "id": "researcher",
+                        "role": "Researcher",
+                        "model": "gpt-4o-mini",
+                        "goal": "Find information from the web.",
+                        "backstory": "",
+                        "tools": [],
+                    },
+                    {
+                        "id": "analyst",
+                        "role": "Analyst",
+                        "model": "gpt-4o-mini",
+                        "goal": "Analyze collected data.",
+                        "backstory": "",
+                        "tools": [],
+                    },
+                    {
+                        "id": "writer",
+                        "role": "Writer",
+                        "model": "gpt-4o",
+                        "goal": "Produce the final report.",
+                        "backstory": "",
+                        "tools": [],
+                    },
+                ],
+                "edges": [["researcher", "analyst"], ["analyst", "writer"]],
+            }
+        }
+    )
+
     scenario: Literal["scenario1", "scenario2", "scenario3", "scenario4"]
     objective: str
     max_supersteps: int = 10
