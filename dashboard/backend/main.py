@@ -15,7 +15,7 @@ load_dotenv()
 # Import SDK symbols
 from korchestrator import Agent, Swarm, Korch
 from korchestrator.config import Settings
-from korchestrator.events import Event, EventPublisher, format_sse
+from korchestrator.events import Event, EventPublisher
 from korchestrator.tools import ConnectorRegistry
 from korchestrator.models.state import AgentState, RunStatus
 from korchestrator.services.hooks import Middleware
@@ -26,6 +26,15 @@ try:
     from gateway import LiteLLMGateway  # when run from backend/ directory
 except ImportError:
     from dashboard.backend.gateway import LiteLLMGateway  # when run from repo root
+
+# The support-escalation demo: a separate, self-contained router (own run registry, own SSE
+# stream) added on top of the existing app without touching the scenario 1-4 code above.
+try:
+    from support_escalation_router import router as support_escalation_router
+except ImportError:
+    from dashboard.backend.support_escalation_router import (
+        router as support_escalation_router,
+    )
 
 
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +50,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(support_escalation_router)
 
 # Global memory storage
 api_keys: Dict[str, str] = {
@@ -389,13 +400,19 @@ async def stream_run_events(run_id: str):
     subscription = publisher.subscribe()
 
     async def event_generator():
+        import json as _json
         try:
             while True:
-                # Retrieve event and yield SSE format
                 event = await subscription.get()
-                yield format_sse(event)
-                
-                # Break stream if run has completed, failed, or cancelled
+                # Send as plain SSE data (no named event: line) so the browser's
+                # EventSource.onmessage fires. The JSON contains {name, payload, run_id}.
+                frame = _json.dumps({
+                    "name": event.name,
+                    "payload": dict(event.payload),
+                    "run_id": event.run_id or run_id,
+                }, separators=(",", ":"))
+                yield f"data: {frame}\n\n"
+
                 if event.name == "status_change":
                     status = event.payload.get("status")
                     if status in ["completed", "failed", "cancelled"]:
