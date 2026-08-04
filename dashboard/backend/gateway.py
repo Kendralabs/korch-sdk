@@ -15,6 +15,10 @@ logger = logging.getLogger("dashboard.gateway")
 # Default Bedrock model ID, overridable via the BEDROCK_MODEL_ID env var (see dashboard/backend/.env).
 DEFAULT_BEDROCK_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
 
+# Default OpenAI model for the "korch-default" placeholder (Tier-1 Korch with no per-agent model
+# set), overridable via the OPENAI_DEFAULT_MODEL env var.
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+
 # Matches "bedrock/...", any cross-region inference profile prefix (us./eu./apac./au./global.), or
 # a bare foundation-model id ("anthropic.claude-..."). Bedrock model ids vary by AWS region — the
 # concrete id always comes from BEDROCK_MODEL_ID (or the model string itself), never hardcoded here
@@ -23,10 +27,18 @@ _BEDROCK_MODEL_RE = re.compile(r"^(bedrock/|(us|eu|apac|au|global)\.anthropic\.|
 
 
 def _resolve_bedrock_model_id(model: str) -> str:
-    """Strip a "bedrock/" prefix and fall back to BEDROCK_MODEL_ID for a placeholder model."""
+    """Resolve the concrete Bedrock model ID to use for this invocation.
+
+    The BEDROCK_MODEL_ID env var is authoritative — when set, it overrides whatever the frontend
+    sends (which may be for a different region). This allows deploying to any region without
+    rebuilding the frontend or changing the agent model strings.
+    """
+    env_override = os.environ.get("BEDROCK_MODEL_ID")
+    if env_override:
+        return env_override
     bedrock_id = model.replace("bedrock/", "")
     if bedrock_id in ("bedrock", "", "auto"):
-        bedrock_id = os.environ.get("BEDROCK_MODEL_ID", DEFAULT_BEDROCK_MODEL_ID)
+        bedrock_id = DEFAULT_BEDROCK_MODEL_ID
     return bedrock_id
 
 class LiteLLMGateway(IModelGateway):
@@ -95,7 +107,30 @@ class LiteLLMGateway(IModelGateway):
         # to authenticate; its absence does NOT mean Bedrock is unavailable — boto3/litellm fall
         # back to the standard credential chain (e.g. an ECS task's IAM role), which is exactly how
         # the AWS deployment in dashboard/aws/ authenticates (no bearer-token secret needed there).
+        #
+        # When a non-Bedrock model arrives (e.g. "korch-default", "gpt-4o-mini") but the relevant
+        # provider key is missing, re-route to Bedrock via BEDROCK_MODEL_ID so the ECS deployment
+        # (which only has IAM-role Bedrock access) always works.
         is_bedrock = bool(_BEDROCK_MODEL_RE.match(model))
+        if not is_bedrock:
+            has_openai = bool(os.environ.get("OPENAI_API_KEY"))
+            has_anthropic = bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+            # "korch-default" is the SDK's placeholder for "no model configured" (Tier-1 Korch, or
+            # any agent with no explicit model). Resolve it to a real OpenAI model when a key is
+            # available instead of always forcing Bedrock — unconditionally routing this
+            # placeholder to Bedrock ignored a perfectly valid OpenAI key.
+            if model == "korch-default" and has_openai:
+                model = os.environ.get("OPENAI_DEFAULT_MODEL", DEFAULT_OPENAI_MODEL)
+
+            needs_openai = "openai" in model or "gpt" in model or model == "korch-default"
+            needs_anthropic = "anthropic" in model or "claude" in model
+            if (needs_openai and not has_openai) or (needs_anthropic and not has_anthropic):
+                bedrock_fallback = os.environ.get("BEDROCK_MODEL_ID")
+                if bedrock_fallback:
+                    logger.info(f"No credentials for model={model}; re-routing to Bedrock: {bedrock_fallback}")
+                    model = f"bedrock/{bedrock_fallback}"
+                    is_bedrock = True
         bedrock_token = self._api_keys.get("AWS_BEARER_TOKEN_BEDROCK") or os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
 
         content = ""
@@ -183,9 +218,11 @@ class LiteLLMGateway(IModelGateway):
             })
 
         return Message(
+            id=f"gw:{agent_role}:{datetime.now(timezone.utc).timestamp():.0f}",
             sender=agent_role,
             role=MessageRole.ASSISTANT,
             content=content,
+            superstep=0,
             valid_time=datetime.now(timezone.utc),
         )
 
