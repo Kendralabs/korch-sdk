@@ -13,6 +13,7 @@ import ReactFlow, {
   MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
+import SupportEscalationDemo from "./SupportEscalationDemo";
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -281,10 +282,15 @@ function AddAgentForm({ onAdd, onCancel }: { onAdd: (a: AgentDef) => void; onCan
 // Main App
 // ────────────────────────────────────────────────────────────
 export default function App() {
+  // Top-level mode: the original scenario dashboard, or the standalone real-OpenAI
+  // support-escalation demo panel — fully independent state, no shared wiring.
+  const [mode, setMode] = useState<"dashboard" | "support-escalation">("dashboard");
+
   // Scenario config
   const [scenario, setScenario] = useState<Scenario>("scenario1");
   const [objective, setObjective] = useState(SCENARIOS[0].defaultObjective);
   const [maxSupersteps, setMaxSupersteps] = useState(8);
+  const [runCount, setRunCount] = useState(1);
   const [trustThreshold, setTrustThreshold] = useState(0.5);
   const [agents, setAgents] = useState<AgentDef[]>(DEFAULT_AGENTS);
   const [rawEdges, setRawEdges] = useState<string[][]>(DEFAULT_EDGES);
@@ -308,6 +314,7 @@ export default function App() {
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
   const logEndRef = useRef<HTMLDivElement>(null);
   const sseRef    = useRef<EventSource | null>(null);
+  const terminalRef = useRef(false);
 
   // Auto-scroll logs
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logs]);
@@ -343,11 +350,12 @@ export default function App() {
     setSuperstep(0);
     setRfNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: "idle", lastMsg: "" } })));
     sseRef.current?.close();
+    terminalRef.current = false;
   }
 
   async function startRun() {
     resetAll();
-    pushLog("system", `Starting ${scenario} — connecting to backend...`);
+    pushLog("system", `Starting ${scenario} (${runCount} run${runCount > 1 ? "s" : ""}) — connecting to backend...`);
 
     // Parse edges from text for scenario2/3/4
     let parsedEdges = rawEdges;
@@ -356,7 +364,7 @@ export default function App() {
       setRawEdges(parsedEdges);
     }
 
-    let body: Record<string,unknown> = {
+    const body: Record<string,unknown> = {
       scenario,
       objective,
       max_supersteps: maxSupersteps,
@@ -372,33 +380,41 @@ export default function App() {
       body.edges = parsedEdges;
     }
 
-    let data: { run_id: string };
-    try {
-      const res = await fetch(`${API_BASE}/api/runs/start`, {
+    // Launch N parallel runs
+    const launches = Array.from({ length: runCount }, () =>
+      fetch(`${API_BASE}/api/runs/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        pushLog("error", `Backend error: ${JSON.stringify(err.detail)}`);
-        setRunStatus("error");
-        return;
-      }
-      data = await res.json();
+      }).then(r => r.ok ? r.json() : r.json().then(err => { throw new Error(JSON.stringify(err.detail)); }))
+    );
+
+    let results: { run_id: string }[];
+    try {
+      results = await Promise.all(launches);
     } catch (e: unknown) {
       pushLog("error", `Cannot reach backend at ${API_BASE}. Is it running? (${(e as Error).message})`);
       setRunStatus("error");
       return;
     }
 
-    setRunId(data.run_id);
+    const primaryRunId = results[0].run_id;
+    setRunId(primaryRunId);
     setRunStatus("running");
-    pushLog("system", `Run created: ${data.run_id}`);
+    for (const r of results) pushLog("system", `Run created: ${r.run_id}`);
+
+    // Open SSE streams for all runs — merge events into the shared log
+    for (const r of results) {
+      connectSSE(r.run_id, r.run_id === primaryRunId);
+    }
+  }
+
+  function connectSSE(sseRunId: string, isPrimary: boolean) {
+    const prefix = runCount > 1 ? `[${sseRunId.slice(-8)}] ` : "";
 
     // Open SSE stream
-    const es = new EventSource(`${API_BASE}/api/runs/${data.run_id}/stream`);
-    sseRef.current = es;
+    const es = new EventSource(`${API_BASE}/api/runs/${sseRunId}/stream`);
+    if (isPrimary) sseRef.current = es;
 
     es.onmessage = (ev) => {
       let event: { name: string; payload: Record<string,unknown>; run_id: string };
@@ -410,61 +426,61 @@ export default function App() {
         const status = payload.status as string;
         pushLog(
           status === "completed" ? "done" : status === "failed" || status === "cancelled" ? "error" : status === "governance_paused" ? "hitl" : "system",
-          `Status → ${status}${payload.final_answer ? ": " + String(payload.final_answer).slice(0,200) : ""}${payload.message ? " — " + String(payload.message) : ""}`
+          `${prefix}Status → ${status}${payload.final_answer ? ": " + String(payload.final_answer).slice(0,200) : ""}${payload.message ? " — " + String(payload.message) : ""}`
         );
 
-        if (status === "running") {
-          setRunStatus("running");
-          setAudit(prev => [...prev, { superstep: 0, msg: `Run started: ${payload.objective}`, tt: new Date().toISOString() }]);
-        } else if (status === "governance_paused") {
-          setRunStatus("paused");
-          setShowHITL(true);
-          if (typeof payload.trust_score === "number") setTrustScore(payload.trust_score);
-          pushLog("hitl", `HITL pause at superstep ${payload.superstep}. Trust score: ${payload.trust_score}`);
-        } else if (status === "completed") {
-          setRunStatus("done");
-          setFinalAnswer(String(payload.final_answer ?? ""));
-          if (typeof payload.trust_score === "number") setTrustScore(payload.trust_score);
-          // mark all nodes done
-          setRfNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: "done" } })));
-          es.close();
-        } else if (status === "failed") {
-          setRunStatus("error");
-          pushLog("error", `Run failed: ${payload.error}`);
-          setRfNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: "error" } })));
-          es.close();
-        } else if (status === "cancelled") {
-          setRunStatus("error");
-          setShowHITL(false);
-          pushLog("error", `Run cancelled: ${payload.message ?? "Rejected by operator."}`);
-          setRfNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: "error" } })));
-          es.close();
+        if (isPrimary) {
+          if (status === "running") {
+            setRunStatus("running");
+            setAudit(prev => [...prev, { superstep: 0, msg: `Run started: ${payload.objective}`, tt: new Date().toISOString() }]);
+          } else if (status === "governance_paused") {
+            setRunStatus("paused");
+            setShowHITL(true);
+            if (typeof payload.trust_score === "number") setTrustScore(payload.trust_score);
+            pushLog("hitl", `${prefix}HITL pause at superstep ${payload.superstep}. Trust score: ${payload.trust_score}`);
+          } else if (status === "completed") {
+            terminalRef.current = true;
+            setRunStatus("done");
+            setFinalAnswer(String(payload.final_answer ?? ""));
+            if (typeof payload.trust_score === "number") setTrustScore(payload.trust_score);
+            setRfNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: "done" } })));
+          } else if (status === "failed") {
+            terminalRef.current = true;
+            setRunStatus("error");
+            pushLog("error", `${prefix}Run failed: ${payload.error}`);
+            setRfNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: "error" } })));
+          } else if (status === "cancelled") {
+            terminalRef.current = true;
+            setRunStatus("error");
+            setShowHITL(false);
+            setRfNodes(prev => prev.map(n => ({ ...n, data: { ...n.data, status: "error" } })));
+          }
         }
+        if (["completed", "failed", "cancelled"].includes(status)) es.close();
       }
 
       if (name === "superstep") {
         const ss = payload.superstep as number ?? 0;
-        setSuperstep(ss);
-        pushLog("superstep", `Superstep ${ss} completed (status=${payload.status})`);
-        setAudit(prev => [...prev, { superstep: ss, msg: `Superstep ${ss}: ${payload.status}`, tt: new Date().toISOString() }]);
+        if (isPrimary) setSuperstep(ss);
+        pushLog("superstep", `${prefix}Superstep ${ss} completed (status=${payload.status})`);
+        if (isPrimary) setAudit(prev => [...prev, { superstep: ss, msg: `Superstep ${ss}: ${payload.status}`, tt: new Date().toISOString() }]);
       }
 
       if (name === "agent_thinking") {
         const { agent_id, status: s, model } = payload as { agent_id:string; status:string; model:string; error?:string };
         if (s === "thinking") {
-          pushLog("thinking", `[${agent_id}] → ${model}: thinking...`);
-          updateNodeStatus(agent_id, "running", "thinking…");
+          pushLog("thinking", `${prefix}[${agent_id}] → ${model}: thinking...`);
+          if (isPrimary) updateNodeStatus(agent_id, "running", "thinking…");
         } else if (s === "done") {
-          pushLog("thinking", `[${agent_id}] → response ready`);
-          updateNodeStatus(agent_id, "done");
+          pushLog("thinking", `${prefix}[${agent_id}] → response ready`);
+          if (isPrimary) updateNodeStatus(agent_id, "done");
         } else if (s === "error") {
-          pushLog("error", `[${agent_id}] → error: ${payload.error}`);
-          updateNodeStatus(agent_id, "error");
+          pushLog("error", `${prefix}[${agent_id}] → error: ${payload.error}`);
+          if (isPrimary) updateNodeStatus(agent_id, "error");
         }
       }
 
-      // Auto-build nodes for scenario1 (Korch autonomous)
-      if (name === "superstep" && scenario === "scenario1" && rfNodes.length === 0) {
+      if (isPrimary && name === "superstep" && scenario === "scenario1" && rfNodes.length === 0) {
         setRfNodes([{
           id: "korch-orchestrator",
           type: "agentNode",
@@ -475,8 +491,8 @@ export default function App() {
     };
 
     es.onerror = () => {
-      if (runStatus !== "done" && runStatus !== "error") {
-        pushLog("error", "SSE stream lost. The run may have completed.");
+      if (isPrimary && !terminalRef.current) {
+        pushLog("error", `${prefix}SSE stream lost. The run may have completed.`);
         setRunStatus("error");
       }
       es.close();
@@ -531,9 +547,19 @@ export default function App() {
           {runStatus === "idle" ? "Idle" : runStatus === "running" ? `Running · step ${superstep}` :
            runStatus === "paused" ? "Awaiting HITL" : runStatus === "done" ? "Completed" : "Error"}
         </div>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => setMode((m) => (m === "dashboard" ? "support-escalation" : "dashboard"))}
+        >
+          {mode === "dashboard" ? "🎫 Support Escalation Demo" : "◀ Back to Dashboard"}
+        </button>
         <button className="btn btn-ghost btn-sm" id="config-btn" onClick={() => setShowConfig(true)}>⚙ Config</button>
       </header>
 
+      {mode === "support-escalation" ? (
+        <SupportEscalationDemo apiBase={API_BASE} />
+      ) : (
+      <>
       {/* ── Main grid ── */}
       <div className="main-grid">
 
@@ -573,6 +599,13 @@ export default function App() {
               <div className="range-row">
                 <input type="range" min={1} max={20} value={maxSupersteps} onChange={e => setMaxSupersteps(+e.target.value)} />
                 <span className="range-val">{maxSupersteps}</span>
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Parallel runs</label>
+              <div className="range-row">
+                <input type="range" min={1} max={10} value={runCount} onChange={e => setRunCount(+e.target.value)} />
+                <span className="range-val">{runCount}</span>
               </div>
             </div>
             {scenario === "scenario4" && (
@@ -759,6 +792,8 @@ export default function App() {
       {/* ── Modals ── */}
       {showConfig && <ConfigModal onClose={() => setShowConfig(false)} />}
       {showHITL && runId && <HITLModal runId={runId} onDone={handleHITLDone} />}
+      </>
+      )}
     </div>
   );
 }
