@@ -36,6 +36,12 @@ except ImportError:
         router as support_escalation_router,
     )
 
+# The financial-crime investigation demo: same additive pattern as support_escalation_router.
+try:
+    from fincrime_router import router as fincrime_router
+except ImportError:
+    from dashboard.backend.fincrime_router import router as fincrime_router
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard.main")
@@ -52,6 +58,7 @@ app.add_middleware(
 )
 
 app.include_router(support_escalation_router)
+app.include_router(fincrime_router)
 
 # Global memory storage
 api_keys: Dict[str, str] = {
