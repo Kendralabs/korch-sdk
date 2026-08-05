@@ -101,6 +101,22 @@ input, select, textarea { font-family: inherit; }
   font-family: var(--mono);
 }
 .topbar-spacer { flex: 1; }
+.tracing-badges { display: flex; align-items: center; gap: 6px; margin-left: 10px; }
+.tracing-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  color: var(--text-3);
+  font-family: var(--mono);
+}
+.tracing-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.tracing-badge-on { color: var(--text-1); }
+.tracing-badge-on .tracing-badge-dot { background: var(--green); box-shadow: 0 0 5px var(--green); }
+.tracing-badge-off { opacity: 0.55; }
 .topbar-status {
   display: flex;
   align-items: center;
