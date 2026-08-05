@@ -1,16 +1,18 @@
 import { useState } from "react";
 import InvestigationConsole from "./InvestigationConsole";
 import SupportEscalationDemo from "./SupportEscalationDemo";
+import ResearcherDemo from "./ResearcherDemo";
 
 // Empty string in production (behind the nginx reverse proxy, same-origin /api/*); defaults to the
 // local dev backend otherwise. Configure via VITE_API_BASE at build time (see .env.example).
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
-type Swarm = "fincrime" | "support-escalation";
+type Swarm = "fincrime" | "support-escalation" | "researcher";
 
 const SWARMS: { id: Swarm; label: string; icon: string }[] = [
   { id: "fincrime", label: "Financial Crime Investigation", icon: "🕵" },
   { id: "support-escalation", label: "Support Escalation", icon: "🎫" },
+  { id: "researcher", label: "General Researcher", icon: "🔬" },
 ];
 
 export default function App() {
@@ -43,11 +45,9 @@ export default function App() {
         </div>
       </header>
 
-      {swarm === "fincrime" ? (
-        <InvestigationConsole apiBase={API_BASE} />
-      ) : (
-        <SupportEscalationDemo apiBase={API_BASE} />
-      )}
+      {swarm === "fincrime" && <InvestigationConsole apiBase={API_BASE} />}
+      {swarm === "support-escalation" && <SupportEscalationDemo apiBase={API_BASE} />}
+      {swarm === "researcher" && <ResearcherDemo apiBase={API_BASE} />}
     </div>
   );
 }
