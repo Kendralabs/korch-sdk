@@ -459,7 +459,9 @@ def _build_gateway(on_event) -> object:
         else OfflineGateway()
     )
     if tracing_enabled():
-        inner = TracedGateway(inner, project=os.environ.get("LANGSMITH_PROJECT", "korchestrator-fincrime-demo"))
+        # A fixed project name, not the shared LANGSMITH_PROJECT env var — each demo gets its own
+        # LangSmith project so traces from different demos never collide into one bucket.
+        inner = TracedGateway(inner, project="korchestrator-fincrime-demo")
     return _EventEmittingGateway(inner, on_event)
 
 

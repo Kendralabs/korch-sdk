@@ -28,6 +28,11 @@ from korchestrator.models.state import Message, MessageRole, RunStatus
 from korchestrator.providers import OpenAIGateway
 from korchestrator.tools import ConnectorRegistry
 
+try:
+    from tracing import TracedGateway, tracing_enabled
+except ImportError:
+    from dashboard.backend.tracing import TracedGateway, tracing_enabled
+
 router = APIRouter(prefix="/api/swarm/support-escalation", tags=["support-escalation"])
 
 _DEFAULT_MODELS = {
@@ -199,11 +204,16 @@ class OfflineGateway:
 
 def _build_gateway():
     api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        return OfflineGateway()
-    return OpenAIGateway(
-        api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    gateway = (
+        OpenAIGateway(api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+        if api_key
+        else OfflineGateway()
     )
+    if tracing_enabled():
+        # A fixed project name, not the shared LANGSMITH_PROJECT env var — each demo gets its own
+        # LangSmith project so traces from different demos never collide into one bucket.
+        gateway = TracedGateway(gateway, project="korchestrator-support-escalation-demo")
+    return gateway
 
 
 def _build_swarm(objective: str, models: dict[str, str]) -> Swarm:

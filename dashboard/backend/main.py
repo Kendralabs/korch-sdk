@@ -42,6 +42,12 @@ try:
 except ImportError:
     from dashboard.backend.fincrime_router import router as fincrime_router
 
+# The general researcher demo: same additive pattern, single agent, no topology or HITL gate.
+try:
+    from researcher_router import router as researcher_router
+except ImportError:
+    from dashboard.backend.researcher_router import router as researcher_router
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("dashboard.main")
@@ -59,6 +65,7 @@ app.add_middleware(
 
 app.include_router(support_escalation_router)
 app.include_router(fincrime_router)
+app.include_router(researcher_router)
 
 # Global memory storage
 api_keys: Dict[str, str] = {
