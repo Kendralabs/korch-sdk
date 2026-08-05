@@ -17,12 +17,18 @@ import httpx
 
 from main import app  # noqa: E402 — main.py's load_dotenv() runs on this import
 
-# main.py's load_dotenv() (triggered by the import above) reloads OPENAI_API_KEY from
-# dashboard/backend/.env if it's set there — popping *before* the import (the previous approach)
-# stopped working the moment a real key was added to .env, since the reload happens after. Pop
-# it here, after import, so these tests reliably exercise the offline gateway regardless of what
-# is or isn't in .env (T1/T4: no test touches the network or a real model).
-os.environ.pop("OPENAI_API_KEY", None)
+# main.py's load_dotenv() (triggered by the import above) reloads these from
+# dashboard/backend/.env if they're set there — popping *before* the import (the previous
+# approach) stopped working the moment a real key was added to .env, since the reload happens
+# after. Pop them here, after import, so these tests reliably exercise the offline gateway and
+# never touch LangSmith/KCG regardless of what is or isn't in .env (T1/T4: no test touches the
+# network or a real model/tracing service). KCG_API_KEY's absence matters here specifically:
+# TracedGateway/KCGTracedGateway each make a real HTTP call per LLM turn when their key is
+# present, and this router's 4-agent sequential flow is slow enough under that overhead to blow
+# past the test's own timeout — the same regression class test_perf_fincrime_swarm.py's isolation
+# exists to catch.
+for _key in ("OPENAI_API_KEY", "LANGSMITH_API_KEY", "LANGCHAIN_API_KEY", "KCG_API_KEY"):
+    os.environ.pop(_key, None)
 
 _TERMINAL_STATUSES = ("completed", "failed", "cancelled")
 

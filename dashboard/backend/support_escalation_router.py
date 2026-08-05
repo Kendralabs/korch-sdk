@@ -207,7 +207,7 @@ class OfflineGateway:
         return []
 
 
-def _build_gateway():
+def _build_gateway(run_id: str | None = None):
     api_key = os.environ.get("OPENAI_API_KEY")
     gateway = (
         OpenAIGateway(api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
@@ -219,14 +219,16 @@ def _build_gateway():
         # LangSmith project so traces from different demos never collide into one bucket.
         gateway = TracedGateway(gateway, project="korchestrator-support-escalation-demo")
     if kcg_tracing_enabled():
-        gateway = KCGTracedGateway(gateway, service_name="korchestrator-support-escalation-demo")
+        gateway = KCGTracedGateway(
+            gateway, service_name="korchestrator-support-escalation-demo", run_id=run_id
+        )
     return gateway
 
 
-def _build_swarm(objective: str, models: dict[str, str]) -> Swarm:
+def _build_swarm(objective: str, models: dict[str, str], run_id: str | None = None) -> Swarm:
     resolved = {**_DEFAULT_MODELS, **models}
     return (
-        Swarm(objective=objective, model_gateway=_build_gateway(), connectors=_tool_registry)
+        Swarm(objective=objective, model_gateway=_build_gateway(run_id), connectors=_tool_registry)
         .add(Agent(id="triage", role="triage-specialist", model=resolved["triage"]))
         .add(
             Agent(
@@ -249,7 +251,7 @@ async def start_run(req: RunRequest) -> RunResponse:
     publisher = EventPublisher()
     _runs[run_id] = publisher
 
-    swarm = _build_swarm(req.objective or _OBJECTIVE, req.agent_models)
+    swarm = _build_swarm(req.objective or _OBJECTIVE, req.agent_models, run_id)
 
     async def on_superstep(event: Event) -> None:
         await publisher.publish(Event(name="superstep", payload=dict(event.payload), run_id=run_id))

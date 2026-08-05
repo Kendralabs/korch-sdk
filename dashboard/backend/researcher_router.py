@@ -89,7 +89,7 @@ class OfflineGateway:
         return []
 
 
-def _build_gateway():
+def _build_gateway(run_id: str | None = None):
     api_key = os.environ.get("OPENAI_API_KEY")
     gateway = (
         OpenAIGateway(api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
@@ -99,12 +99,12 @@ def _build_gateway():
     if tracing_enabled():
         gateway = TracedGateway(gateway, project="korchestrator-researcher-demo")
     if kcg_tracing_enabled():
-        gateway = KCGTracedGateway(gateway, service_name="korchestrator-researcher-demo")
+        gateway = KCGTracedGateway(gateway, service_name="korchestrator-researcher-demo", run_id=run_id)
     return gateway
 
 
-def _build_swarm(question: str, model: str) -> Swarm:
-    return Swarm(objective=question, model_gateway=_build_gateway()).add(
+def _build_swarm(question: str, model: str, run_id: str | None = None) -> Swarm:
+    return Swarm(objective=question, model_gateway=_build_gateway(run_id)).add(
         Agent(id="researcher", role=_ROLE, model=model)
     )
 
@@ -115,7 +115,7 @@ async def start_run(req: RunRequest) -> RunResponse:
     _runs[run_id] = True
     _event_log[run_id] = []
 
-    swarm = _build_swarm(req.question or _DEFAULT_QUESTION, req.model or _DEFAULT_MODEL)
+    swarm = _build_swarm(req.question or _DEFAULT_QUESTION, req.model or _DEFAULT_MODEL, run_id)
 
     async def run_task() -> None:
         try:

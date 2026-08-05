@@ -456,7 +456,7 @@ class OfflineGateway:
         return []
 
 
-def _build_gateway(on_event) -> object:
+def _build_gateway(on_event, run_id: str | None = None) -> object:
     api_key = os.environ.get("OPENAI_API_KEY")
     inner = (
         OpenAIGateway(api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
@@ -470,7 +470,7 @@ def _build_gateway(on_event) -> object:
     if kcg_tracing_enabled():
         # Stacks alongside (not instead of) LangSmith — both wrappers can wrap the same inner
         # gateway, so one demo run emits to both platforms simultaneously.
-        inner = KCGTracedGateway(inner, service_name="korchestrator-fincrime-demo")
+        inner = KCGTracedGateway(inner, service_name="korchestrator-fincrime-demo", run_id=run_id)
     return _EventEmittingGateway(inner, on_event)
 
 
@@ -571,7 +571,7 @@ async def start_run(req: RunRequest) -> RunResponse:
     def on_event(name: str, payload: dict) -> None:
         _publish(run_id, Event(name=name, payload=payload, run_id=run_id))
 
-    gateway = _build_gateway(on_event)
+    gateway = _build_gateway(on_event, run_id)
     registry = _build_tool_registry()
     swarm = _build_swarm(req.objective or _OBJECTIVE, req.agent_models, gateway, registry, hitl)
 
