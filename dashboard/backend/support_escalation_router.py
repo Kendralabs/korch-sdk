@@ -33,6 +33,11 @@ try:
 except ImportError:
     from dashboard.backend.tracing import TracedGateway, tracing_enabled
 
+try:
+    from kcg_tracing import KCGTracedGateway, kcg_tracing_enabled
+except ImportError:
+    from dashboard.backend.kcg_tracing import KCGTracedGateway, kcg_tracing_enabled
+
 router = APIRouter(prefix="/api/swarm/support-escalation", tags=["support-escalation"])
 
 _DEFAULT_MODELS = {
@@ -213,6 +218,8 @@ def _build_gateway():
         # A fixed project name, not the shared LANGSMITH_PROJECT env var — each demo gets its own
         # LangSmith project so traces from different demos never collide into one bucket.
         gateway = TracedGateway(gateway, project="korchestrator-support-escalation-demo")
+    if kcg_tracing_enabled():
+        gateway = KCGTracedGateway(gateway, service_name="korchestrator-support-escalation-demo")
     return gateway
 
 

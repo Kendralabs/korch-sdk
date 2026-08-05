@@ -272,6 +272,10 @@ async def get_config():
         "openai_key": bool(api_keys["OPENAI_API_KEY"]),
         "anthropic_key": bool(api_keys["ANTHROPIC_API_KEY"]),
         "bedrock_token": bool(api_keys["AWS_BEARER_TOKEN_BEDROCK"]),
+        "langsmith_tracing": bool(
+            os.environ.get("LANGSMITH_API_KEY") or os.environ.get("LANGCHAIN_API_KEY")
+        ),
+        "kcg_tracing": bool(os.environ.get("KCG_API_KEY")),
     }
 
 @app.post("/api/config")

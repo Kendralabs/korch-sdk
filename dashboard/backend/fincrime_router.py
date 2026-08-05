@@ -41,6 +41,11 @@ except ImportError:
     from dashboard.backend.tracing import TracedGateway, tracing_enabled
 
 try:
+    from kcg_tracing import KCGTracedGateway, kcg_tracing_enabled
+except ImportError:
+    from dashboard.backend.kcg_tracing import KCGTracedGateway, kcg_tracing_enabled
+
+try:
     from fincrime_data import (
         ACTIVITY_PROFILE,
         ADVERSE_MEDIA,
@@ -462,6 +467,10 @@ def _build_gateway(on_event) -> object:
         # A fixed project name, not the shared LANGSMITH_PROJECT env var — each demo gets its own
         # LangSmith project so traces from different demos never collide into one bucket.
         inner = TracedGateway(inner, project="korchestrator-fincrime-demo")
+    if kcg_tracing_enabled():
+        # Stacks alongside (not instead of) LangSmith — both wrappers can wrap the same inner
+        # gateway, so one demo run emits to both platforms simultaneously.
+        inner = KCGTracedGateway(inner, service_name="korchestrator-fincrime-demo")
     return _EventEmittingGateway(inner, on_event)
 
 
