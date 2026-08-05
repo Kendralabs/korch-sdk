@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import InvestigationConsole from "./InvestigationConsole";
 import SupportEscalationDemo from "./SupportEscalationDemo";
 import ResearcherDemo from "./ResearcherDemo";
@@ -15,8 +15,38 @@ const SWARMS: { id: Swarm; label: string; icon: string }[] = [
   { id: "researcher", label: "General Researcher", icon: "🔬" },
 ];
 
+interface TracingStatus {
+  langsmith_tracing: boolean;
+  kcg_tracing: boolean;
+}
+
+function TracingBadge({ label, active }: { label: string; active: boolean }) {
+  return (
+    <span className={`tracing-badge ${active ? "tracing-badge-on" : "tracing-badge-off"}`}>
+      <span className="tracing-badge-dot" />
+      {label}
+    </span>
+  );
+}
+
 export default function App() {
   const [swarm, setSwarm] = useState<Swarm>("fincrime");
+  const [tracing, setTracing] = useState<TracingStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/api/config`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setTracing(data);
+      })
+      .catch(() => {
+        if (!cancelled) setTracing(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div className="app">
@@ -31,6 +61,12 @@ export default function App() {
           Korchestrator SDK
         </div>
         <span className="topbar-version">v0.1.0</span>
+        {tracing && (
+          <div className="tracing-badges">
+            <TracingBadge label="LangSmith" active={tracing.langsmith_tracing} />
+            <TracingBadge label="KCG" active={tracing.kcg_tracing} />
+          </div>
+        )}
         <div className="topbar-spacer" />
         <div className="ic-swarm-select">
           {SWARMS.map((s) => (
