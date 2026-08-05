@@ -27,6 +27,11 @@ try:
 except ImportError:
     from dashboard.backend.tracing import TracedGateway, tracing_enabled
 
+try:
+    from kcg_tracing import KCGTracedGateway, kcg_tracing_enabled
+except ImportError:
+    from dashboard.backend.kcg_tracing import KCGTracedGateway, kcg_tracing_enabled
+
 router = APIRouter(prefix="/api/swarm/researcher", tags=["researcher"])
 
 _DEFAULT_MODEL = "gpt-4o-mini"
@@ -93,6 +98,8 @@ def _build_gateway():
     )
     if tracing_enabled():
         gateway = TracedGateway(gateway, project="korchestrator-researcher-demo")
+    if kcg_tracing_enabled():
+        gateway = KCGTracedGateway(gateway, service_name="korchestrator-researcher-demo")
     return gateway
 
 
