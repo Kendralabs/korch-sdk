@@ -44,11 +44,18 @@ async def _one_run(index: int) -> tuple[bool, float, str]:
         return False, elapsed, f"error: {exc}"
 
 
+_TRACING_KEYS = ("OPENAI_API_KEY", "LANGSMITH_API_KEY", "LANGCHAIN_API_KEY", "KCG_API_KEY")
+
+
 def test_concurrent_fincrime_runs_meet_latency_and_success_targets() -> None:
-    # Force the offline gateway regardless of what's in the environment/.env — this test's
-    # determinism/speed/cost guarantees (T1) must not depend on whether OPENAI_API_KEY happens
-    # to be set. The live-model variant below is the explicit opt-in path for a real key.
-    saved_key = os.environ.pop("OPENAI_API_KEY", None)
+    # Force the offline gateway *and* both tracing wrappers off, regardless of what's in the
+    # environment/.env — this test's determinism/speed/cost guarantees (T1) must not depend on
+    # whether OPENAI_API_KEY/LANGSMITH_API_KEY/KCG_API_KEY happen to be set. TracedGateway and
+    # KCGTracedGateway each make a real HTTP call per LLM turn when their key is present, which
+    # blew this test's latency budget the moment KCG_API_KEY landed in .env (p95 67s vs a 20s
+    # budget) — the exact class of regression this assertion exists to catch. The live-model
+    # variant below is the explicit opt-in path for a real key.
+    saved = {k: os.environ.pop(k, None) for k in _TRACING_KEYS}
     try:
 
         async def _go() -> list[tuple[bool, float, str]]:
@@ -56,8 +63,9 @@ def test_concurrent_fincrime_runs_meet_latency_and_success_targets() -> None:
 
         results = asyncio.run(asyncio.wait_for(_go(), timeout=120))
     finally:
-        if saved_key is not None:
-            os.environ["OPENAI_API_KEY"] = saved_key
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v
 
     successes = [elapsed for ok, elapsed, _ in results if ok]
     failures = [(elapsed, status) for ok, elapsed, status in results if not ok]

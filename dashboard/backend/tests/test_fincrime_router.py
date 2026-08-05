@@ -1,4 +1,4 @@
-"""Tests for the fincrime router: no network, no OPENAI_API_KEY, no LangSmith key (T1/T4).
+"""Tests for the fincrime router: no network, no OPENAI_API_KEY, no LangSmith/KCG key (T1/T4).
 
 Runs against a real local uvicorn server (a background thread, ephemeral port), not an in-process
 ASGI test transport — every in-process transport tried (httpx.ASGITransport, Starlette's
@@ -28,6 +28,7 @@ import uvicorn
 os.environ.pop("OPENAI_API_KEY", None)
 os.environ.pop("LANGSMITH_API_KEY", None)
 os.environ.pop("LANGCHAIN_API_KEY", None)
+os.environ.pop("KCG_API_KEY", None)
 
 from main import app  # noqa: E402 — must follow the env pops above
 

@@ -19,6 +19,7 @@ from main import app  # noqa: E402 — main.py's load_dotenv() runs on this impo
 os.environ.pop("OPENAI_API_KEY", None)
 os.environ.pop("LANGSMITH_API_KEY", None)
 os.environ.pop("LANGCHAIN_API_KEY", None)
+os.environ.pop("KCG_API_KEY", None)
 
 
 async def _ask(question: str | None = None, model: str | None = None) -> list[dict]:
