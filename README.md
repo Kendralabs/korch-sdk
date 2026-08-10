@@ -1,4 +1,4 @@
-# Korchestrator SDK
+# Kendra Orchestration Engine
 
 **Durable, deterministic, multi-agent execution as an installable Python library.**
 
