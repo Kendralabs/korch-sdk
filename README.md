@@ -1,4 +1,4 @@
-# Kendra Orchestration Engine
+# Kendra Orchestration Engine (KOE)
 
 **Durable, deterministic, multi-agent execution as an installable Python library.**
 
