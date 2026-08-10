@@ -15,8 +15,7 @@
 
 ## What this is
 
-Korchestrator runs multi-agent workflows ("swarms") as a **Pregel-style Bulk Synchronous Parallel
-computation on top of Temporal**. That combination buys four things ad-hoc agent frameworks do not
+KOE runs multi-agent workflows ("swarms"). That combination buys four things ad-hoc agent frameworks do not
 have:
 
 - **Durability** — every superstep is checkpointed. A crash resumes from the last barrier instead of
