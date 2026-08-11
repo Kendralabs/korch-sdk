@@ -4,7 +4,7 @@ How Korchestrator is put together, and why — for anyone embedding it, extendin
 wanting to understand what "durable, deterministic, multi-agent execution" actually means
 mechanically.
 
-## The execution model: Pregel BSP
+## The execution model: BSP supersteps
 
 A swarm run proceeds as a sequence of **supersteps**. In each superstep:
 
@@ -13,8 +13,9 @@ A swarm run proceeds as a sequence of **supersteps**. In each superstep:
 3. Messages route to their targets' inboxes for the next superstep.
 4. The run halts once every agent has halted, or `max_supersteps` is reached.
 
-This is the [Pregel](https://kowshik.github.io/JPregel/pregel_paper.pdf) model — the same one
-large-scale graph-processing systems use — applied to agent reasoning instead of graph algorithms.
+This is the [Bulk Synchronous Parallel](https://kowshik.github.io/JPregel/pregel_paper.pdf) model —
+the same one large-scale graph-processing systems use — applied to agent reasoning instead of graph
+algorithms.
 It buys two properties ad-hoc agent loops don't have:
 
 - **Real parallelism.** N agents active in one superstep genuinely run concurrently, not
@@ -32,7 +33,7 @@ drives it:
 
 - **Local runtime** (the default) — in-process, synchronous from the caller's point of view. Zero
   infrastructure; the right choice for development, CI, and short-lived runs.
-- **Temporal runtime** (`[temporal]` extra) — every superstep is checkpointed durably. A crash
+- **Durable runtime** (`[temporal]` extra) — every superstep is checkpointed durably. A crash
   resumes from the last barrier instead of losing the run, and a run can be paused for human
   review and resumed later (see the [HITL tutorial](tutorials/hitl.md)).
 
@@ -48,8 +49,8 @@ services/    FAÇADE — Korch, Swarm, Agent. The only place collaborators are w
    ↓
 agents/      COGNITIVE — reasoning, DSPy-compiled signatures, the worker and architect agents.
    ↓
-core/        KERNEL — the Pregel runner, the graph, the reducers. Framework-free: imports only
-             interfaces/, models/, stdlib, and pydantic. No FastAPI, no Temporal, no DSPy.
+core/        KERNEL — the superstep runner, the graph, the reducers. Framework-free: imports only
+             interfaces/, models/, stdlib, and pydantic. No FastAPI, no workflow engine, no DSPy.
    ↓
 interfaces/  models/    THE CONTRACTS — ports, protocols, typed data. Depend on nothing but
                          pydantic and the standard library.
@@ -61,8 +62,8 @@ each other. If two features need to share something, it lives in `interfaces/` o
 in one feature importing the other.
 
 Why this matters as a user, not just as a contributor: it's what makes the kernel embeddable. The
-deterministic core has exactly one runtime dependency (`pydantic`), so it can run inside a
-Temporal workflow sandbox, a notebook, a Lambda, or your own framework's process without dragging
+deterministic core has exactly one runtime dependency (`pydantic`), so it can run inside a durable
+workflow engine's sandbox, a notebook, a Lambda, or your own framework's process without dragging
 along DSPy, an HTTP stack, or anything else your application doesn't already need.
 
 ## The ARI ports
@@ -72,7 +73,7 @@ managed infrastructure" — without an agent's code ever needing to know which s
 
 - **`IModelGateway`** — how a completion request reaches a model. `MockLM` (deterministic,
   offline) locally; a real gateway in production.
-- **`IDurableRuntime`** — how a run executes. The local or Temporal runtime, as above.
+- **`IDurableRuntime`** — how a run executes. The local or durable runtime, as above.
 - **`IExecutionSandbox`** — how a tool call actually runs. A local subprocess sandbox by default.
 
 A fourth port, `IIdentityProvider`, resolves an agent's identity and tenant. All four are documented
