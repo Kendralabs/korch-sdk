@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from korchestrator.events import Event, EventPublisher
+from korchestrator.exceptions import GovernanceHaltError
 from korchestrator.models.state import AgentState
 from korchestrator.services import HookRegistry, Middleware
 
@@ -80,6 +83,35 @@ async def test_a_raising_middleware_is_isolated() -> None:
     class Boom(Middleware):
         async def before_superstep(self, state: AgentState) -> None:
             raise RuntimeError("middleware down")
+
+    registry = HookRegistry().register_middleware(Boom()).register_middleware(_Recorder("ok", log))
+    await registry.before_superstep(_state())  # does not raise
+    assert log == ["before:ok"]
+
+
+async def test_governance_halt_error_propagates_from_before_superstep() -> None:
+    log: list[str] = []
+
+    class Veto(Middleware):
+        async def before_superstep(self, state: AgentState) -> None:
+            raise GovernanceHaltError("trust below threshold")
+
+    registry = (
+        HookRegistry().register_middleware(Veto()).register_middleware(_Recorder("never", log))
+    )
+    with pytest.raises(GovernanceHaltError):
+        await registry.before_superstep(_state())
+    assert log == []  # a later middleware never runs once the veto raises
+
+
+async def test_a_raising_middleware_is_still_isolated_alongside_a_veto() -> None:
+    # A plain exception from one middleware must stay isolated even in a registry that ALSO has a
+    # GovernanceHaltError-raising middleware registered — only the specific veto type propagates.
+    log: list[str] = []
+
+    class Boom(Middleware):
+        async def before_superstep(self, state: AgentState) -> None:
+            raise RuntimeError("unrelated failure")
 
     registry = HookRegistry().register_middleware(Boom()).register_middleware(_Recorder("ok", log))
     await registry.before_superstep(_state())  # does not raise

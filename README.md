@@ -69,6 +69,57 @@ from korchestrator.remote import KorchestratorClient
 
 Full surface: [docs/specs/04-public-api.md](docs/specs/04-public-api.md).
 
+## Features
+
+Everything below ships and is tested today — see [Project status](#project-status) for what's
+still outstanding. 26 subpackages under `src/korchestrator/`, each with a single layer and a
+single responsibility ([docs/specs/03-architecture.md](docs/specs/03-architecture.md)):
+
+| Module | Layer | What it does |
+|---|---|---|
+| `services` | Façade | Composition root — the `Korch` / `Swarm` / `Agent` builders, hooks and middleware |
+| `core` | Kernel | The Pregel BSP kernel — graph, supersteps, reducers, activation and halting |
+| `runtime` | Adapter | `IDurableRuntime` twice over: in-process `local_runtime` and durable, replayable `temporal_runtime` |
+| `agents` | Cognitive | DSPy-backed reasoning — agent base, `WorkerAgent`, `ArchitectAgent`, compiled signatures |
+| `taxonomy` | Cognitive | Classifies an objective's intent/difficulty; holds the built-in agent-descriptor catalogue |
+| `routing` | Cognitive | Per-agent model selection — explicit/fallback, algorithmic, semantic, composite/user-function strategies |
+| `providers` | Adapter | Default ARI implementations — `MockLM` (offline default), OpenAI-compatible gateway, local identity/sandbox |
+| `tools` | Integration | Agent Utility Bridge — connector registry, schema validation, timeouts, rate limits, the Shield gate |
+| `mcp` | Integration | Model Context Protocol client — discovers a server's tools and exposes them as connectors |
+| `a2a` | Integration | Agent-to-agent handoffs, transformed into typed directed messages |
+| `context` | Context | Compiles execution context; extracts the Minimum Viable Context and prunes the hot loop |
+| `events` | Integration | Publishes transport-agnostic execution events (the SDK emits, it never serves HTTP) |
+| `governance` | Governance | Trust scoring, policy evaluation, human-in-the-loop pause/resume decisions |
+| `security` | Leaf | `Shield` — the one PII/secret redactor |
+| `persistence` | Context | Bitemporal Context Graph client behind `GraphRepository` (in-memory default backend) |
+| `models` | Contract | The frozen Pydantic domain models exchanged across every boundary |
+| `interfaces` | Contract | The ARI ports (`IIdentityProvider`, `IExecutionSandbox`, `IModelGateway`) and supporting protocols |
+| `exceptions` | Leaf | The whole `KorchError` tree — every deliberate SDK error is one subclass |
+| `config` | Leaf | The only module that reads env/`.env`; owns `Settings` and `configure()`/`get_settings()` |
+| `constants` | Leaf | Default values, error-code enums, event names |
+| `types` | Leaf | Shared type aliases, `TypedDict`s and non-ARI protocols |
+| `validators` | Leaf | Boundary validation for parameters, config, graphs, tool schemas and responses |
+| `logging` | Leaf | The namespaced `korchestrator` logger and `enable_logging()`/`disable_logging()` |
+| `serializers` | Leaf | Deterministic, version-tagged JSON round-tripping for `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult` |
+| `telemetry` | Leaf | Optional OpenTelemetry spans/metrics, zero cost when disabled (`[otel]`) |
+| `clients` | Client | `KorchestratorClient` — the Tier-4 remote HTTP client (`[remote]`), re-exported as `korchestrator.remote` |
+
+Capability highlights that fall out of those modules:
+
+- **Local or durable execution** — the same graph runs synchronously in-process or on Temporal with
+  crash recovery, pause/resume, and replay, chosen by one config value.
+- **Per-agent model routing** — mix models (and providers) in a single swarm; route explicitly, by
+  algorithm, by semantic similarity, or by your own function.
+- **Tool use** — first-party connectors, MCP servers, and custom connectors behind one bridge with
+  schema validation, timeouts, and rate limiting.
+- **Governance & HITL** — trust scoring and policy checks that can auto-pause a run for human
+  approval (durable runtime only).
+- **PII/secret redaction** — the `Shield` gate, applied on tool output and context-graph ingest.
+- **Bitemporal audit trail** — the Context Graph answers "what did the agent know when it decided?"
+- **Streaming** — subscribe to transport-agnostic execution events as a run progresses.
+- **Deterministic testing** — `MockLM` is the default model gateway; nothing touches the network
+  unless you configure a real one.
+
 ## Installation
 
 **Not yet published to PyPI** (packaging/publishing is Phase 12). Until then, install from source:
@@ -86,6 +137,75 @@ full extras table.
 The base install has **one runtime dependency**. Everything heavy is an optional extra, lazy-imported
 so `import korchestrator` stays fast and the kernel stays embeddable. The default configuration runs
 offline against a deterministic mock model — no keys, no services, no infrastructure.
+
+> **Windows note.** `pip install -e '.[dev]'` installs console scripts (`mkdocs`, `pytest`, `ruff`,
+> `mypy`, `bandit`, `pre-commit`, …) into your per-user `Scripts` directory (e.g.
+> `%APPDATA%\Python\Python3xx\Scripts`). If a bare command isn't found right after install, either
+> run it as `python -m <tool>` (e.g. `python -m mkdocs serve`) in the current shell, or add that
+> `Scripts` directory to your user `PATH` and open a new terminal. See
+> [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## Quick start — first run to a passing test suite
+
+A complete, ordered sequence from a clone to a verified local setup. Every step runs offline; none
+of it needs API keys, Docker, or a deployed service.
+
+```bash
+# 1. Clone and install (dev extras: every extra + lint/type/test/docs tooling)
+git clone <repository-url> && cd korch-sdk
+pip install -e '.[dev]'
+
+# 2. Verify the import — works on the base install, no extras, no network
+python -c "import korchestrator; print(korchestrator.__version__)"
+
+# 3. Run your first swarm, entirely offline against MockLM
+python examples/01_one_liner.py
+python examples/02_swarm.py          # typed builder, multiple agents, per-agent models
+
+# 4. Explore the rest of the example set
+python examples/03_custom_agent.py   # subclass Agent, override its reasoning step
+python examples/04_custom_tool.py    # write and mount a custom tool connector
+python examples/05_mcp_tool.py       # discover tools from an MCP server (needs [mcp])
+python examples/06_custom_router.py  # write a custom per-agent model router
+python examples/07_streaming.py      # consume execution events as a run progresses
+
+# 5. Run the full quality gate the way CI does
+ruff check src/korchestrator tests
+ruff format --check src/korchestrator tests
+mypy --strict src/korchestrator
+pytest tests --cov=korchestrator --cov-report=term-missing
+
+# 6. Build and preview the documentation site locally
+mkdocs build --strict
+mkdocs serve      # → http://127.0.0.1:8000
+```
+
+(Use `python -m mkdocs`, `python -m pytest`, etc. in place of the bare command if step 1's console
+scripts aren't on `PATH` yet — see the Windows note above.)
+
+### Testing a single module
+
+Tests mirror `src/korchestrator/<module>` one-to-one under `tests/unit/<module>/`. Run just one
+module's suite while you're working on it:
+
+```bash
+pytest tests/unit/core -v          # kernel
+pytest tests/unit/providers -v     # MockLM, gateways, identity/sandbox
+pytest tests/unit/routing -v       # model routing strategies
+pytest tests/unit/tools -v         # Agent Utility Bridge
+pytest tests/unit/governance -v    # trust scoring, policy, HITL
+pytest tests/unit/clients -v       # remote client contract
+```
+
+Other suites live in `tests/integration/`, `tests/e2e/`, `tests/regression/`, and `tests/smoke/`.
+The **base-install kernel suite** — what must pass with only `pydantic` installed, no extras — is:
+
+```bash
+pytest tests/unit/core tests/unit/models tests/smoke
+```
+
+Coverage floor: 90% global, 97% for `core/`, 99% for `models/` — ratcheted up over time, never down.
+Full command reference: [docs/specs/09-testing-and-quality.md](docs/specs/09-testing-and-quality.md).
 
 ## Project status
 
@@ -135,16 +255,11 @@ itself):
 ## Contributing
 
 Read [docs/specs/01-scope-and-principles.md](docs/specs/01-scope-and-principles.md) first — it
-defines what belongs in this repository and what never will.
+defines what belongs in this repository and what never will. Follow [Quick start](#quick-start--first-run-to-a-passing-test-suite)
+above to get installed and green, plus this one extra step:
 
 ```bash
-git clone <repository-url> && cd korch-sdk
-pip install -e '.[dev]'
-chmod +x .claude/hooks/pre-commit-check.sh   # once, after cloning
-
-ruff check src/korchestrator tests
-mypy --strict src/korchestrator
-pytest tests --cov=korchestrator --cov-report=term-missing
+chmod +x .claude/hooks/pre-commit-check.sh   # once, after cloning — enforces the gates below at commit time
 ```
 
 Branch off `develop` as `<type>/p<phase>-<slug>`. Use Conventional Commits with a phase tag

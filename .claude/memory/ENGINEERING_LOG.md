@@ -10,6 +10,69 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-07-30 · Governance halt veto wired in hooks + Pregel — v0.1.0
+
+**Type:** fix · **Phase:** retroactively completes spec 07 §9 (deferred at P6.8/P7) · **Author:**
+Claude (agent)
+
+**What.** `korchestrator.services.hooks.HookRegistry.before_superstep()` now lets a
+`GovernanceHaltError` raised by a `Middleware.before_superstep` propagate (every other exception
+from any hook phase is still isolated exactly as before — logged, run continues).
+`korchestrator.core.pregel.PregelRunner.run()` catches that one exception, skips the vetoed
+superstep's compute phase entirely, and returns a terminal `RunResult` with
+`status=RunStatus.GOVERNANCE_PAUSED`, `error_code` set to the exception's `code`, and `error` set
+to its `message`. `build_result()` gained an `error: str | None = None` parameter (defaults to the
+existing hardcoded max-supersteps message when `error_code` is set and `error` isn't given, so the
+max-supersteps path is unchanged). `SuperstepObserver`'s protocol docstring documents the one
+sanctioned exception.
+
+**Why.** Building the dashboard client app's HITL scenario (`dashboard_spec.md` scenario 4)
+surfaced that the SDK's own documented behavior for this exact case — spec 07 §9's extensibility
+table, and `hooks.py`'s own module docstring — was never implemented: it was explicitly deferred
+("wired with governance in a later phase"). A middleware could observe a run but never actually
+stop one, so an operator's HITL "reject" decision had no way to make the SDK halt — the swarm kept
+computing in the background regardless. The user asked for this fixed properly rather than worked
+around at the dashboard level, and the gap turned out to be small, additive, and fully specified
+already.
+
+**Design decisions.** See [ADR 0019](../../docs/adr/0019-governance-halt-veto-wired-in-hooks-and-pregel.md)
+for the full context, alternatives considered, and the local-runtime `GOVERNANCE_PAUSED`-is-terminal
+caveat (no resume path exists on `LocalRuntime` today — that's a pre-existing asymmetry in the spec,
+not introduced here, but this change makes it observable for the first time).
+
+**Architecture changes.** None — no new module, no new public name, no boundary change. `core/`
+still imports only `interfaces/`, `models/`, `exceptions/`, stdlib, `pydantic`.
+
+**Files/modules affected.** `src/korchestrator/services/hooks.py`, `src/korchestrator/core/pregel.py`,
+`tests/unit/services/test_hooks.py`, `tests/unit/core/test_pregel.py`, `tests/unit/services/test_run.py`,
+`docs/adr/0019-governance-halt-veto-wired-in-hooks-and-pregel.md`, `CHANGELOG.md`.
+
+**Breaking changes.** None. `RunStatus.GOVERNANCE_PAUSED` already existed; no `__all__`, public
+model field, or signature was removed/narrowed. `build_result`'s new `error` parameter is optional
+and keyword-only-by-position after existing parameters, defaulting to the prior behavior.
+
+**Feature version / revision.** `0.1.0` (pre-release; 0.x MINOR may break per policy — this one
+doesn't).
+
+**Migration notes.** N/A — additive, no consumer action required. A `Middleware.before_superstep`
+that already raised `GovernanceHaltError` expecting it to be swallowed (there were none in-tree)
+would now see the run halt instead; this is the intended fix, not a regression.
+
+**Testing status.** `mypy --strict` and `ruff check`/`format --check` clean on both changed modules.
+New tests: `test_hooks.py::test_governance_halt_error_propagates_from_before_superstep` and
+`::test_a_raising_middleware_is_still_isolated_alongside_a_veto`; `test_pregel.py::
+test_a_governance_halt_from_the_observer_pauses_the_run`; `test_run.py::
+test_a_governance_halt_error_pauses_the_run_end_to_end` (full `Swarm.run()` path). Full repo
+`pytest --cov=korchestrator` run to confirm no regressions (see PR/commit for the result).
+
+**Known limitations / future improvements.** Temporal's runtime does not drive
+`SuperstepObserver`/`HookRegistry` at all yet, so a real Temporal-backed governance pause-and-resume
+remains a later-phase capability — this change only completes the local-runtime veto path. On the
+local runtime, `GOVERNANCE_PAUSED` is effectively terminal (no resume API); a future phase wiring
+Temporal hook dispatch is where a genuinely resumable pause would land.
+
+---
+
 ## 2026-07-24 · [P11.6] Examples — v0.1.0
 
 **Type:** docs · **Phase:** P11 (documentation, examples & DX) · **Author:** Claude (agent)

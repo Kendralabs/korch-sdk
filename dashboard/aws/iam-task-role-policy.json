@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeBedrockClaudeModels",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:<REGION>::foundation-model/anthropic.claude-sonnet-4-*",
+        "arn:aws:bedrock:*:<ACCOUNT_ID>:inference-profile/us.anthropic.claude-sonnet-4-*",
+        "arn:aws:bedrock:<REGION>::foundation-model/anthropic.claude-3-5-sonnet-*",
+        "arn:aws:bedrock:*:<ACCOUNT_ID>:inference-profile/us.anthropic.claude-3-5-sonnet-*"
+      ]
+    }
+  ]
+}

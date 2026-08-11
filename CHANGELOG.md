@@ -13,6 +13,17 @@ The first development line. This version is being assembled phase by phase and h
 yet been published; the date is fixed when `0.1.0` is released (see the release runbook in
 `docs/specs/10-release-versioning-and-cicd.md` §9).
 
+### Fixed
+
+- **Governance halt veto now actually halts a run (spec 07 §9):** a `before_superstep` middleware
+  raising `korchestrator.exceptions.GovernanceHaltError` was previously caught, logged, and ignored
+  like every other hook exception — the documented veto path was unimplemented. `HookRegistry`
+  now lets specifically that exception type propagate out of `before_superstep` (every other
+  exception from any hook still isolates exactly as before); `PregelRunner.run` catches it and
+  returns a terminal `RunResult` with `status=RunStatus.GOVERNANCE_PAUSED` instead of running the
+  vetoed superstep. The Temporal runtime is unaffected — it doesn't drive hooks yet. See
+  [ADR 0019](docs/adr/0019-governance-halt-veto-wired-in-hooks-and-pregel.md).
+
 ### Added
 
 - Tool-calling for `WorkerAgent` (Phase 10, closes a gap left open since P4/P6): a mounted

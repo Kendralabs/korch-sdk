@@ -1,0 +1,30 @@
+# Applies to the backend image's build context (repository root — see dashboard/docker-compose.yml).
+# Keeps the build context small and guarantees no secret, cache, or dev artifact is ever COPYable.
+.git/
+.github/
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+htmlcov/
+.coverage*
+dist/
+build/
+*.egg-info/
+site/
+docs/
+tests/
+examples/
+.claude/
+dashboard/frontend/node_modules/
+dashboard/frontend/dist/
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite3

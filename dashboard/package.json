@@ -1,0 +1,15 @@
+{
+  "name": "dashboard",
+  "version": "1.0.0",
+  "description": "A client application of the `korchestrator` SDK (see [`dashboard_spec.md`](../dashboard_spec.md) for the full specification). It treats the SDK as an installed library — imports `korchestrator` directly, never reimplements it — and demonstrates the four testing scenarios: Architect auto-plan, Swarm designer, tool-augmented execution, and HITL/governance.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}
