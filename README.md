@@ -32,8 +32,8 @@ governed, multi-model agent workflows.
 ## Why not a DAG
 
 A directed *acyclic* graph cannot express reflection, retries, or multi-turn negotiation — the
-behaviours real multi-agent systems depend on. Pregel treats cycles as first-class, so execution is a
-loop rather than a fixed path:
+behaviours real multi-agent systems depend on. The superstep kernel treats cycles as first-class, so
+execution is a loop rather than a fixed path:
 
 ```
 event → decision → branch → parallel agents → merge → feedback → repeat
@@ -78,7 +78,7 @@ single responsibility ([docs/specs/03-architecture.md](docs/specs/03-architectur
 | Module | Layer | What it does |
 |---|---|---|
 | `services` | Façade | Composition root — the `Korch` / `Swarm` / `Agent` builders, hooks and middleware |
-| `core` | Kernel | The Pregel BSP kernel — graph, supersteps, reducers, activation and halting |
+| `core` | Kernel | The BSP superstep kernel — graph, supersteps, reducers, activation and halting |
 | `runtime` | Adapter | `IDurableRuntime` twice over: in-process `local_runtime` and durable, replayable `temporal_runtime` |
 | `agents` | Cognitive | DSPy-backed reasoning — agent base, `WorkerAgent`, `ArchitectAgent`, compiled signatures |
 | `taxonomy` | Cognitive | Classifies an objective's intent/difficulty; holds the built-in agent-descriptor catalogue |
@@ -106,8 +106,8 @@ single responsibility ([docs/specs/03-architecture.md](docs/specs/03-architectur
 
 Capability highlights that fall out of those modules:
 
-- **Local or durable execution** — the same graph runs synchronously in-process or on Temporal with
-  crash recovery, pause/resume, and replay, chosen by one config value.
+- **Local or durable execution** — the same graph runs synchronously in-process or on a durable
+  workflow engine with crash recovery, pause/resume, and replay, chosen by one config value.
 - **Per-agent model routing** — mix models (and providers) in a single swarm; route explicitly, by
   algorithm, by semantic similarity, or by your own function.
 - **Tool use** — first-party connectors, MCP servers, and custom connectors behind one bridge with
@@ -214,7 +214,7 @@ Pre-release. Built in ordered phases:
 | Phase | Delivers | Status |
 |---|---|---|
 | P0–P1 | Scaffold, decisions, frozen API contracts | **Complete** |
-| P2–P3 | Pregel kernel; local + Temporal runtimes | **Complete** |
+| P2–P3 | Superstep kernel; local + durable runtimes | **Complete** |
 | P4–P5 | Agents, compiled signatures, model routing | **Complete** |
 | P6–P7 | Tools/MCP/A2A, streaming, governance, context graph | **Complete** |
 | P8–P9 | Cross-cutting foundations; remote client | **Complete** |
@@ -263,7 +263,7 @@ chmod +x .claude/hooks/pre-commit-check.sh   # once, after cloning — enforces 
 ```
 
 Branch off `develop` as `<type>/p<phase>-<slug>`. Use Conventional Commits with a phase tag
-(`feat(core): implement Pregel kernel + reducers [P2]`). Never commit directly to `main` or
+(`feat(core): implement superstep kernel + reducers [P2]`). Never commit directly to `main` or
 `develop`, and never bypass the hooks. Every change touching `src/` updates
 [`.claude/memory/ENGINEERING_LOG.md`](.claude/memory/ENGINEERING_LOG.md) before it is committed.
 

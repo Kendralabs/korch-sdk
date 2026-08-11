@@ -45,7 +45,7 @@ on the local runtime, which is synchronous and has no in-flight run to interrupt
 **Fix:** `pip install "korchestrator[temporal]"` and set `KORCH_RUNTIME=temporal` — see
 [Human-in-the-loop](tutorials/hitl.md).
 
-## `RunStatus.TIMED_OUT` on a paused Temporal run
+## `RunStatus.TIMED_OUT` on a paused durable run
 
 A paused run (manual or governance auto-pause) waits up to a 24-hour deadline for `resume`,
 `cancel`, or `edit_resume`. If nothing arrives, it times out on its own — this is not a bug, it's
@@ -60,12 +60,12 @@ version was downgraded after writing). Upgrade the installed package to a versio
 that `schema_version`, or re-serialize from the original source with your current version. See
 [Migration](migration.md#data-migrations-serialized-state).
 
-## `RuntimeError: Failed validating workflow ...` under the Temporal runtime (local dev only)
+## `RuntimeError: Failed validating workflow ...` under the durable runtime (local dev only)
 
 If this happens on a plain `pip install "korchestrator[temporal,otel]"` (or any combination that
 pulls in both `temporalio` and a package using `beartype`'s import hooks, such as some
 observability extras), the underlying cause is usually a circular import inside
-`beartype.claw` that Temporal's workflow sandbox's import hook triggers — a known conflict between
+`beartype.claw` that the workflow engine's sandbox import hook triggers — a known conflict between
 those two packages' import-time behavior, not a Korchestrator defect.
 
 **To confirm it's this and not something you changed:** the same failure reproduces on an
@@ -76,10 +76,10 @@ with only `[temporal]` installed (no `[otel]`, no other package that imports `be
 
 - Avoid installing `beartype`-dependent packages alongside `[temporal]` in the same environment if
   you can.
-- Run the Temporal-dependent test/workflow paths in a separate virtualenv from packages that pull
+- Run the durable-runtime test/workflow paths in a separate virtualenv from packages that pull
   in `beartype`.
 - This is a real, tracked gap in some local dev environments — it does not affect the local
-  runtime, MockLM, or any non-Temporal code path.
+  runtime, MockLM, or any code path outside the durable runtime.
 
 ## I get an import error mentioning `backend`, `apps`, `services`, or `frontend`
 

@@ -2,9 +2,9 @@
 
 **Durable, deterministic, multi-agent execution as an installable Python library.**
 
-Korchestrator runs multi-agent workflows ("swarms") as a Pregel-style Bulk Synchronous
-Parallel computation, with an in-process runtime for zero-infrastructure local execution and
-a Temporal runtime for durable, replayable execution — selected by configuration alone.
+Korchestrator runs multi-agent workflows ("swarms") as a Bulk Synchronous Parallel superstep
+computation, with an in-process runtime for zero-infrastructure local execution and a durable
+workflow engine runtime for durable, replayable execution — selected by configuration alone.
 
 !!! note "Documentation in progress"
     Installation and the Quick Start are published. Tutorials, the auto-generated API reference,

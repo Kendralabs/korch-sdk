@@ -1,7 +1,7 @@
 # Human-in-the-loop
 
 A durable run can pause for human review mid-execution and resume later — with or without an
-operator's edits — without losing any state. This requires the **Temporal runtime**: the local
+operator's edits — without losing any state. This requires the **durable runtime**: the local
 runtime is synchronous and has nothing to pause.
 
 ## Prerequisites
@@ -12,13 +12,13 @@ pip install "korchestrator[dspy,temporal]"
 
 ```bash
 export KORCH_RUNTIME=temporal
-export TEMPORAL_ADDRESS=localhost:7233   # your Temporal server
+export TEMPORAL_ADDRESS=localhost:7233   # your durable workflow engine server
 ```
 
 A run started under `KORCH_RUNTIME=temporal` executes durably: it survives a worker crash, and it
 can be paused, resumed, or cancelled from a completely separate process — an operator dashboard, an
 API handler, a CLI — as long as that process also has a `Korch`/`Swarm` instance configured for the
-same Temporal namespace and task queue.
+same workflow-engine namespace and task queue.
 
 ## Two ways a run pauses
 
@@ -68,7 +68,7 @@ this is the failure mode to design around, not an edge case — a pause with no 
 
 ## Verifying this yourself
 
-A full pause → resume round trip needs a running Temporal server (or the Temporal test
+A full pause → resume round trip needs a running workflow-engine server (or its test
 environment), which isn't something a documentation page can execute inline. The SDK's own test
 suite is the executable, CI-verified proof of every scenario above — pause-then-resume,
 pause-with-no-resume-times-out, low-trust auto-pause, and `edit_resume` — in
