@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadDashboardSecrets",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:GetSecretValue"],
+      "Resource": [
+        "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:korchestrator-dashboard/bedrock-bearer-token-*",
+        "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:korchestrator-dashboard/openai-api-key-*",
+        "arn:aws:secretsmanager:<REGION>:<ACCOUNT_ID>:secret:korchestrator-dashboard/anthropic-api-key-*"
+      ]
+    }
+  ]
+}

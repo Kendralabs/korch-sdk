@@ -36,3 +36,17 @@ site/
 !.env.example
 *.db
 *.sqlite3
+
+# --- Dashboard (dashboard/): Node / Vite frontend ------------------------------
+dashboard/frontend/node_modules/
+dashboard/frontend/dist/
+dashboard/frontend/.vite/
+dashboard/frontend/*.local
+npm-debug.log*
+
+# --- Dashboard: Python backend --------------------------------------------------
+dashboard/backend/.venv/
+
+# --- Dashboard: root-level Playwright e2e harness (build/test output only) -----
+dashboard/node_modules/
+dashboard/test-results/
