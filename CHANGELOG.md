@@ -21,7 +21,7 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   now lets specifically that exception type propagate out of `before_superstep` (every other
   exception from any hook still isolates exactly as before); `PregelRunner.run` catches it and
   returns a terminal `RunResult` with `status=RunStatus.GOVERNANCE_PAUSED` instead of running the
-  vetoed superstep. The Temporal runtime is unaffected — it doesn't drive hooks yet. See
+  vetoed superstep. The durable runtime is unaffected — it doesn't drive hooks yet. See
   [ADR 0019](docs/adr/0019-governance-halt-veto-wired-in-hooks-and-pregel.md).
 
 ### Added
@@ -113,7 +113,7 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   `korchestrator.__all__`; `disable_logging` stays submodule-only, matching spec 04 §6 exactly.
 - Settings finalized (Phase 8): the full spec 08 §1.3 variable table — 16 new fields covering the
   model gateway, kernel/runtime bounds, logging/telemetry toggles, the remote engine client, and
-  the Temporal runtime (`TEMPORAL_ADDRESS`, `TEMPORAL_API_KEY`, etc.). Secret-bearing fields
+  the durable runtime (`TEMPORAL_ADDRESS`, `TEMPORAL_API_KEY`, etc.). Secret-bearing fields
   (`kendra_gateway_api_key`, `korch_engine_api_key`, `temporal_api_key`) use `pydantic.SecretStr`
   and never appear in `repr`/`str`. `Settings.from_env()` gains opt-in `.env` file support
   (`dotenv_path=`, `None` by default — no ambient developer `.env` affects an unrelated
@@ -140,7 +140,7 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   `AgentState` after every superstep, giving the local runtime (which has no built-in durability) a
   best-effort recovery point. `PERSISTENCE_BACKEND=kcg` (an external backend) raises an actionable
   `ConfigurationError`; external backends are post-1.0.
-- HITL controls (Phase 7): the Temporal runtime's `PregelMaster` workflow now **auto-pauses itself**
+- HITL controls (Phase 7): the durable runtime's `PregelMaster` workflow now **auto-pauses itself**
   when a superstep's `trust_score` breaches any active node's effective HITL threshold — the same
   `governance_paused` mechanism an operator's own `pause` signal uses. A new `edit_resume` signal
   applies an operator's context/trust edit (last-value merge + the same clamped fold the barrier
@@ -240,7 +240,7 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   and the frozen, curated top-level public API (`korchestrator.__all__`, 27 names) guarded by a
   golden-file snapshot test. Execution (`Korch.run`/`Swarm.run`) is wired to the kernel in a later
   release; the builder surface is usable now.
-- The framework-free Pregel kernel, embeddable directly via `korchestrator.core` (Tier 3): the four
+- The framework-free superstep kernel, embeddable directly via `korchestrator.core` (Tier 3): the four
   channel reducers (`LastValue`, `Append`, `UniqueAppend`, `MergeDict`) with proven algebraic laws;
   `AgentGraph`/`Node`/`Edge` with topology validation (cycles and orphans allowed); `ChannelSchema`
   for binding channels to reducers; and `PregelRunner`, which runs a graph as deterministic Bulk
@@ -252,13 +252,13 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   runs a graph to completion with zero infrastructure (the `KORCH_RUNTIME=local` default) — and
   `resolve_runtime(settings, graph, *, clock, ...)`, which selects the runtime from config.
   Selecting `temporal` without the `[temporal]` extra raises an actionable `MissingExtraError`.
-- The durable Temporal runtime (behind `[temporal]`): a single `PregelMaster` workflow driving the
-  superstep loop in deterministic workflow scope, invoking one `SuperstepActivity` per superstep for
-  agent compute, with a bounded jittered retry policy, activity timeouts, and `continue_as_new`
-  roll-over before Temporal's 50k-event cap. `import korchestrator.runtime` pulls in no `temporalio`;
-  it is loaded only when the Temporal runtime is selected. Produces a `RunResult` equivalent to the
+- The durable workflow-engine runtime (behind `[temporal]`): a single `PregelMaster` workflow driving
+  the superstep loop in deterministic workflow scope, invoking one `SuperstepActivity` per superstep
+  for agent compute, with a bounded jittered retry policy, activity timeouts, and `continue_as_new`
+  roll-over before the engine's 50k-event cap. `import korchestrator.runtime` pulls in no `temporalio`;
+  it is loaded only when the durable runtime is selected. Produces a `RunResult` equivalent to the
   local runtime's.
-- Durable HITL control signals on the Temporal runtime: `cancel` ends a run as `cancelled`; `pause`
+- Durable HITL control signals on the durable runtime: `cancel` ends a run as `cancelled`; `pause`
   parks it (status `governance_paused`, no compute) until `resume` or `cancel`, bounded by a 24-hour
   deadline after which it is `timed_out`. Delivered via `IDurableRuntime.signal`. (`edit_resume`
   arrives with the HITL façade in a later phase; the local runtime is synchronous and has no HITL.)
@@ -339,7 +339,7 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 - **Exception audit (Phase 8):** `TemporalRuntime.start`/`wait`/`signal` (and, through them,
   `Korch`/`Swarm.pause`/`resume`/`cancel`/`edit_resume`) no longer let a raw `temporalio` exception
   cross the façade boundary. A lost/refused connection now raises `NetworkError`, the run's own
-  failure raises `RunFailedError`, and any other Temporal-reported error raises `ProviderError` —
+  failure raises `RunFailedError`, and any other engine-reported error raises `ProviderError` —
   all with `__cause__` set to the original exception. Also: `Settings.from_env()`'s `.env` reader
   now wraps an unreadable file into `ConfigurationError` instead of letting a raw `OSError` escape.
 
