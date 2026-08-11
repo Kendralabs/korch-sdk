@@ -42,12 +42,12 @@ disk and never includes one in a log line, a repr, or an exception message; this
 - **Local runtime** — fine for a request/response service where a run completing in seconds is
   acceptable and losing an in-flight run on a crash is tolerable (e.g. it gets retried at a higher
   level).
-- **Temporal runtime** — the durable choice: a run survives a worker crash and resumes from its
+- **Durable runtime** — the durable choice: a run survives a worker crash and resumes from its
   last checkpointed superstep, and it supports human-in-the-loop pause/resume. Requires operating
-  (or subscribing to) a Temporal cluster — provisioning and running that cluster is **your**
-  infrastructure, not something this SDK ships or manages.
+  (or subscribing to) a durable workflow engine cluster — provisioning and running that cluster is
+  **your** infrastructure, not something this SDK ships or manages.
 
-Either way, the infrastructure the SDK connects to — Temporal, a persistence backend, a model
+Either way, the infrastructure the SDK connects to — the workflow engine, a persistence backend, a model
 gateway, MCP servers — is provisioned and operated by you, selected by configuration, and always
 optional. The zero-config default runs entirely without any of it: local runtime, MockLM, in-memory
 persistence.

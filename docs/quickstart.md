@@ -37,8 +37,8 @@ from korchestrator.providers import MockLM
 gateway = MockLM(
     default_response=(
         "Durable agent execution means workflows survive crashes and replay "
-        "deterministically. It combines a BSP-style kernel with a durable runtime "
-        "like Temporal."
+        "deterministically. It combines a BSP-style kernel with a durable "
+        "workflow engine runtime."
     )
 )
 result = Korch(model_gateway=gateway).run("Summarize durable agent execution in two sentences")
