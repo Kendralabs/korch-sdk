@@ -38,10 +38,10 @@ in the repository for the current, detailed snapshot.
 ## How is this different from LangGraph / CrewAI / AutoGen?
 
 The comparison that matters most is the execution model, not the feature list: Korchestrator runs
-supersteps as a **Pregel-style Bulk Synchronous Parallel** computation — every active agent
+supersteps as a **Bulk Synchronous Parallel** computation — every active agent
 computes against a frozen snapshot in parallel, and results merge through reducers that are
 associative and order-independent, so concurrency can never change the outcome. Paired with the
-Temporal runtime, a run is durable (survives a crash, resumes from its last checkpoint) and
+durable runtime, a run is durable (survives a crash, resumes from its last checkpoint) and
 replayable. See [Architecture](architecture.md) for the full mechanism. This project doesn't
 maintain a feature-by-feature comparison table against other frameworks — architectures are worth
 understanding on their own terms.
@@ -59,8 +59,8 @@ as `model_gateway=` to `Korch`/`Swarm` — it's an ARI port specifically so you 
 Depends on the runtime and the persistence backend, independently:
 
 - **Local runtime** is synchronous and in-process — nothing survives the process ending.
-- **Temporal runtime** checkpoints every superstep durably regardless of persistence backend — a
-  crash resumes from the last barrier.
+- **Durable runtime** (`KORCH_RUNTIME=temporal`) checkpoints every superstep durably regardless of
+  persistence backend — a crash resumes from the last barrier.
 - **`PERSISTENCE_BACKEND`** (in-memory by default) controls whether the bitemporal decision/event
   record itself is queryable after the fact, separately from run durability.
 

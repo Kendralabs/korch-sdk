@@ -22,16 +22,16 @@ def test_the_scripted_mockllm_one_liner_returns_the_scripted_answer() -> None:
     gateway = MockLM(
         default_response=(
             "Durable agent execution means workflows survive crashes and replay "
-            "deterministically. It combines a BSP-style kernel with a durable runtime "
-            "like Temporal."
+            "deterministically. It combines a BSP-style kernel with a durable "
+            "workflow engine runtime."
         )
     )
     result = Korch(model_gateway=gateway).run("Summarize durable agent execution in two sentences")
     assert result.status is RunStatus.COMPLETED
     assert result.final_answer == (
         "Durable agent execution means workflows survive crashes and replay "
-        "deterministically. It combines a BSP-style kernel with a durable runtime "
-        "like Temporal."
+        "deterministically. It combines a BSP-style kernel with a durable "
+        "workflow engine runtime."
     )
 
 
