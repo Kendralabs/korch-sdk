@@ -16,7 +16,9 @@ COPY . .
 # time (--build-arg VITE_API_BASE=https://api.example.com) only if the frontend is ever served
 # from a different origin than the backend.
 ARG VITE_API_BASE=""
+ARG VITE_BEDROCK_MODEL="eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
 ENV VITE_API_BASE=$VITE_API_BASE
+ENV VITE_BEDROCK_MODEL=$VITE_BEDROCK_MODEL
 RUN npm run build
 
 # --- Stage 2: serve the static build + proxy /api to the backend --------------------------------
