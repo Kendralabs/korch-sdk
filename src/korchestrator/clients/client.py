@@ -200,7 +200,8 @@ class KorchestratorClient:
     async def _sleep_backoff(self, attempt: int) -> None:
         """Sleep with full-jitter exponential backoff before retry ``attempt + 1`` (spec §7.5)."""
         delay = _BACKOFF_BASE_SECONDS * (2**attempt)
-        await asyncio.sleep(random.uniform(0, delay))  # noqa: S311 — retry jitter, not crypto
+        # Retry jitter, not crypto.
+        await asyncio.sleep(random.uniform(0, delay))  # noqa: S311  # nosec B311
 
     # --- run lifecycle (spec 04 §7.3/§7.4, P9.3) -------------------------------------------------
 

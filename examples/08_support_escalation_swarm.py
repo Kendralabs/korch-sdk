@@ -79,7 +79,9 @@ _OFFLINE_TIME = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 def _worker_reply(*, answer: str, is_final: bool) -> str:
     """A DSPy ChatAdapter-formatted WorkerSignature reply (answer, is_final)."""
-    return f"[[ ## answer ## ]]\n{answer}\n\n[[ ## is_final ## ]]\n{is_final}\n\n[[ ## completed ## ]]"
+    return (
+        f"[[ ## answer ## ]]\n{answer}\n\n[[ ## is_final ## ]]\n{is_final}\n\n[[ ## completed ## ]]"
+    )
 
 
 def _react_reply(
@@ -161,7 +163,9 @@ class OfflineGateway:
         if "qa-reviewer" in rendered:
             if _RESOLUTION_MARKER in rendered:
                 return _worker_reply(
-                    answer="Draft approved: accurate, empathetic, and consistent with billing policy.",
+                    answer=(
+                        "Draft approved: accurate, empathetic, and consistent with billing policy."
+                    ),
                     is_final=True,
                 )
             return _worker_reply(
@@ -169,7 +173,9 @@ class OfflineGateway:
             )
         if "triage-specialist" in rendered:
             return _worker_reply(
-                answer="category=billing_payment_failure; urgency=high; reason=expired card on file.",
+                answer=(
+                    "category=billing_payment_failure; urgency=high; reason=expired card on file."
+                ),
                 is_final=True,
             )
         return _worker_reply(answer="(no reply)", is_final=True)
@@ -181,9 +187,12 @@ class OfflineGateway:
 def build_gateway():
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        print("[info] OPENAI_API_KEY not set — running against the deterministic offline gateway.\n")
+        print(
+            "[info] OPENAI_API_KEY not set — running against the deterministic offline gateway.\n"
+        )
         return OfflineGateway()
-    return OpenAIGateway(api_key=api_key, base_url=os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    return OpenAIGateway(api_key=api_key, base_url=base_url)
 
 
 def build_swarm() -> Swarm:
@@ -216,7 +225,11 @@ def main() -> None:
     # log, not just the terminal step) — useful for audit, but the reviewer's own last answer is
     # the actual customer-facing resolution once the swarm has converged.
     resolution = next(
-        (m.content for m in reversed(result.messages) if m.sender == "reviewer" and m.kind == "answer"),
+        (
+            m.content
+            for m in reversed(result.messages)
+            if m.sender == "reviewer" and m.kind == "answer"
+        ),
         result.final_answer,
     )
     print("\nresolution (reviewer-approved):\n" + resolution)
