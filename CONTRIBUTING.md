@@ -23,15 +23,19 @@ capability is an optional extra (`[dspy]`, `[temporal]`, `[routing]`, `[mcp]`, `
 
 ## Branches and commits
 
-- Branch off `develop` as `<type>/p<phase>-<slug>`, where `type` is one of `feat`, `fix`,
-  `docs`, `refactor`, `test`, `chore`, `security`, `perf`. Example: `feat/p2-pregel-kernel`.
-- **Never commit directly to `main` or `develop`.** Both are protected; changes land via
-  reviewed PRs. Release PRs go `develop` → `main`.
+- Branch off `dev` as `<type>/p<phase>-<slug>`, where `type` is one of `feat`, `fix`,
+  `docs`, `refactor`, `test`, `chore`, `security`, `perf`. Example: `feat/p2-superstep-kernel`.
+- **Never commit directly to `dev`, `staging`, or `main`.** All three land changes via reviewed
+  PRs. Work PRs target `dev`; GitHub proposes `main` by default, so retarget it.
+- Changes promote forward only, one stage at a time: `dev` → `staging` → `main`. Never promote
+  `dev` straight to `main`, and never cherry-pick a subset forward. The full model and the
+  hotfix exception are in
+  [`.claude/rules/branching-and-promotion.md`](.claude/rules/branching-and-promotion.md).
 - Use [Conventional Commits](https://www.conventionalcommits.org/) with an accurate scope
   and a phase tag: `feat(core): implement Pregel kernel + reducers [P2]`.
 - Every commit leaves the package green — build and tests pass.
-- `git commit --no-verify`, force-pushing a shared branch, and rewriting history on `main`
-  or `develop` are prohibited.
+- `git commit --no-verify`, force-pushing a shared branch, and rewriting history on `dev`,
+  `staging`, or `main` are prohibited.
 - `src/korchestrator/version.py` is edited only in a release PR — it is the single source
   of the version.
 
