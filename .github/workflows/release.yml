@@ -1,10 +1,11 @@
 name: Release
 
-# Tag-triggered release skeleton (P0.8). It validates the version and verifies the BUILT
-# artifact in a clean environment on a `vX.Y.Z` tag. Publishing to PyPI via Trusted
-# Publishing, SBOM/checksum generation, provenance attestation, the GitHub release, and the
-# docs deploy are wired in Phase 12 (see docs/specs/10-release-versioning-and-cicd.md §6).
-# No job here publishes anything yet.
+# Tag-triggered release pipeline for PRIVATE distribution (ADR 0020). It validates the version,
+# builds and verifies the artifact in a clean environment, checksums it, and publishes a GitHub
+# Release with the wheel/sdist attached — all reachable on a private repo with no PyPI
+# involvement. PyPI Trusted Publishing, SBOM generation, and provenance attestation remain the
+# target design in docs/specs/10-release-versioning-and-cicd.md §6 for if/when the SDK goes
+# public; they are deliberately deferred, not implemented here. See ADR 0020.
 
 on:
   push:
@@ -16,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    name: Build and verify the artifact
+    name: Build, verify, and checksum the artifact
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
@@ -65,16 +66,63 @@ jobs:
           /tmp/sdist/bin/python -m pip install --upgrade pip build
           /tmp/sdist/bin/python -m pip install dist/*.tar.gz
 
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum ./*.whl ./*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
       - uses: actions/upload-artifact@v4
         with:
           name: release-dist
           path: dist/
 
+  github-release:
+    name: Publish the GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+      - name: Extract the CHANGELOG section for this version
+        run: |
+          awk -v v="${{ needs.build.outputs.version }}" '
+            $0 ~ "^## \\["v"\\]" {p=1; next}
+            p && /^## \[/ {exit}
+            p {print}
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md || { echo "no CHANGELOG section found"; exit 1; }
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes.md
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+
+  verify-private-install:
+    name: Install from the tag (private git ref)
+    needs: [build, github-release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install via git+https, authenticated with the run's own scoped token
+        run: |
+          python -m pip install \
+            "korchestrator @ git+https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git@v${{ needs.build.outputs.version }}"
+          python -c "import korchestrator; print(korchestrator.__version__)"
+
   # ---------------------------------------------------------------------------------------
-  # Phase 12 wires the remaining jobs here, each gated on `build`:
-  #   publish          — PyPI Trusted Publishing (OIDC, no stored token)
-  #   github-release   — GitHub release with notes drawn from CHANGELOG.md
-  #   verify-published — install from PyPI and import
-  #   deploy-docs      — reuse .github/workflows/docs.yml
-  # See docs/specs/10-release-versioning-and-cicd.md §6 for the full pipeline.
+  # Deferred per ADR 0020 until a future decision makes the package public:
+  #   publish (PyPI Trusted Publishing) · SBOM generation · provenance attestation
+  #   docs deploy already runs independently on push to main (.github/workflows/docs.yml)
+  # See docs/specs/10-release-versioning-and-cicd.md §6 for the full target pipeline.
   # ---------------------------------------------------------------------------------------

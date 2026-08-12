@@ -2,14 +2,15 @@
 
 **Durable, deterministic, multi-agent execution as an installable Python library.**
 
-[![Status](https://img.shields.io/badge/status-pre--alpha-orange)](docs/specs/11-build-phase-plan.md)
-[![Version](https://img.shields.io/badge/version-0.1.0--unreleased-blue)](docs/adr/0002-single-authoritative-version.md)
+[![Status](https://img.shields.io/badge/status-alpha-orange)](docs/specs/11-build-phase-plan.md)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](docs/adr/0002-single-authoritative-version.md)
 [![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-blue)](docs/specs/02-repository-structure.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](docs/adr/0003-license-apache-2-0.md)
 
-> **Pre-release.** The SDK is implemented and tested (Phases 0–10 complete; Phase 11 — docs,
-> examples & DX — in progress) but has not yet been published to PyPI (Phase 12). Install from
-> source until then — see [Installation](#installation). See [Project status](#project-status).
+> **First release, distributed privately.** Phases 0–11 are complete; `v0.1.0` is tagged and
+> published as a GitHub Release on this private repo, not on PyPI
+> ([ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)) — see
+> [Installation](#installation). See [Project status](#project-status).
 
 ---
 
@@ -122,17 +123,25 @@ Capability highlights that fall out of those modules:
 
 ## Installation
 
-**Not yet published to PyPI** (packaging/publishing is Phase 12). Until then, install from source:
+**Distributed privately, not on PyPI** — `Kendralabs/korch-sdk` is a private repository and stays
+that way ([ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)). Install a
+released version straight from a tag (needs a GitHub credential with read access to this repo):
 
 ```bash
-git clone <repository-url> && cd korch-sdk
+pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[all] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+```
+
+or from a local clone:
+
+```bash
+git clone git@github.com:Kendralabs/korch-sdk.git && cd korch-sdk
 pip install -e '.[dspy]'      # cognitive layer (agents, compiled signatures) — most users need this
 pip install -e '.[all]'       # everything
 ```
 
-Once published, the same extras will work the ordinary way — `pip install korchestrator`,
-`pip install 'korchestrator[dspy]'`, etc. See [docs/installation.md](docs/installation.md) for the
-full extras table.
+See [docs/installation.md](docs/installation.md) for the full extras table and credential setup
+(SSH key vs. PAT), and [docs/releases.md](docs/releases.md) for how releases are cut and tagged.
 
 The base install has **one runtime dependency**. Everything heavy is an optional extra, lazy-imported
 so `import korchestrator` stays fast and the kernel stays embeddable. The default configuration runs
@@ -209,7 +218,7 @@ Full command reference: [docs/specs/09-testing-and-quality.md](docs/specs/09-tes
 
 ## Project status
 
-Pre-release. Built in ordered phases:
+`v0.1.0` released (privately). Built in ordered phases:
 
 | Phase | Delivers | Status |
 |---|---|---|
@@ -219,8 +228,8 @@ Pre-release. Built in ordered phases:
 | P6–P7 | Tools/MCP/A2A, streaming, governance, context graph | **Complete** |
 | P8–P9 | Cross-cutting foundations; remote client | **Complete** |
 | P10 | Testing, benchmarks & quality gates | **Complete** |
-| P11 | Documentation, examples & DX | In progress |
-| P12 | CI/CD, packaging & publishing | Not started |
+| P11 | Documentation, examples & DX | **Complete** |
+| P12 | CI/CD, packaging & publishing | Private-distribution pipeline shipped (ADR 0020); PyPI publishing deferred |
 
 Current state, including known gaps: [`.claude/memory/PROJECT_STATE.md`](.claude/memory/PROJECT_STATE.md).
 

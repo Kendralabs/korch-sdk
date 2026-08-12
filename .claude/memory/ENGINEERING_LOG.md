@@ -10,6 +10,83 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-08-12 · Private release pipeline + release automation script — v0.1.0
+
+**Type:** feature (CI/CD + tooling) · **Phase:** P12 (CI/CD, packaging & publishing), narrowed by
+ADR 0020 · **Author:** Claude (agent), directed by the maintainer for the first tagged release
+
+**What.** `.github/workflows/release.yml`'s `build` job now also generates `SHA256SUMS` over the
+built wheel and sdist. Two new jobs: `github-release` publishes a GitHub Release on the `vX.Y.Z`
+tag with the wheel, sdist, and checksums attached, and notes extracted from the tagged
+`CHANGELOG.md` section (`softprops/action-gh-release`, `contents: write`); `verify-private-install`
+installs the package via `pip install git+https://x-access-token:${{ secrets.GITHUB_TOKEN }}@...@vX.Y.Z`
+inside the workflow run itself, proving the private-repo install path actually works before calling
+the release done. New `scripts/cut_release.py` automates the mechanical parts of the runbook in
+`docs/specs/10-release-versioning-and-cicd.md` §9: `prepare --bump {major,minor,patch}|--version`
+bumps `version.py`, rewrites `CHANGELOG.md` (dates the released section, opens a fresh
+`[Unreleased]` section, rewrites the compare-link footer), and opens the `chore/release-vX.Y.Z` PR;
+`tag` creates and pushes the annotated/signed `vX.Y.Z` tag from `main` after that PR merges. Its
+three pure transforms (`bump_version`, `repo_slug_from_remote_url`, `render_changelog`) are unit
+tested directly (`tests/unit/test_cut_release.py`, 15 tests) without touching git or the network,
+matching the convention already set by `tests/unit/test_benchmark_regression_check.py` for testing
+`scripts/`. Also corrected the local `origin` remote from a legacy redirected URL
+(`mauzam-fintricity/korch-sdk`) to the canonical `Kendralabs/korch-sdk`, matching every other
+reference to the repo already in `pyproject.toml`/docs.
+
+**Why.** The maintainer asked to cut the SDK's first release and set up repeatable release
+automation. `PROJECT_STATE.md` listed Phase 12 as not started, and the existing `release.yml` was a
+P0.8 skeleton that built and verified an artifact but published it nowhere — a tagged release
+reached no consumer. The maintainer also confirmed the repository and its distributed artifacts
+must stay private, which directly conflicts with spec 10's original design (PyPI Trusted
+Publishing) since PyPI has no free private-index tier and publishing there would make the SDK
+world-readable regardless of GitHub repo visibility. That conflict is a structural deviation from
+the spec, so it's recorded as ADR 0020 rather than silently implemented.
+
+**Design decisions.** See [ADR 0020](../../docs/adr/0020-private-distribution-defers-pypi-publishing.md)
+for the full context, alternatives considered (public PyPI now; a private package index; a
+hand-run `gh release create`; skipping checksums too), and consequences (no anonymous/credential-free
+install path; SBOM and provenance attestation deferred, not dropped). `render_changelog` takes
+`existing_tags` as a parameter rather than calling git itself, keeping it a pure, fully unit-tested
+function; only the CLI wrapper (`cmd_prepare`/`cmd_tag`) does git/gh I/O via `subprocess`.
+
+**Architecture changes.** None — no `src/korchestrator/` module touched, no public API changed.
+This is CI/CD and repo tooling only.
+
+**Files/modules affected.** `.github/workflows/release.yml`, `scripts/cut_release.py` (new),
+`tests/unit/test_cut_release.py` (new), `docs/adr/0020-private-distribution-defers-pypi-publishing.md`
+(new), `docs/releases.md`, `docs/installation.md`, `docs/specs/10-release-versioning-and-cicd.md`
+(amendment note), `docs/specs/12-implementation-plan.md` (P12 table), `README.md`, `CHANGELOG.md`.
+
+**Breaking changes.** None to the SDK's public API. The *install instructions* change (git-ref
+install instead of a future `pip install korchestrator`), documented in the CHANGELOG's `Changed`
+section since it's user-visible, but this lands before `0.1.0`'s first tag so there's no prior
+public behavior to break.
+
+**Feature version / revision.** `0.1.0` — this work *is* the first release's packaging/publishing
+half, cut immediately after this change reaches `main` (dev → staging → main, then the
+`chore/release-v0.1.0` PR, then the `v0.1.0` tag).
+
+**Migration notes.** N/A — first release, no prior consumers.
+
+**Testing status.** `pytest tests/unit/test_cut_release.py` — 15/15 passed. `ruff check`/
+`ruff format --check` clean on `scripts/cut_release.py` and its test file (one file-level
+`# ruff: noqa: S603, S607, T201` — a CLI release script legitimately shells out to `git`/`gh` by
+name and prints progress to stdout; matches the existing, unenforced-in-CI convention for
+`scripts/validate_version.py`, which trips the same rules under a direct `ruff check`).
+`mypy --strict scripts/cut_release.py` clean. `release.yml` validated as well-formed YAML
+(`yaml.safe_load`); not yet exercised by an actual tag push at the time of this entry — that
+happens next, as part of cutting `v0.1.0` itself, and is the real end-to-end verification of the
+`github-release`/`verify-private-install` jobs.
+
+**Known limitations / future improvements.** P12.3's supply-chain scope is checksums only — SBOM
+generation, build-provenance attestation, and a license allowlist scan are follow-up work (tracked
+in the amended P12 table, not silently dropped). There is no automated dry-run environment for
+`scripts/cut_release.py`'s git/gh side (`prepare`/`tag` beyond `--dry-run`) — it's exercised for
+real by cutting `v0.1.0`. If the SDK is ever made public, P12.4/P12.6 as originally specified (PyPI
+Trusted Publishing, TestPyPI dry run) become additive work, not a rewrite of what shipped here.
+
+---
+
 ## 2026-08-12 · Pre-existing CI drift fixed ahead of the v0.1.0 release — v0.1.0
 
 **Type:** fix (CI hygiene, no production behavior change) · **Phase:** unblocks P12 (cutting
@@ -186,7 +263,7 @@ real, accepted residual risk, not a resolved issue — it stays open until `disk
 review, or immediately on a fix shipping) so it doesn't silently persist forever. If PR #9's CI run
 surfaces any *other* real (non-`korchestrator`, non-`transformers`, non-`diskcache`) `pip-audit`
 finding beyond what's fixed here, that's a further, separate security question for the maintainer,
-not something to resolve inside this fix. None of these six issues are new classes of bug otherwise;
+not something to resolve inside this fix. None of these seven issues are new classes of bug otherwise;
 this entry exists specifically to record that they were pre-existing (or, for #5/#6, a direct
 foreseeable consequence of ADR 0020 landing alongside it) and unrelated to the private-release-
 pipeline feature work in PR #8, not to claim anything beyond "CI is green again." The repo's optional
