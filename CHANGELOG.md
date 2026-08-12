@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **0.x notice.** While the version is `0.x`, a MINOR release may contain breaking
 > changes. PATCH releases are never breaking. See docs/versioning.md.
 
-## [0.1.0] - Unreleased
+## [Unreleased]
+
+## [0.1.0] - 2026-08-12
 
 The first development line. This version is being assembled phase by phase and has not
 yet been published; the date is fixed when `0.1.0` is released (see the release runbook in
@@ -374,4 +376,5 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   `pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"`,
   which needs a GitHub credential with read access to this repo. See docs/installation.md.
 
-[0.1.0]: https://github.com/kendralabs/korch-sdk/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Kendralabs/korch-sdk/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Kendralabs/korch-sdk/releases/tag/v0.1.0
