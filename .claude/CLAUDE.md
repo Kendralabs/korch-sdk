@@ -15,6 +15,7 @@ the condensed, always-on ruleset. **On any conflict, the specs win.**
 | What has been built so far | `.claude/memory/ENGINEERING_LOG.md` |
 | Where the project stands right now | `.claude/memory/PROJECT_STATE.md` |
 | Rules that are easy to break by accident | `.claude/rules/determinism.md` |
+| Which branch to work on and how changes promote | `.claude/rules/branching-and-promotion.md` |
 
 Commands: `/phase` (start a task) · `/verify` (run all gates) · `/log` (engineering log) · `/adr`
 (record a decision). Subagents: `boundary-auditor`, `api-reviewer`. Skill: `add-module`.
@@ -29,7 +30,8 @@ notably on the TypeScript client, which they show as in scope but ADR 0008 defer
 
 The installable **Korchestrator SDK** — a durable multi-agent execution kernel (Temporal for
 durability/replay, Pregel BSP for deterministic parallel supersteps, DSPy compiled signatures for
-typed reasoning). Package: `korchestrator`. Branches: `main` (released) / `develop` (integration).
+typed reasoning). Package: `korchestrator`. Branches: `dev` (integration) → `staging` (release
+candidate) → `main` (released, default).
 
 **You build ONE thing: this SDK.** Not a frontend, backend, service, or app.
 
@@ -109,14 +111,17 @@ Nondeterminism lives in activities, never workflow scope.
 
 ## 7. Git & commit workflow
 
-- Branch off `develop` as `<type>/p<phase>-<slug>` (`feat`/`fix`/`docs`/`refactor`/`test`/`chore`/
-  `security`/`perf`). **Never commit directly to `main` or `develop`.**
-- **Conventional Commits**, phase-tagged: `feat(core): implement Pregel kernel + reducers [P2]`.
+- Branch off `dev` as `<type>/p<phase>-<slug>` (`feat`/`fix`/`docs`/`refactor`/`test`/`chore`/
+  `security`/`perf`). **Never commit directly to `dev`, `staging`, or `main`.**
+- **Promotion is forward-only, one stage at a time: `dev` → `staging` → `main`.** Never promote
+  `dev` straight to `main`; never cherry-pick a subset forward. Authority:
+  `.claude/rules/branching-and-promotion.md`.
+- **Conventional Commits**, phase-tagged: `feat(core): implement superstep kernel + reducers [P2]`.
   Commit phase/task-wise; every commit leaves the package green (build + tests pass).
 - **Before every commit** (enforced by the hook in §9): lint + format clean, `mypy --strict` clean,
   `pytest` green + coverage ≥ floor, **isolation gate prints `OK`**, **engineering log updated**,
   CHANGELOG updated for user-visible changes. Never `git commit --no-verify`.
-- Reach `develop`/`main` only via reviewed PRs.
+- Reach `dev`/`staging`/`main` only via reviewed PRs.
 - **Never edit `src/korchestrator/version.py`** outside a release PR — it's the single source of the
   SemVer version (all else derives; CI fails on mismatch). Start at `0.1.0`.
 
@@ -154,7 +159,7 @@ executable once: `chmod +x .claude/hooks/pre-commit-check.sh`.
 5. Run the gates until green (§7).
 6. Update docstrings, docs, and CHANGELOG for user-visible changes.
 7. **Update `.claude/memory/ENGINEERING_LOG.md` (§8) — before committing.**
-8. Commit conventionally; open a PR into `develop`.
+8. Commit conventionally; open a PR into `dev`.
 
 **When unsure or a request conflicts with a golden rule:** stop, state the conflict, and if it's a
 structural decision or a deviation from a spec, write a short ADR before coding.
