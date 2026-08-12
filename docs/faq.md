@@ -32,7 +32,7 @@ README](https://github.com/kendralabs/korch-sdk#project-status)) — Phases 0–
 runtimes, agents, routing, tools, governance, the remote client, and the full test/benchmark
 suite) are complete and tested; Phase 11 (this documentation) is in progress, and Phase 12
 (publishing) hasn't shipped. Judge readiness for your use case against that state directly rather
-than a blanket label — see [`.claude/memory/PROJECT_STATE.md`](https://github.com/kendralabs/korch-sdk/blob/develop/.claude/memory/PROJECT_STATE.md)
+than a blanket label — see [`.claude/memory/PROJECT_STATE.md`](https://github.com/kendralabs/korch-sdk/blob/main/.claude/memory/PROJECT_STATE.md)
 in the repository for the current, detailed snapshot.
 
 ## How is this different from LangGraph / CrewAI / AutoGen?
