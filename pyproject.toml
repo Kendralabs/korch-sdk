@@ -120,6 +120,15 @@ no_implicit_reexport = true
 module = ["dspy.*", "temporalio.*", "mcp.*", "sentence_transformers.*"]
 ignore_missing_imports = true
 
+# numpy's own bundled stubs started using PEP 695 `type` statements (Python 3.12+ only) in a
+# recent release; this project's python_version stays 3.10 (requires-python floor), so mypy can't
+# parse them. numpy is only reached via the optional [routing] extra — skip analyzing its stubs
+# rather than the module-level types they'd otherwise carry, matching the loose-typing treatment
+# already given to the other optional-extra dependencies above.
+[[tool.mypy.overrides]]
+module = ["numpy", "numpy.*"]
+follow_imports = "skip"
+
 # --- tests -----------------------------------------------------------------
 
 [tool.pytest.ini_options]

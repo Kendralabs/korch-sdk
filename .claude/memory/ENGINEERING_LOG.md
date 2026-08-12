@@ -15,8 +15,10 @@ template is at the bottom of this file.
 **Type:** fix (CI hygiene, no production behavior change) · **Phase:** unblocks P12 (cutting
 `v0.1.0`) · **Author:** Claude (agent), directed by the maintainer
 
-**What.** Three independent, pre-existing CI failures on `dev`'s current tip, all unrelated to any
-in-flight feature work, fixed so the branch is actually green before a release is cut from it:
+**What.** Five independent, pre-existing CI failures on `dev`'s current tip, all unrelated to any
+in-flight feature work, fixed so the branch is actually green before a release is cut from it. The
+first three were visible immediately; the last two were masked behind them and only surfaced once
+those were fixed (each CI job fails fast on its first broken step):
 
 1. **Lint (`ruff check`):** 5 `E501` line-too-long violations in
    `examples/08_support_escalation_swarm.py` (wrapped, no logic change) and one `RUF036` in
@@ -43,6 +45,23 @@ in-flight feature work, fixed so the branch is actually green before a release i
    existing styles exactly: a bare `pytest.importorskip("x")` statement — ruff's `E402` doesn't
    fire on that form — versus `x = pytest.importorskip("x")` assignment, which does need
    `# noqa: E402` on the imports that follow).
+4. **`mypy --strict` (masked behind the lint failure above):** a recent `numpy` release (CI
+   installs `numpy>=1.26` unpinned; the fresh install resolved `2.5.2`, newer than anything this
+   local dev environment's package index carries) ships bundled `.pyi` stubs using a PEP 695
+   `type` statement, valid only under Python 3.12+. This project's `[tool.mypy] python_version =
+   "3.10"` (matching `requires-python`) makes mypy reject that syntax when it resolves `numpy`'s
+   stubs — reached because `[routing]`-extra code imports `numpy`, and mypy statically follows
+   every reachable import regardless of whether the import is lazy/inside a function (B5). Added a
+   `[[tool.mypy.overrides]]` for `numpy`/`numpy.*` with `follow_imports = "skip"` — treats numpy's
+   types as `Any` without parsing its stubs at all, matching the loose-typing treatment the same
+   file already gives `dspy`/`temporalio`/`mcp`/`sentence_transformers`.
+5. **`pip-audit --strict` (masked behind the lint and security-scan failures above):** failed with
+   `korchestrator: Dependency not found on PyPI and could not be audited` — a direct, foreseeable
+   consequence of [ADR 0020](../../docs/adr/0020-private-distribution-defers-pypi-publishing.md)
+   landing alongside this fix: `korchestrator` is installed editable (`-e .`) and, per that ADR,
+   deliberately never published anywhere pip-audit can look it up. Added `--skip-editable` to the
+   CI step — skips auditing the local editable package itself while still fully auditing every real
+   third-party dependency.
 
 **Why.** Cutting `v0.1.0` requires promoting `dev` → `staging` → `main`, and
 `.claude/rules/branching-and-promotion.md`/spec 10 §9 both require the source branch to be green on
@@ -58,10 +77,18 @@ the original, not replacing it, since ruff and bandit each need their own) for t
 and — for the Temporal job — applied the *already-established* `pytest.importorskip` convention
 from `test_reducers.py`/`test_gateway_openai.py` to the files that were missing it, rather than
 inventing a new pattern or changing what the job installs (which would have silently pulled `[otel]`
-back into the sandbox-conflict path the job's own comment says to avoid).
+back into the sandbox-conflict path the job's own comment says to avoid). For `mypy`, skipped
+`numpy`'s stubs entirely rather than pinning an upper bound on the dependency — a version pin would
+only postpone the same break to the next `numpy` release, while `follow_imports = "skip"` is the
+durable fix for "a dependency's own stubs are incompatible/unwanted," already the repo's pattern for
+every other optional-extra dependency. For `pip-audit`, skipped the local package rather than adding
+an inert placeholder entry to a fake index — `--skip-editable` is pip-audit's own documented
+mechanism for exactly this case.
 
-**Architecture changes.** None. No public API changed; only two `# nosec`/`# noqa` additions and an
-import reorder in `src/korchestrator/`, both preserving exact prior behavior.
+**Architecture changes.** None. No public API changed; only two `# nosec`/`# noqa` additions, an
+import reorder in `src/korchestrator/`, and two CI-tooling config entries (`pyproject.toml`
+`[[tool.mypy.overrides]]`, `.github/workflows/ci.yml`'s `pip-audit` step) — all preserving exact
+prior first-party behavior.
 
 **Files/modules affected.** `examples/08_support_escalation_swarm.py`,
 `src/korchestrator/types/__init__.py`, `src/korchestrator/clients/client.py`,
@@ -69,32 +96,46 @@ import reorder in `src/korchestrator/`, both preserving exact prior behavior.
 `tests/unit/clients/test_contract_conformance.py`, `tests/unit/clients/test_control_identity.py`,
 `tests/unit/clients/test_credential_safety.py`, `tests/unit/clients/test_discovery.py`,
 `tests/unit/clients/test_run_lifecycle.py`, `tests/unit/clients/test_streaming.py`,
-`tests/unit/core/test_pregel.py`, `tests/unit/telemetry/test_tracer.py`, `tests/unit/test_remote.py`.
+`tests/unit/core/test_pregel.py`, `tests/unit/telemetry/test_tracer.py`,
+`tests/unit/test_remote.py`, `pyproject.toml`, `.github/workflows/ci.yml`.
 
 **Breaking changes.** None. `JSONValue`'s reordered union is behaviorally identical (no test pins
 the exact string form); the `importorskip` guards only change behavior when a dependency is
 *absent*, turning a hard collection error into a graceful skip — every job where the dependency is
 present (all of them except the Temporal job) is unaffected, confirmed by running the full affected
-test set locally (134 passed).
+test set locally (134 passed). The mypy override only affects how `numpy`'s own stubs are read, not
+first-party code's strictness. `--skip-editable` only removes `korchestrator` itself from the audit
+scope — every third-party dependency is still fully scanned.
 
 **Feature version / revision.** `0.1.0` — same release this unblocks.
 
 **Migration notes.** N/A — CI/test-hygiene fix, no consumer-facing behavior changed.
 
 **Testing status.** `ruff check`/`ruff format --check` clean on `src/korchestrator tests examples
-benchmarks` (the repo's full CI lint scope). `mypy --strict src/korchestrator` clean (105 files).
-`bandit -c pyproject.toml -r src/korchestrator` — no issues identified. `pytest tests/unit/clients
+benchmarks` (the repo's full CI lint scope). `mypy --strict src/korchestrator` clean (105 files;
+verified locally against `numpy==2.4.6`, the newest version this environment's package index
+carries — full confirmation against the exact `2.5.2` CI installs happens on this PR's own CI run,
+since that version isn't installable here). `bandit -c pyproject.toml -r src/korchestrator` — no
+issues identified. `pip-audit --skip-editable` — `korchestrator` now shows as a clean skip instead
+of a hard error (the remaining vulnerability list in this local run comes from unrelated packages —
+`torch`, `jupyterlab`, `transformers`, etc. — that aren't korchestrator dependencies at all and
+don't exist in a fresh CI install; not investigated further here). `pytest tests/unit/clients
 tests/unit/core/test_pregel.py tests/unit/telemetry/test_tracer.py tests/unit/test_remote.py` —
 134/134 passed locally (guards are no-ops here since all extras are installed).
-`examples/08_support_escalation_swarm.py` still runs to `RunStatus.COMPLETED` under `MOCK_LLM`.
-Not yet confirmed green on the actual Temporal-job CI runner (no local reproduction of that job's
-minimal install) — that's the real end-to-end verification, checked on this fix's own PR before
-promoting.
+`examples/08_support_escalation_swarm.py` still runs to `RunStatus.COMPLETED` under `MOCK_LLM`. Full
+confirmation for items 3–5 is this fix's own PR CI run (`pull/9`) against the real, clean runner
+environment — the local dev environment here is shared/polluted with unrelated packages and can't
+fully reproduce it.
 
-**Known limitations / future improvements.** None of these three issues are new classes of bug;
-this entry exists specifically to record that they were pre-existing and unrelated to the
-private-release-pipeline work landing alongside it, not to claim anything beyond "CI is green
-again."
+**Known limitations / future improvements.** None of these five issues are new classes of bug; this
+entry exists specifically to record that they were pre-existing (or, for #5, a direct foreseeable
+consequence of ADR 0020 landing alongside it) and unrelated to the private-release-pipeline feature
+work in PR #8, not to claim anything beyond "CI is green again." The repo's optional dependencies
+are unpinned above their floor (`numpy>=1.26`, `mypy>=1.10`, etc.) — a floating upper bound is what
+let `numpy` drift to a breaking stub release in the first place, and the org's own operations rule
+("Dependencies must be... pinned by a lockfile") flags this as a standing gap; not addressed here
+since fixing it properly means introducing a lockfile across the whole dependency set, well beyond
+what's needed to unblock this release.
 
 ---
 

@@ -138,7 +138,10 @@ jobs:
       - name: Static analysis
         run: bandit -c pyproject.toml -r src/korchestrator
       - name: Dependency audit
-        run: pip-audit --strict
+        # --skip-editable: korchestrator itself is installed editable (`pip install -e .`) and is
+        # not published to any index (ADR 0020) — pip-audit can't look it up and fails outright
+        # without this flag. Every real third-party dependency is still fully audited.
+        run: pip-audit --strict --skip-editable
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2
         env:
