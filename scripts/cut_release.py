@@ -46,8 +46,11 @@ CHANGELOG_FILE = Path("CHANGELOG.md")
 
 VERSION_ASSIGNMENT = re.compile(r'^__version__\s*=\s*"(?P<v>\d+\.\d+\.\d+)"$', re.M)
 SEMVER = re.compile(r"^\d+\.\d+\.\d+$")
-UNRELEASED_HEADER = re.compile(r"^## \[Unreleased\]\s*$", re.M)
-DATED_HEADER = re.compile(r"^## \[(?P<v>\d+\.\d+\.\d+)\] - Unreleased\s*$", re.M)
+# Trailing whitespace is [ \t]*, not \s*: \s matches newlines too, so a greedy \s* here would
+# consume the header line's own trailing newline (and, past it, a following blank line), which
+# then collapsed the blank line separating the header from the section body once replaced.
+UNRELEASED_HEADER = re.compile(r"^## \[Unreleased\][ \t]*$", re.M)
+DATED_HEADER = re.compile(r"^## \[(?P<v>\d+\.\d+\.\d+)\] - Unreleased[ \t]*$", re.M)
 FOOTER_LINK = re.compile(r"^\[(?P<name>Unreleased|\d+\.\d+\.\d+)\]:.*$", re.M)
 
 

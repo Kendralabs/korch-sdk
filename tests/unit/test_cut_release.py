@@ -59,9 +59,15 @@ class TestRepoSlugFromRemoteUrl:
 
 
 class TestRenderChangelog:
+    # A body paragraph directly under the header, no blank line before it — matching the real
+    # CHANGELOG.md's shape exactly. Regression fixture for the bug where a greedy `\s*` in the
+    # header regex consumed the header's own trailing newline, collapsing the blank line that's
+    # supposed to separate the new dated header from this paragraph.
     FIRST_RELEASE_CHANGELOG = """# Changelog
 
 ## [0.1.0] - Unreleased
+
+The first development line, assembled phase by phase.
 
 ### Added
 - The kernel.
@@ -94,6 +100,18 @@ class TestRenderChangelog:
         )
         assert "## [Unreleased]\n\n## [0.1.0] - 2026-08-12" in out
         assert "### Added\n- The kernel." in out
+
+    def test_the_blank_line_after_the_dated_header_survives(self) -> None:
+        out = render_changelog(
+            self.FIRST_RELEASE_CHANGELOG,
+            version="0.1.0",
+            repo_slug="Kendralabs/korch-sdk",
+            release_date=date(2026, 8, 12),
+            existing_tags=[],
+        )
+        # Regression: a greedy `\s*` in the header regex used to eat the header's own trailing
+        # newline, collapsing this blank line so the body paragraph ran directly into the header.
+        assert "## [0.1.0] - 2026-08-12\n\nThe first development line" in out
 
     def test_first_release_uses_a_releases_tag_link_with_no_prior_tag(self) -> None:
         out = render_changelog(
