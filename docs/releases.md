@@ -8,10 +8,12 @@
 
 ## How a release is decided
 
-1. Every change intended for the release is merged into `develop`, green on the full CI matrix.
+1. Every change intended for the release is merged into `dev`, green on the full CI matrix, then
+   promoted to `staging` and verified there. Releases are cut from `staging`, never from `dev`.
 2. The version bump follows [Versioning](versioning.md)'s SemVer rules, applied to the diff since
    the last release. If the compatibility surface changed, an ADR justifying it already exists.
-3. A release PR (`chore/release-vX.Y.Z`) into `main` contains exactly two kinds of change: the
+3. A release PR (`chore/release-vX.Y.Z`) from `staging` into `main` contains exactly two kinds of
+   change: the
    version bump in `src/korchestrator/version.py`, and the CHANGELOG edit moving `[Unreleased]`
    into a dated section. Nothing else.
 4. Every entry under `Changed`/`Deprecated`/`Removed` in that CHANGELOG section has a matching
