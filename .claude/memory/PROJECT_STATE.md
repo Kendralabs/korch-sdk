@@ -4,7 +4,7 @@
 log is chronological history; this file is the current snapshot. Update it whenever a phase advances,
 a module changes status, or the public surface moves — `/log` does both together.
 
-**Last updated:** 2026-08-12 · **Version:** `0.1.0` (unreleased) · **Branch model:** `dev` → `staging` → `main`
+**Last updated:** 2026-08-12 · **Version:** `0.1.0` (release in progress — private pipeline shipped, tag pending) · **Branch model:** `dev` → `staging` → `main`
 
 ---
 
@@ -12,10 +12,10 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | **P11 — Documentation, examples & DX — complete (P11.1–P11.6).** Phase 10 is also complete and merged. Next: Phase 12 (CI/CD, packaging & publishing). |
-| **Last completed milestone** | **P11.6 — Examples, complete.** Populated `examples/` with seven standalone, directly-executable scripts (one per tutorial with a genuinely offline-runnable core — HITL excluded, same reasoning as its tutorial). Each verified via direct execution, matching the CI `examples` job's own invocation. This closes Phase 11. |
-| **Blocking** | Nothing. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; now also documented as a reader-facing `docs/troubleshooting.md` entry). Next: Phase 12. |
-| **Pushed / merged** | All work through P11 (plus the dashboard app) is consolidated and pushed. On 2026-08-12 the repository moved to a `dev` → `staging` → `main` model: the former `develop` and every phase branch were merged, verified fully contained, and deleted; `dev`, `staging` and `main` now all sit at the same commit. Branch off `dev` from here. |
+| **Active phase** | **P12 — CI/CD, packaging & publishing — private-distribution pipeline shipped (P12.1–P12.7), narrowed by [ADR 0020](../../docs/adr/0020-private-distribution-defers-pypi-publishing.md).** P11 is complete. Next: cut and tag `v0.1.0` itself. |
+| **Last completed milestone** | **P12.7 — Release automation script.** `.github/workflows/release.yml` now checksums the built artifact and publishes a GitHub Release (wheel, sdist, `SHA256SUMS`, CHANGELOG-derived notes) on every `vX.Y.Z` tag, plus an in-pipeline `verify-private-install` job. New `scripts/cut_release.py` (`prepare`/`tag`) automates the release runbook (spec 10 §9), unit tested at `tests/unit/test_cut_release.py` (15/15 passing). PyPI Trusted Publishing, SBOM generation, and provenance attestation are deferred, not implemented — see ADR 0020. |
+| **Blocking** | Nothing. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; now also documented as a reader-facing `docs/troubleshooting.md` entry). Next: the `chore/release-v0.1.0` PR and the `v0.1.0` tag push itself. |
+| **Pushed / merged** | All work through P11 (plus the dashboard app) is consolidated and pushed. On 2026-08-12 the repository moved to a `dev` → `staging` → `main` model: the former `develop` and every phase branch were merged, verified fully contained, and deleted; `dev`, `staging` and `main` now all sit at the same commit. This P12 release-pipeline work lands on `feat/p12-private-release-pipeline` off `dev`, per the normal flow, ahead of the separate minimal `chore/release-v0.1.0` PR that actually cuts the tag. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
 ruff-format, `mypy --strict` (105 source files, unaffected by P11 so far), `pytest` (dspy +
@@ -43,7 +43,7 @@ imported by `korchestrator/__init__.py` (statically checked, `test_remote.py`).
 | P9 | Remote client (Python only — TS deferred) | **Complete** (P9.1–P9.8; merged to `develop`) |
 | P10 | Testing, benchmarks & quality gates | **Complete** (P10.1–P10.6) |
 | P11 | Documentation, examples & DX | **Complete** (P11.1–P11.6) |
-| P12 | CI/CD, packaging & publishing | Not started |
+| P12 | CI/CD, packaging & publishing | Private-distribution pipeline shipped (P12.1–P12.7); tagging `v0.1.0` next |
 | P13 | External backend adapter | **Out of scope** — separate repository |
 
 ## 3. Module status

@@ -322,18 +322,27 @@ python -m venv /tmp/base && /tmp/base/bin/pip install -e . && /tmp/base/bin/pyte
 
 **Branch prefix:** `chore/p12-*` · **Goal:** a one-tag, fully automated, immutable release.
 
+> **ADR 0020 (2026-08-12) narrows P12.4 and P12.6.** The repository is private and stays private;
+> releases publish as GitHub Releases on this repo, not PyPI. P12.4 is delivered as a private
+> `github-release` job instead of PyPI Trusted Publishing; P12.6's dry run is delivered as an
+> in-pipeline install verification (`verify-private-install`) instead of a TestPyPI rehearsal,
+> since there is no PyPI target to rehearse against. P12.3 ships checksums only in this pass — SBOM
+> generation, provenance attestation, and the license allowlist scan are follow-up work, not
+> silently dropped. See [ADR 0020](../adr/0020-private-distribution-defers-pypi-publishing.md).
+
 | # | Task | Deliverables | Depends on | Status |
 |---|---|---|---|---|
-| P12.1 | Version validation | `version-validate` job asserting `version.py` == package metadata == tag | P0.5 | ☐ |
-| P12.2 | Artifact verification | Build wheel+sdist; install and import **the built artifact** in a clean environment outside the source tree | P12.1 | ☐ |
-| P12.3 | Supply chain | SBOM generation, checksums, build provenance attestation, license allowlist scan | P12.2 | ☐ |
-| P12.4 | Publish | PyPI Trusted Publishing (OIDC, no long-lived token), gated on every prior job | P12.3 | ☐ |
-| P12.5 | Release notes + docs deploy | Generated notes (supported Pythons, dependency changes, API changes, migrations, known limitations); GitHub Pages deploy | P12.4 | ☐ |
-| P12.6 | Dry run | Full pipeline against a `v0.1.0-rc1` tag on TestPyPI before the real release | P12.5 | ☐ |
+| P12.1 | Version validation | `version-validate` job asserting `version.py` == package metadata == tag | P0.5 | ☑ |
+| P12.2 | Artifact verification | Build wheel+sdist; install and import **the built artifact** in a clean environment outside the source tree | P12.1 | ☑ |
+| P12.3 | Supply chain (narrowed) | `SHA256SUMS` checksums over the built wheel+sdist. SBOM, provenance attestation, and license allowlist scan deferred (ADR 0020) | P12.2 | ☑ (checksums only) |
+| P12.4 | Publish (narrowed) | **Private:** `github-release` job publishes a GitHub Release with the wheel, sdist, and checksums attached, gated on P12.2/P12.3. PyPI Trusted Publishing deferred | P12.3 | ☑ (private) |
+| P12.5 | Release notes + docs deploy | Notes extracted from the tagged `CHANGELOG.md` section, attached to the GitHub Release. `docs.yml` already deploys GitHub Pages independently on every push to `main` (not release-tag-gated) | P12.4 | ☑ |
+| P12.6 | Dry run (narrowed) | `verify-private-install` job: installs via `pip install git+https://...@vX.Y.Z` inside the release workflow, authenticated with the run's own scoped `GITHUB_TOKEN`. No TestPyPI rehearsal — no PyPI target exists | P12.5 | ☑ |
+| P12.7 | Release automation script | `scripts/cut_release.py` — automates the version bump, CHANGELOG dating, release-branch/PR creation (`prepare`), and tag creation/push (`tag`) described in spec 10 §9 | P12.1 | ☑ |
 
-**Acceptance:** a tagged release builds, scans, verifies version everywhere, installs from the artifact in a clean environment, publishes immutably, and deploys docs — with no backend, frontend, container, or npm job anywhere.
+**Acceptance:** a tagged release builds, checksums, verifies version everywhere, installs from the artifact in a clean environment, publishes immutably as a GitHub Release, and is installable via a pinned git reference — with no backend, frontend, container, npm, or PyPI job anywhere (ADR 0020).
 
-**Commits:** `ci: add version validation and artifact verification [P12]` · `ci: add SBOM, provenance and trusted publishing [P12]` · `chore(release): verify pipeline via release candidate [P12]`
+**Commits:** `ci: add version validation and artifact verification [P12]` · `ci: add checksums and private GitHub Release publishing [P12]` · `feat(scripts): add release-cutting automation [P12]` · `chore(release): cut v0.1.0 [P12]`
 
 ---
 
