@@ -258,6 +258,8 @@ itself):
 | [docs/specs/03-architecture.md](docs/specs/03-architecture.md) | Layering, ARI ports, the dependency rule |
 | [docs/specs/04-public-api.md](docs/specs/04-public-api.md) | Public surface and compatibility contract |
 | [docs/specs/12-implementation-plan.md](docs/specs/12-implementation-plan.md) | The step-by-step task list |
+| [docs/specs/10-release-versioning-and-cicd.md](docs/specs/10-release-versioning-and-cicd.md) | Versioning policy, the CI/CD pipeline (`.github/workflows/`), and the release runbook |
+| [.claude/rules/](.claude/rules) | Enforceable constraints: architecture boundaries, determinism, testing, security, API compatibility |
 | [docs/adr/](docs/adr/README.md) | Why things were decided the way they were |
 | [docs/background/](docs/background/README.md) | Superseded source inputs, kept for provenance |
 
@@ -283,6 +285,24 @@ committed. The full model, including the hotfix exception, is in
 Working with an AI coding agent? The repository is configured for it: [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
 is the always-on ruleset, `.claude/rules/` holds the enforceable constraints, and `/phase`, `/verify`,
 `/log`, and `/adr` cover the standard workflow.
+
+### Releasing a version
+
+Cut from `staging`, never from `dev` or directly on `main`. [`scripts/cut_release.py`](scripts/cut_release.py)
+automates the mechanical steps:
+
+```bash
+# from staging: bump the version, date the CHANGELOG, open the release PR into main
+python scripts/cut_release.py prepare --bump patch   # or --bump minor / --bump major / --version X.Y.Z
+
+# after that PR is reviewed and merged: tag main and push it, which triggers .github/workflows/release.yml
+python scripts/cut_release.py tag
+```
+
+`release.yml` builds the wheel and sdist, verifies the built artifact in a clean environment, and
+publishes a GitHub Release with the wheel, sdist, and `SHA256SUMS` attached — see
+[Installation](#installation) for how consumers then install it. Full runbook, including the
+merge-back step that keeps `dev`/`staging`/`main` in sync afterward: [docs/releases.md](docs/releases.md).
 
 ## Non-goals
 
