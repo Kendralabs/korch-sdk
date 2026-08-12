@@ -259,7 +259,12 @@ run; they are executed on demand and on release branches. See
 | `.github/workflows/docs.yml` | Documentation build and GitHub Pages deployment |
 | `.github/ISSUE_TEMPLATE/` | Bug report and feature request templates |
 | `.github/PULL_REQUEST_TEMPLATE.md` | Intent, risk, test evidence, compatibility impact, rollback |
-| `.github/dependabot.yml` | Dependency update schedule for pip and GitHub Actions |
+
+Automated dependency-update PRs are deliberately **not** enabled: there is no `.github/dependabot.yml`.
+Vulnerabilities are still caught — `ci.yml` runs `pip-audit --strict` (plus `bandit` and `gitleaks`)
+on every push and pull request, so a known-vulnerable dependency fails the build. What is switched
+off is only the *unsolicited version-bump PR*; upgrades are proposed by a human and reviewed like
+any other change.
 
 There is **no** npm publish job, no container build job, and no deployment job. See
 [10-release-versioning-and-cicd.md](10-release-versioning-and-cicd.md) §9.
