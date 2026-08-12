@@ -159,9 +159,16 @@ jobs:
         # Expiry: revisit at the next scheduled dependency review, or immediately if a fix ships.
         run: pip-audit --skip-editable --ignore-vuln PYSEC-2026-2447
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # gitleaks/gitleaks-action@v2 requires a paid GITLEAKS_LICENSE for organization-owned
+        # repos (Kendralabs is an org) — confirmed failing on that gate alone, unrelated to any
+        # actual secret finding. The underlying `gitleaks` CLI itself is free and unlicensed;
+        # install it directly from its own GitHub release instead of the Action wrapper. Pinned
+        # to a specific version deliberately — bump this only as a reviewed version change.
+        run: |
+          curl -sSL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --redact -v
 
   build:
     name: Build and verify the artifact
