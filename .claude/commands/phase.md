@@ -56,9 +56,10 @@ Use `/verify`. Report honestly.
 
 ## 9. Commit and PR
 
-Branch `<type>/p<phase>-<slug>` off `develop`. Conventional Commits with the phase tag:
-`feat(core): implement Pregel kernel + reducers [P2]`. PR into `develop`. Never commit directly to
-`main` or `develop`, and never use `--no-verify`.
+Branch `<type>/p<phase>-<slug>` off `dev`. Conventional Commits with the phase tag:
+`feat(core): implement superstep kernel + reducers [P2]`. PR into `dev`. Never commit directly to
+`dev`, `staging`, or `main`, and never use `--no-verify`. Promotion is forward-only,
+`dev` → `staging` → `main` (`.claude/rules/branching-and-promotion.md`).
 
 ## Stop and ask if
 

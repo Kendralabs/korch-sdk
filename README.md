@@ -262,10 +262,14 @@ above to get installed and green, plus this one extra step:
 chmod +x .claude/hooks/pre-commit-check.sh   # once, after cloning — enforces the gates below at commit time
 ```
 
-Branch off `develop` as `<type>/p<phase>-<slug>`. Use Conventional Commits with a phase tag
-(`feat(core): implement superstep kernel + reducers [P2]`). Never commit directly to `main` or
-`develop`, and never bypass the hooks. Every change touching `src/` updates
-[`.claude/memory/ENGINEERING_LOG.md`](.claude/memory/ENGINEERING_LOG.md) before it is committed.
+Branches promote forward only: `dev` (integration) → `staging` (release candidate) → `main`
+(released, and the repository default). Branch off `dev` as `<type>/p<phase>-<slug>` and open the
+PR against `dev` — GitHub proposes `main`, which is wrong for feature work. Use Conventional
+Commits with a phase tag (`feat(core): implement superstep kernel + reducers [P2]`). Never commit
+directly to `dev`, `staging`, or `main`, and never bypass the hooks. Every change touching `src/`
+updates [`.claude/memory/ENGINEERING_LOG.md`](.claude/memory/ENGINEERING_LOG.md) before it is
+committed. The full model, including the hotfix exception, is in
+[`.claude/rules/branching-and-promotion.md`](.claude/rules/branching-and-promotion.md).
 
 Working with an AI coding agent? The repository is configured for it: [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
 is the always-on ruleset, `.claude/rules/` holds the enforceable constraints, and `/phase`, `/verify`,
