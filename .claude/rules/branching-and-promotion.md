@@ -22,16 +22,34 @@ default and that proposal is always wrong for feature work.
 
 ## The invariant
 
-At rest, every commit on `main` is on `staging`, and every commit on `staging` is on `dev`:
+Promotion merges `--no-ff`, so the merge commit lands on the **target**, and the target accumulates
+the source's history. History therefore flows the same way the work does: `main` contains `staging`
+contains `dev`.
+
+At rest — immediately after a full promotion, when nothing is pending — all three trees are
+identical and this prints `OK`:
 
 ```bash
-git merge-base --is-ancestor origin/main origin/staging \
-  && git merge-base --is-ancestor origin/staging origin/dev \
+git merge-base --is-ancestor origin/dev origin/staging \
+  && git merge-base --is-ancestor origin/staging origin/main \
   && echo OK
 ```
 
-This must print `OK`. If it does not, a promotion was skipped or a branch was written to directly —
-fix that before merging anything else. Everything below exists to keep this invariant true.
+Mind the direction: `main` is **not** an ancestor of `staging`. It holds its own promotion merge
+commits, so testing it that way always fails and tells you nothing.
+
+Between promotions the invariant relaxes in exactly one direction: `dev` legitimately runs ahead of
+`staging`, and `staging` ahead of `main`. That is pending work, not drift. What must never happen is
+the reverse — `main` or `staging` holding a commit that never passed through the stage below it:
+
+```bash
+# Anything listed here reached the branch without being promoted. Should be empty.
+git rev-list --no-merges origin/main ^origin/staging
+git rev-list --no-merges origin/staging ^origin/dev
+```
+
+A non-empty result means someone committed directly to a protected branch or cherry-picked forward.
+Fix that before merging anything else — everything below exists to keep those lists empty.
 
 ## Doing the work
 
