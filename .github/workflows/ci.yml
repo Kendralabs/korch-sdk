@@ -147,7 +147,17 @@ jobs:
         # accidentally, excluded), which defeats the point of combining the two flags. Without
         # --strict, pip-audit still exits non-zero on any *actual* reported vulnerability; it only
         # stops hard-failing on the one skip we asked for.
-        run: pip-audit --skip-editable
+        #
+        # --ignore-vuln PYSEC-2026-2447 (CVE-2025-69872, GHSA-w8v5-vhqr-4h9v): unsafe pickle
+        # deserialization in `diskcache` (transitive dep of the [dspy] extra), affecting every
+        # released version through the latest (5.6.3) — no patched version exists to bump to.
+        # Exploitation requires an attacker who already has write access to the local cache
+        # directory, at which point they have other, more direct attack paths; korchestrator does
+        # not expose the cache directory to untrusted input. Owner: SDK maintainers. Reason: no fix
+        # available, low real-world severity for this usage. Compensating control: consumers should
+        # ensure DSPy's cache directory has normal user-only filesystem permissions (the OS default).
+        # Expiry: revisit at the next scheduled dependency review, or immediately if a fix ships.
+        run: pip-audit --skip-editable --ignore-vuln PYSEC-2026-2447
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2
         env:

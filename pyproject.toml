@@ -35,7 +35,16 @@ temporal = ["temporalio>=1.7,<2"]
 # follow_imports = "skip" does not help — mypy reports the stub's syntax error before semantic
 # analysis (where follow_imports applies) ever runs. Revisit once numpy ships 3.10-compatible
 # stubs again or this project's minimum Python version rises to 3.12.
-routing = ["sentence-transformers>=3.0,<4", "numpy>=1.26,<2.5"]
+#
+# sentence-transformers>=5.2 (not >=3.0): the >=3.0,<4 floor previously here resolved
+# transformers 4.57.6, which carries known vulnerabilities (PYSEC-2026-2288/2289/2290) fixed in
+# transformers 5.0/5.3/5.5 respectively. sentence-transformers<5.2 caps transformers at <5.0
+# (verified against every 3.x/4.x/5.0-5.1 release's own metadata), so the transformers floor below
+# is unreachable without this bump too. `korchestrator.routing.semantic` only calls
+# `SentenceTransformer(name)` and `.encode(texts)` — the library's oldest, most stable surface —
+# verified compatible by actually downloading `all-MiniLM-L6-v2` and encoding real text against
+# sentence-transformers 5.7.0 / transformers 5.15.0 before this bump landed.
+routing = ["sentence-transformers>=5.2,<6", "transformers>=5.5,<6", "numpy>=1.26,<2.5"]
 mcp = ["mcp>=1.2,<2"]
 remote = ["httpx>=0.27,<1"]
 otel = [
