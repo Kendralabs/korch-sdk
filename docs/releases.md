@@ -27,6 +27,26 @@
    `dev` so all three branches converge again — the promotion invariant in
    `.claude/rules/branching-and-promotion.md` expects this "at rest" state between releases.
 
+   **This merge-back must be a fast-forward, not a merge commit.** A normal PR merge (base=`staging`,
+   head=`main`) creates a new commit *on* `staging`, which makes `main` an ancestor of `staging` —
+   backwards from the invariant (`dev` ancestor-of `staging` ancestor-of `main`). Right after a
+   release, `main` is already a fast-forward descendant of `staging` (the release PR's only parent
+   was `staging`), so push it directly instead of merging a PR:
+
+   ```bash
+   git push origin main:staging
+   git push origin main:dev
+   ```
+
+   Verify before moving on:
+
+   ```bash
+   git fetch origin
+   git merge-base --is-ancestor origin/dev origin/staging \
+     && git merge-base --is-ancestor origin/staging origin/main \
+     && echo OK
+   ```
+
 ## What the release workflow does today
 
 On a `vX.Y.Z` tag push (`.github/workflows/release.yml`):
