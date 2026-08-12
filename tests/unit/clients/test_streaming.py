@@ -4,15 +4,16 @@ from __future__ import annotations
 
 from unittest import mock
 
-import httpx
 import pytest
-import respx
 
-from korchestrator.clients import KorchestratorClient
-from korchestrator.clients.client import _iter_sse_events, _parse_sse_data
-from korchestrator.exceptions import ApiError, NetworkError
-from korchestrator.exceptions import TimeoutError as KorchTimeoutError
-from korchestrator.models import RunEvent
+httpx = pytest.importorskip("httpx")
+respx = pytest.importorskip("respx")
+
+from korchestrator.clients import KorchestratorClient  # noqa: E402 — after importorskip guards
+from korchestrator.clients.client import _iter_sse_events, _parse_sse_data  # noqa: E402
+from korchestrator.exceptions import ApiError, NetworkError  # noqa: E402
+from korchestrator.exceptions import TimeoutError as KorchTimeoutError  # noqa: E402
+from korchestrator.models import RunEvent  # noqa: E402
 
 BASE_URL = "https://engine.example.com"
 
