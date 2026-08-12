@@ -10,6 +10,194 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-08-12 · Pre-existing CI drift fixed ahead of the v0.1.0 release — v0.1.0
+
+**Type:** fix (CI hygiene, no production behavior change) · **Phase:** unblocks P12 (cutting
+`v0.1.0`) · **Author:** Claude (agent), directed by the maintainer
+
+**What.** Seven independent, pre-existing CI failures on `dev`'s current tip, all unrelated to any
+in-flight feature work, fixed so the branch is actually green before a release is cut from it. The
+first three were visible immediately; the rest were masked behind them and only surfaced once those
+were fixed (each CI job fails fast on its first broken step):
+
+1. **Lint (`ruff check`):** 5 `E501` line-too-long violations in
+   `examples/08_support_escalation_swarm.py` (wrapped, no logic change) and one `RUF036` in
+   `src/korchestrator/types/__init__.py` — `JSONValue`'s `TypeAliasType` string had `None` in the
+   middle of the union instead of the end (reordered; the type is identical, member order in a
+   union carries no semantic meaning).
+2. **Security scan (`bandit`):** two pre-existing suppressions
+   (`src/korchestrator/clients/client.py:203`, `src/korchestrator/mcp/client.py:152`) used ruff's
+   `# noqa: SXXX` syntax, which bandit does not read — bandit needs `# nosec BXXX`. Both already
+   had a real justification in the trailing comment; added the correctly-formatted `# nosec`
+   alongside the existing `# noqa` (ruff still needs its own suppression too) so both tools
+   actually see it, and moved the human-readable reason to its own comment line so bandit's nosec
+   parser doesn't warn about parsing prose as test IDs.
+3. **Temporal runtime suite CI job:** `pytest tests -m temporal` was erroring during *collection*
+   (10 collection errors, exit code 2) before a single temporal-marked test could run, because that
+   job installs only `.[temporal]` + bare `pytest`/`pytest-asyncio` (deliberately no `[otel]`, to
+   avoid an import hook that conflicts with Temporal's workflow sandbox — see the job's own
+   comment), while `tests/unit/clients/*.py` (7 files), `tests/unit/core/test_pregel.py`,
+   `tests/unit/telemetry/test_tracer.py`, and `tests/unit/test_remote.py` had hard top-level
+   imports of `httpx`/`hypothesis`/`opentelemetry` with no guard — unlike `test_reducers.py` and
+   `test_gateway_openai.py`, which already used the repo's own established
+   `pytest.importorskip(...)` guard convention and therefore degrade to a graceful `SKIPPED`
+   instead of a collection `ERROR`. Applied the same guard to all 9 files (matching the two
+   existing styles exactly: a bare `pytest.importorskip("x")` statement — ruff's `E402` doesn't
+   fire on that form — versus `x = pytest.importorskip("x")` assignment, which does need
+   `# noqa: E402` on the imports that follow).
+4. **`mypy --strict` (masked behind the lint failure above):** a recent `numpy` release (CI
+   installs `numpy>=1.26` unpinned; the fresh install resolved `2.5.2`, newer than anything this
+   local dev environment's package index carries) ships bundled `.pyi` stubs using a PEP 695
+   `type` statement, valid only under Python 3.12+. This project's `[tool.mypy] python_version =
+   "3.10"` (matching `requires-python`) makes mypy reject that syntax when it resolves `numpy`'s
+   stubs — reached because `[routing]`-extra code imports `numpy`, and mypy statically follows
+   every reachable import regardless of whether the import is lazy/inside a function (B5). First
+   attempt was a `[[tool.mypy.overrides]]` for `numpy`/`numpy.*` with `follow_imports = "skip"`
+   (matching the loose-typing treatment already given to `dspy`/`temporalio`/`mcp`/
+   `sentence_transformers`) — verified on this PR's own CI run that this does **not** work: a
+   stub's syntax error is reported during parsing, before `follow_imports` (a semantic-analysis
+   setting) ever takes effect. Replaced it with a version pin instead —
+   `numpy>=1.26,<2.5` in the `[routing]` extra — which avoids the incompatible release outright.
+5. **`pip-audit` (masked behind the lint and security-scan failures above):** failed with
+   `korchestrator: Dependency not found on PyPI and could not be audited` — a direct, foreseeable
+   consequence of [ADR 0020](../../docs/adr/0020-private-distribution-defers-pypi-publishing.md)
+   landing alongside this fix: `korchestrator` is installed editable (`-e .`) and, per that ADR,
+   deliberately never published anywhere pip-audit can look it up. Added `--skip-editable`, which
+   fixed the collection error — but combined with the job's existing `--strict` flag, pip-audit
+   *still* failed on the identical error, confirmed empirically: `--strict` ("fail if dependency
+   collection fails on any dependency") treats a deliberate `--skip-editable` skip the same as an
+   accidental collection failure. Dropped `--strict`; `pip-audit --skip-editable` alone still exits
+   non-zero on any *actual* reported vulnerability in a real dependency — it only stops hard-failing
+   on the one skip asked for.
+6. **`pip-audit`, real findings (surfaced once #5's collection failure stopped masking them):** with
+   `korchestrator` no longer a hard error, `pip-audit` reported genuine vulnerabilities in two real
+   dependencies. `transformers` 4.57.6 (transitive, via `[routing]`'s `sentence-transformers`) had
+   six known CVEs, three with fixes in `transformers` 5.0/5.3/5.5. `diskcache` 5.6.3 (transitive,
+   via `[dspy]`) had one (`PYSEC-2026-2447`/`CVE-2025-69872`, unsafe pickle deserialization) with
+   **no** patched release available at all (confirmed: 5.6.3 is the current latest on PyPI). Fixed
+   the fixable one properly — see the maintainer decision below — and suppressed the unfixable one
+   with the owner/reason/expiry/compensating-control the repo's own `.claude/rules/security.md`
+   requires. **Presented this choice to the maintainer directly rather than deciding unilaterally**
+   (a suppression, and a major transitive-dependency bump, are both judgment calls this fix
+   shouldn't make silently); they chose "bump `transformers`, verify compatibility."
+   - `sentence-transformers<5.2` caps `transformers` below `<5.0` (verified against the `requires_dist`
+     metadata of every 3.x/4.x/5.0/5.1 release on PyPI — none of them allow `transformers>=5.0`), so
+     fixing `transformers` alone is impossible without also raising the `sentence-transformers` floor.
+     Bumped `[routing]` from `sentence-transformers>=3.0,<4` to `>=5.2,<6` (the first line allowing
+     `transformers<6.0.0`) and added an explicit `transformers>=5.5,<6` floor (covers all three fixed
+     CVEs). `korchestrator.routing.semantic` only calls `SentenceTransformer(name)` and
+     `.encode(texts)` — checked first, then verified for real: installed `sentence-transformers==5.7.0`
+     / `transformers==5.15.0`, downloaded `all-MiniLM-L6-v2` from the Hub, and both a raw
+     `SentenceTransformer(...).encode(...)` call and `korchestrator.routing.semantic._SentenceTransformerEmbedder.embed(...)`
+     itself returned the expected `(n_texts, 384)` float vectors. `tests/unit/routing` (46 tests, all
+     mocking `sentence_transformers` per T1) still 46/46 passed.
+   - `diskcache`: added `--ignore-vuln PYSEC-2026-2447` with a comment in `ci.yml` recording the
+     owner (SDK maintainers), reason (no fix exists; exploitation needs an attacker who already has
+     write access to the local cache directory), compensating control (consumers should keep DSPy's
+     cache directory at normal user-only filesystem permissions — the OS default), and expiry (next
+     scheduled dependency review, or immediately on a fix shipping).
+7. **Secret scan (masked behind every prior `security` job step above):** `gitleaks/gitleaks-action@v2`
+   failed with "missing gitleaks license" — the Action added a paid-license requirement for
+   organization-owned repos (`Kendralabs` is an org); this has nothing to do with any actual secret
+   finding. The underlying `gitleaks` CLI itself remains free and unlicensed. Replaced the Action
+   with a direct, version-pinned download of the CLI binary from its own GitHub release
+   (`v8.30.1`) and a plain `gitleaks detect --source . --redact -v` run step — same scanning engine,
+   no license gate. Verified locally (Windows build of the same pinned version): `223 commits
+   scanned`, `no leaks found`, exit `0`.
+
+**Why.** Cutting `v0.1.0` requires promoting `dev` → `staging` → `main`, and
+`.claude/rules/branching-and-promotion.md`/spec 10 §9 both require the source branch to be green on
+the full CI matrix before a promotion PR opens — "never promote a red branch." `gh run list
+--branch dev` showed the branch's current tip (`de91d74`) already failing CI (`Lint, format, types,
+gates`, `Security scans`, `Temporal runtime suite`) before any of this session's other work landed,
+confirming these are pre-existing gaps blocking the requested release, not something introduced by
+the private-release-pipeline PR (#8) sitting alongside this one.
+
+**Design decisions.** Fixed the smallest thing that makes each check pass without changing behavior:
+line-wraps and a union-member reorder for lint; the tool-correct suppression syntax (kept alongside
+the original, not replacing it, since ruff and bandit each need their own) for the security scan;
+and — for the Temporal job — applied the *already-established* `pytest.importorskip` convention
+from `test_reducers.py`/`test_gateway_openai.py` to the files that were missing it, rather than
+inventing a new pattern or changing what the job installs (which would have silently pulled `[otel]`
+back into the sandbox-conflict path the job's own comment says to avoid). For `mypy`, tried the
+"treat as `Any`" override first since it matches the repo's existing pattern for other optional
+deps, but verified — rather than assumed — that it doesn't actually work for a stub *syntax* error
+(as opposed to a missing-stub or type error), then fell back to the version pin, which is the
+correct tool for a genuine version incompatibility. For `pip-audit`, skipped the local package
+rather than adding an inert placeholder entry to a fake index — `--skip-editable` is pip-audit's own
+documented mechanism for exactly this case — and verified empirically (not assumed) that `--strict`
+needed to come off, rather than leaving a flag combination that looked right but silently
+reintroduced the same failure.
+
+**Architecture changes.** None. No public API changed; only two `# nosec`/`# noqa` additions, an
+import reorder in `src/korchestrator/`, a version-bound tightening on the optional `[routing]`
+extra, and a `pip-audit` CI flag change — all preserving exact prior first-party behavior.
+
+**Files/modules affected.** `examples/08_support_escalation_swarm.py`,
+`src/korchestrator/types/__init__.py`, `src/korchestrator/clients/client.py`,
+`src/korchestrator/mcp/client.py`, `tests/unit/clients/test_client.py`,
+`tests/unit/clients/test_contract_conformance.py`, `tests/unit/clients/test_control_identity.py`,
+`tests/unit/clients/test_credential_safety.py`, `tests/unit/clients/test_discovery.py`,
+`tests/unit/clients/test_run_lifecycle.py`, `tests/unit/clients/test_streaming.py`,
+`tests/unit/core/test_pregel.py`, `tests/unit/telemetry/test_tracer.py`,
+`tests/unit/test_remote.py`, `pyproject.toml`, `.github/workflows/ci.yml`.
+
+**Breaking changes.** None to first-party behavior. `JSONValue`'s reordered union is behaviorally
+identical (no test pins the exact string form); the `importorskip` guards only change behavior when
+a dependency is *absent*, turning a hard collection error into a graceful skip — every job where the
+dependency is present (all of them except the Temporal job) is unaffected, confirmed by running the
+full affected test set locally (134 passed). The `numpy<2.5` bound narrows what `[routing]` will
+resolve to — a real, if minor, constraint tightening, not a behavior change in code. `--skip-editable`
+only removes `korchestrator` itself from the audit scope; dropping `--strict` means a genuinely
+unauditable *third-party* dependency (as opposed to our own deliberately-skipped package) would now
+warn rather than hard-fail the job — acceptable here since the one dependency that previously
+triggered that path (`korchestrator` itself) is now handled by `--skip-editable` directly.
+
+**Feature version / revision.** `0.1.0` — same release this unblocks.
+
+**Migration notes.** N/A — CI/test-hygiene fix, no consumer-facing behavior changed.
+
+**Testing status.** `ruff check`/`ruff format --check` clean on `src/korchestrator tests examples
+benchmarks` (the repo's full CI lint scope). `mypy --strict src/korchestrator` clean (105 files),
+verified with `numpy` pinned to `2.4.6` (the newest version installable in this environment's
+package index — under the new `<2.5` ceiling). `bandit -c pyproject.toml -r src/korchestrator` — no
+issues identified. PR #9's own CI run confirmed the real target: `Lint, format, types, gates` went
+from failing on the `numpy` stub error to passing outright once the version pin landed; `Temporal
+runtime suite` passed once the `importorskip` guards landed. `Security scans`/`pip-audit` confirmed
+the exact two real findings this entry fixes (`transformers` ×6 CVEs, `diskcache` ×1) with nothing
+else — CI's clean environment had none of the ~19 unrelated packages (`torch`, `jupyterlab`,
+`mistune`, `bleach`, `pypdf`, `starlette`, …) this shared local dev environment's own tooling
+surfaces, confirming those were local pollution as suspected, not real findings. `transformers`/
+`diskcache` fix verified locally: `sentence-transformers==5.7.0`/`transformers==5.15.0` installed,
+`all-MiniLM-L6-v2` downloaded from the Hub and encoded real text through both a raw
+`SentenceTransformer` call and `korchestrator.routing.semantic._SentenceTransformerEmbedder.embed`
+directly (both returned the expected 384-dim vectors); `tests/unit/routing` 46/46 passed;
+`pip-audit --skip-editable --ignore-vuln PYSEC-2026-2447` locally shows neither `transformers` nor
+`diskcache` in its findings ("ignored 1"). `pytest tests/unit/clients tests/unit/core/test_pregel.py
+tests/unit/telemetry/test_tracer.py tests/unit/test_remote.py` — 134/134 passed locally (guards are
+no-ops here since all extras are installed). `examples/08_support_escalation_swarm.py` still runs to
+`RunStatus.COMPLETED` under `MOCK_LLM`. This final round (items 5's `--ignore-vuln`, item 6's version
+bumps) is pushed to PR #9 for its own CI confirmation before merging, per the same discipline as the
+rest of this entry.
+
+**Known limitations / future improvements.** The `PYSEC-2026-2447` suppression on `diskcache` is
+real, accepted residual risk, not a resolved issue — it stays open until `diskcache` ships a fix or
+`[dspy]` moves off it, and the CI comment records the review trigger (next scheduled dependency
+review, or immediately on a fix shipping) so it doesn't silently persist forever. If PR #9's CI run
+surfaces any *other* real (non-`korchestrator`, non-`transformers`, non-`diskcache`) `pip-audit`
+finding beyond what's fixed here, that's a further, separate security question for the maintainer,
+not something to resolve inside this fix. None of these six issues are new classes of bug otherwise;
+this entry exists specifically to record that they were pre-existing (or, for #5/#6, a direct
+foreseeable consequence of ADR 0020 landing alongside it) and unrelated to the private-release-
+pipeline feature work in PR #8, not to claim anything beyond "CI is green again." The repo's optional
+dependencies are unpinned above their floor (`mypy>=1.10`, etc.) — a floating upper bound is exactly
+what let `numpy` and `transformers` drift into breaking/vulnerable releases in the first place, and
+the org's own operations rule ("Dependencies must be... pinned by a lockfile") flags this as a
+standing gap; not addressed here since fixing it properly means introducing a lockfile across the
+whole dependency set, well beyond what's needed to unblock this release.
+
+---
+
 ## 2026-07-30 · Governance halt veto wired in hooks + Pregel — v0.1.0
 
 **Type:** fix · **Phase:** retroactively completes spec 07 §9 (deferred at P6.8/P7) · **Author:**
