@@ -12,13 +12,14 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import httpx
 import pytest
-import respx
 
-from korchestrator.clients import KorchestratorClient
-from korchestrator.exceptions import ApiError, NetworkError
-from korchestrator.exceptions import TimeoutError as KorchTimeoutError
+httpx = pytest.importorskip("httpx")
+respx = pytest.importorskip("respx")
+
+from korchestrator.clients import KorchestratorClient  # noqa: E402 — after importorskip guards
+from korchestrator.exceptions import ApiError, NetworkError  # noqa: E402
+from korchestrator.exceptions import TimeoutError as KorchTimeoutError  # noqa: E402
 
 BASE_URL = "https://engine.example.com"
 SECRET_API_KEY = "sk-super-secret-do-not-leak"  # noqa: S105 — test fixture value, not a real key

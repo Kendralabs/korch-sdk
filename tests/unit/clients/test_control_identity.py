@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import json as json_module
 
-import httpx
 import pytest
-import respx
 
-from korchestrator.clients import KorchestratorClient
-from korchestrator.exceptions import ApiError
-from korchestrator.models import RunStatus
+httpx = pytest.importorskip("httpx")
+respx = pytest.importorskip("respx")
+
+from korchestrator.clients import KorchestratorClient  # noqa: E402 — after importorskip guards
+from korchestrator.exceptions import ApiError  # noqa: E402
+from korchestrator.models import RunStatus  # noqa: E402
 
 BASE_URL = "https://engine.example.com"
 STARTED_AT = "2026-07-23T00:00:00+00:00"

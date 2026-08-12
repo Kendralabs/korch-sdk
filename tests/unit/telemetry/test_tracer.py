@@ -7,11 +7,16 @@ from collections.abc import Iterator
 from unittest import mock
 
 import pytest
+
+pytest.importorskip("opentelemetry")
+
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+    InMemorySpanExporter,
+)
 
 from korchestrator import MissingExtraError
 from korchestrator.config import configure
