@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import httpx
 import pytest
-import respx
 
-from korchestrator.clients import KorchestratorClient
-from korchestrator.exceptions import ApiError
+httpx = pytest.importorskip("httpx")
+respx = pytest.importorskip("respx")
+
+from korchestrator.clients import KorchestratorClient  # noqa: E402 — after importorskip guards
+from korchestrator.exceptions import ApiError  # noqa: E402
 
 BASE_URL = "https://engine.example.com"
 

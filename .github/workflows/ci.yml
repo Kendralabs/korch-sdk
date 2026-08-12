@@ -138,11 +138,37 @@ jobs:
       - name: Static analysis
         run: bandit -c pyproject.toml -r src/korchestrator
       - name: Dependency audit
-        run: pip-audit --strict
+        # --skip-editable: korchestrator itself is installed editable (`pip install -e .`) and is
+        # not published to any index (ADR 0020) — pip-audit can't look it up and fails outright
+        # without this flag. Every real third-party dependency is still fully audited.
+        #
+        # No --strict: pip-audit's --strict counts a --skip-editable skip as a collection failure
+        # too (confirmed empirically — it fails even though the package was deliberately, not
+        # accidentally, excluded), which defeats the point of combining the two flags. Without
+        # --strict, pip-audit still exits non-zero on any *actual* reported vulnerability; it only
+        # stops hard-failing on the one skip we asked for.
+        #
+        # --ignore-vuln PYSEC-2026-2447 (CVE-2025-69872, GHSA-w8v5-vhqr-4h9v): unsafe pickle
+        # deserialization in `diskcache` (transitive dep of the [dspy] extra), affecting every
+        # released version through the latest (5.6.3) — no patched version exists to bump to.
+        # Exploitation requires an attacker who already has write access to the local cache
+        # directory, at which point they have other, more direct attack paths; korchestrator does
+        # not expose the cache directory to untrusted input. Owner: SDK maintainers. Reason: no fix
+        # available, low real-world severity for this usage. Compensating control: consumers should
+        # ensure DSPy's cache directory has normal user-only filesystem permissions (the OS default).
+        # Expiry: revisit at the next scheduled dependency review, or immediately if a fix ships.
+        run: pip-audit --skip-editable --ignore-vuln PYSEC-2026-2447
       - name: Secret scan
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # gitleaks/gitleaks-action@v2 requires a paid GITLEAKS_LICENSE for organization-owned
+        # repos (Kendralabs is an org) — confirmed failing on that gate alone, unrelated to any
+        # actual secret finding. The underlying `gitleaks` CLI itself is free and unlicensed;
+        # install it directly from its own GitHub release instead of the Action wrapper. Pinned
+        # to a specific version deliberately — bump this only as a reviewed version change.
+        run: |
+          curl -sSL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          ./gitleaks detect --source . --redact -v
 
   build:
     name: Build and verify the artifact
