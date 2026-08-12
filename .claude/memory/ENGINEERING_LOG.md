@@ -10,6 +10,94 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-08-12 · Pre-existing CI drift fixed ahead of the v0.1.0 release — v0.1.0
+
+**Type:** fix (CI hygiene, no production behavior change) · **Phase:** unblocks P12 (cutting
+`v0.1.0`) · **Author:** Claude (agent), directed by the maintainer
+
+**What.** Three independent, pre-existing CI failures on `dev`'s current tip, all unrelated to any
+in-flight feature work, fixed so the branch is actually green before a release is cut from it:
+
+1. **Lint (`ruff check`):** 5 `E501` line-too-long violations in
+   `examples/08_support_escalation_swarm.py` (wrapped, no logic change) and one `RUF036` in
+   `src/korchestrator/types/__init__.py` — `JSONValue`'s `TypeAliasType` string had `None` in the
+   middle of the union instead of the end (reordered; the type is identical, member order in a
+   union carries no semantic meaning).
+2. **Security scan (`bandit`):** two pre-existing suppressions
+   (`src/korchestrator/clients/client.py:203`, `src/korchestrator/mcp/client.py:152`) used ruff's
+   `# noqa: SXXX` syntax, which bandit does not read — bandit needs `# nosec BXXX`. Both already
+   had a real justification in the trailing comment; added the correctly-formatted `# nosec`
+   alongside the existing `# noqa` (ruff still needs its own suppression too) so both tools
+   actually see it, and moved the human-readable reason to its own comment line so bandit's nosec
+   parser doesn't warn about parsing prose as test IDs.
+3. **Temporal runtime suite CI job:** `pytest tests -m temporal` was erroring during *collection*
+   (10 collection errors, exit code 2) before a single temporal-marked test could run, because that
+   job installs only `.[temporal]` + bare `pytest`/`pytest-asyncio` (deliberately no `[otel]`, to
+   avoid an import hook that conflicts with Temporal's workflow sandbox — see the job's own
+   comment), while `tests/unit/clients/*.py` (7 files), `tests/unit/core/test_pregel.py`,
+   `tests/unit/telemetry/test_tracer.py`, and `tests/unit/test_remote.py` had hard top-level
+   imports of `httpx`/`hypothesis`/`opentelemetry` with no guard — unlike `test_reducers.py` and
+   `test_gateway_openai.py`, which already used the repo's own established
+   `pytest.importorskip(...)` guard convention and therefore degrade to a graceful `SKIPPED`
+   instead of a collection `ERROR`. Applied the same guard to all 9 files (matching the two
+   existing styles exactly: a bare `pytest.importorskip("x")` statement — ruff's `E402` doesn't
+   fire on that form — versus `x = pytest.importorskip("x")` assignment, which does need
+   `# noqa: E402` on the imports that follow).
+
+**Why.** Cutting `v0.1.0` requires promoting `dev` → `staging` → `main`, and
+`.claude/rules/branching-and-promotion.md`/spec 10 §9 both require the source branch to be green on
+the full CI matrix before a promotion PR opens — "never promote a red branch." `gh run list
+--branch dev` showed the branch's current tip (`de91d74`) already failing CI (`Lint, format, types,
+gates`, `Security scans`, `Temporal runtime suite`) before any of this session's other work landed,
+confirming these are pre-existing gaps blocking the requested release, not something introduced by
+the private-release-pipeline PR (#8) sitting alongside this one.
+
+**Design decisions.** Fixed the smallest thing that makes each check pass without changing behavior:
+line-wraps and a union-member reorder for lint; the tool-correct suppression syntax (kept alongside
+the original, not replacing it, since ruff and bandit each need their own) for the security scan;
+and — for the Temporal job — applied the *already-established* `pytest.importorskip` convention
+from `test_reducers.py`/`test_gateway_openai.py` to the files that were missing it, rather than
+inventing a new pattern or changing what the job installs (which would have silently pulled `[otel]`
+back into the sandbox-conflict path the job's own comment says to avoid).
+
+**Architecture changes.** None. No public API changed; only two `# nosec`/`# noqa` additions and an
+import reorder in `src/korchestrator/`, both preserving exact prior behavior.
+
+**Files/modules affected.** `examples/08_support_escalation_swarm.py`,
+`src/korchestrator/types/__init__.py`, `src/korchestrator/clients/client.py`,
+`src/korchestrator/mcp/client.py`, `tests/unit/clients/test_client.py`,
+`tests/unit/clients/test_contract_conformance.py`, `tests/unit/clients/test_control_identity.py`,
+`tests/unit/clients/test_credential_safety.py`, `tests/unit/clients/test_discovery.py`,
+`tests/unit/clients/test_run_lifecycle.py`, `tests/unit/clients/test_streaming.py`,
+`tests/unit/core/test_pregel.py`, `tests/unit/telemetry/test_tracer.py`, `tests/unit/test_remote.py`.
+
+**Breaking changes.** None. `JSONValue`'s reordered union is behaviorally identical (no test pins
+the exact string form); the `importorskip` guards only change behavior when a dependency is
+*absent*, turning a hard collection error into a graceful skip — every job where the dependency is
+present (all of them except the Temporal job) is unaffected, confirmed by running the full affected
+test set locally (134 passed).
+
+**Feature version / revision.** `0.1.0` — same release this unblocks.
+
+**Migration notes.** N/A — CI/test-hygiene fix, no consumer-facing behavior changed.
+
+**Testing status.** `ruff check`/`ruff format --check` clean on `src/korchestrator tests examples
+benchmarks` (the repo's full CI lint scope). `mypy --strict src/korchestrator` clean (105 files).
+`bandit -c pyproject.toml -r src/korchestrator` — no issues identified. `pytest tests/unit/clients
+tests/unit/core/test_pregel.py tests/unit/telemetry/test_tracer.py tests/unit/test_remote.py` —
+134/134 passed locally (guards are no-ops here since all extras are installed).
+`examples/08_support_escalation_swarm.py` still runs to `RunStatus.COMPLETED` under `MOCK_LLM`.
+Not yet confirmed green on the actual Temporal-job CI runner (no local reproduction of that job's
+minimal install) — that's the real end-to-end verification, checked on this fix's own PR before
+promoting.
+
+**Known limitations / future improvements.** None of these three issues are new classes of bug;
+this entry exists specifically to record that they were pre-existing and unrelated to the
+private-release-pipeline work landing alongside it, not to claim anything beyond "CI is green
+again."
+
+---
+
 ## 2026-07-30 · Governance halt veto wired in hooks + Pregel — v0.1.0
 
 **Type:** fix · **Phase:** retroactively completes spec 07 §9 (deferred at P6.8/P7) · **Author:**

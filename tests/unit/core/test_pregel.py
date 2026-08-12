@@ -7,9 +7,12 @@ from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError as PydanticValidationError
+
+pytest.importorskip("hypothesis")
+
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from pydantic import ValidationError as PydanticValidationError
 
 from korchestrator.core import Append, ChannelSchema, PregelRunner
 from korchestrator.core.graph import AgentGraph, Edge, Node

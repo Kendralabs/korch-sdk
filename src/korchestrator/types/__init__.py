@@ -18,5 +18,5 @@ __all__ = ["JSONValue"]
 # union. The type is identical; only the definition mechanism differs.
 JSONValue = TypeAliasType(
     "JSONValue",
-    "str | int | float | bool | None | list[JSONValue] | dict[str, JSONValue]",
+    "str | int | float | bool | list[JSONValue] | dict[str, JSONValue] | None",
 )
