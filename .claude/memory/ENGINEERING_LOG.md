@@ -51,17 +51,24 @@ those were fixed (each CI job fails fast on its first broken step):
    `type` statement, valid only under Python 3.12+. This project's `[tool.mypy] python_version =
    "3.10"` (matching `requires-python`) makes mypy reject that syntax when it resolves `numpy`'s
    stubs — reached because `[routing]`-extra code imports `numpy`, and mypy statically follows
-   every reachable import regardless of whether the import is lazy/inside a function (B5). Added a
-   `[[tool.mypy.overrides]]` for `numpy`/`numpy.*` with `follow_imports = "skip"` — treats numpy's
-   types as `Any` without parsing its stubs at all, matching the loose-typing treatment the same
-   file already gives `dspy`/`temporalio`/`mcp`/`sentence_transformers`.
-5. **`pip-audit --strict` (masked behind the lint and security-scan failures above):** failed with
+   every reachable import regardless of whether the import is lazy/inside a function (B5). First
+   attempt was a `[[tool.mypy.overrides]]` for `numpy`/`numpy.*` with `follow_imports = "skip"`
+   (matching the loose-typing treatment already given to `dspy`/`temporalio`/`mcp`/
+   `sentence_transformers`) — verified on this PR's own CI run that this does **not** work: a
+   stub's syntax error is reported during parsing, before `follow_imports` (a semantic-analysis
+   setting) ever takes effect. Replaced it with a version pin instead —
+   `numpy>=1.26,<2.5` in the `[routing]` extra — which avoids the incompatible release outright.
+5. **`pip-audit` (masked behind the lint and security-scan failures above):** failed with
    `korchestrator: Dependency not found on PyPI and could not be audited` — a direct, foreseeable
    consequence of [ADR 0020](../../docs/adr/0020-private-distribution-defers-pypi-publishing.md)
    landing alongside this fix: `korchestrator` is installed editable (`-e .`) and, per that ADR,
-   deliberately never published anywhere pip-audit can look it up. Added `--skip-editable` to the
-   CI step — skips auditing the local editable package itself while still fully auditing every real
-   third-party dependency.
+   deliberately never published anywhere pip-audit can look it up. Added `--skip-editable`, which
+   fixed the collection error — but combined with the job's existing `--strict` flag, pip-audit
+   *still* failed on the identical error, confirmed empirically: `--strict` ("fail if dependency
+   collection fails on any dependency") treats a deliberate `--skip-editable` skip the same as an
+   accidental collection failure. Dropped `--strict`; `pip-audit --skip-editable` alone still exits
+   non-zero on any *actual* reported vulnerability in a real dependency — it only stops hard-failing
+   on the one skip asked for.
 
 **Why.** Cutting `v0.1.0` requires promoting `dev` → `staging` → `main`, and
 `.claude/rules/branching-and-promotion.md`/spec 10 §9 both require the source branch to be green on
@@ -77,18 +84,19 @@ the original, not replacing it, since ruff and bandit each need their own) for t
 and — for the Temporal job — applied the *already-established* `pytest.importorskip` convention
 from `test_reducers.py`/`test_gateway_openai.py` to the files that were missing it, rather than
 inventing a new pattern or changing what the job installs (which would have silently pulled `[otel]`
-back into the sandbox-conflict path the job's own comment says to avoid). For `mypy`, skipped
-`numpy`'s stubs entirely rather than pinning an upper bound on the dependency — a version pin would
-only postpone the same break to the next `numpy` release, while `follow_imports = "skip"` is the
-durable fix for "a dependency's own stubs are incompatible/unwanted," already the repo's pattern for
-every other optional-extra dependency. For `pip-audit`, skipped the local package rather than adding
-an inert placeholder entry to a fake index — `--skip-editable` is pip-audit's own documented
-mechanism for exactly this case.
+back into the sandbox-conflict path the job's own comment says to avoid). For `mypy`, tried the
+"treat as `Any`" override first since it matches the repo's existing pattern for other optional
+deps, but verified — rather than assumed — that it doesn't actually work for a stub *syntax* error
+(as opposed to a missing-stub or type error), then fell back to the version pin, which is the
+correct tool for a genuine version incompatibility. For `pip-audit`, skipped the local package
+rather than adding an inert placeholder entry to a fake index — `--skip-editable` is pip-audit's own
+documented mechanism for exactly this case — and verified empirically (not assumed) that `--strict`
+needed to come off, rather than leaving a flag combination that looked right but silently
+reintroduced the same failure.
 
 **Architecture changes.** None. No public API changed; only two `# nosec`/`# noqa` additions, an
-import reorder in `src/korchestrator/`, and two CI-tooling config entries (`pyproject.toml`
-`[[tool.mypy.overrides]]`, `.github/workflows/ci.yml`'s `pip-audit` step) — all preserving exact
-prior first-party behavior.
+import reorder in `src/korchestrator/`, a version-bound tightening on the optional `[routing]`
+extra, and a `pip-audit` CI flag change — all preserving exact prior first-party behavior.
 
 **Files/modules affected.** `examples/08_support_escalation_swarm.py`,
 `src/korchestrator/types/__init__.py`, `src/korchestrator/clients/client.py`,
@@ -99,35 +107,44 @@ prior first-party behavior.
 `tests/unit/core/test_pregel.py`, `tests/unit/telemetry/test_tracer.py`,
 `tests/unit/test_remote.py`, `pyproject.toml`, `.github/workflows/ci.yml`.
 
-**Breaking changes.** None. `JSONValue`'s reordered union is behaviorally identical (no test pins
-the exact string form); the `importorskip` guards only change behavior when a dependency is
-*absent*, turning a hard collection error into a graceful skip — every job where the dependency is
-present (all of them except the Temporal job) is unaffected, confirmed by running the full affected
-test set locally (134 passed). The mypy override only affects how `numpy`'s own stubs are read, not
-first-party code's strictness. `--skip-editable` only removes `korchestrator` itself from the audit
-scope — every third-party dependency is still fully scanned.
+**Breaking changes.** None to first-party behavior. `JSONValue`'s reordered union is behaviorally
+identical (no test pins the exact string form); the `importorskip` guards only change behavior when
+a dependency is *absent*, turning a hard collection error into a graceful skip — every job where the
+dependency is present (all of them except the Temporal job) is unaffected, confirmed by running the
+full affected test set locally (134 passed). The `numpy<2.5` bound narrows what `[routing]` will
+resolve to — a real, if minor, constraint tightening, not a behavior change in code. `--skip-editable`
+only removes `korchestrator` itself from the audit scope; dropping `--strict` means a genuinely
+unauditable *third-party* dependency (as opposed to our own deliberately-skipped package) would now
+warn rather than hard-fail the job — acceptable here since the one dependency that previously
+triggered that path (`korchestrator` itself) is now handled by `--skip-editable` directly.
 
 **Feature version / revision.** `0.1.0` — same release this unblocks.
 
 **Migration notes.** N/A — CI/test-hygiene fix, no consumer-facing behavior changed.
 
 **Testing status.** `ruff check`/`ruff format --check` clean on `src/korchestrator tests examples
-benchmarks` (the repo's full CI lint scope). `mypy --strict src/korchestrator` clean (105 files;
-verified locally against `numpy==2.4.6`, the newest version this environment's package index
-carries — full confirmation against the exact `2.5.2` CI installs happens on this PR's own CI run,
-since that version isn't installable here). `bandit -c pyproject.toml -r src/korchestrator` — no
-issues identified. `pip-audit --skip-editable` — `korchestrator` now shows as a clean skip instead
-of a hard error (the remaining vulnerability list in this local run comes from unrelated packages —
-`torch`, `jupyterlab`, `transformers`, etc. — that aren't korchestrator dependencies at all and
-don't exist in a fresh CI install; not investigated further here). `pytest tests/unit/clients
+benchmarks` (the repo's full CI lint scope). `mypy --strict src/korchestrator` clean (105 files),
+verified with `numpy` pinned to `2.4.6` (the newest version installable in this environment's
+package index — under the new `<2.5` ceiling). `bandit -c pyproject.toml -r src/korchestrator` — no
+issues identified. `pip-audit --skip-editable` (no `--strict`) — `korchestrator` now shows as a
+clean skip instead of a hard error. This local run also surfaces ~110 known vulnerabilities across
+21 packages; some (`torch`, `transformers`) are real transitive dependencies of the `[routing]`
+extra's `sentence-transformers` and could plausibly reproduce in CI, while others (`jupyterlab`,
+`mistune`, `bleach`, `pypdf`, `starlette`, …) are not part of any korchestrator extra and are this
+shared local environment's own unrelated tooling — **not disentangled here**. `pytest tests/unit/clients
 tests/unit/core/test_pregel.py tests/unit/telemetry/test_tracer.py tests/unit/test_remote.py` —
 134/134 passed locally (guards are no-ops here since all extras are installed).
 `examples/08_support_escalation_swarm.py` still runs to `RunStatus.COMPLETED` under `MOCK_LLM`. Full
-confirmation for items 3–5 is this fix's own PR CI run (`pull/9`) against the real, clean runner
-environment — the local dev environment here is shared/polluted with unrelated packages and can't
-fully reproduce it.
+confirmation for items 3–5, and specifically whether `pip-audit` reports any *real* vulnerability in
+a clean environment, is this fix's own PR CI run (`pull/9`) against the actual runner — reported to
+the maintainer directly rather than guessed at from this polluted local environment.
 
-**Known limitations / future improvements.** None of these five issues are new classes of bug; this
+**Known limitations / future improvements.** If PR #9's CI run shows `pip-audit` still failing on a
+real (non-`korchestrator`) finding, that is a genuine, separate security question — which CVEs are
+acceptable, which need a dependency bump, which need a documented suppression with owner/reason/
+expiry/compensating-control per `.claude/rules/security.md` — for the maintainer to decide, not
+something to silently resolve inside a CI-unblocking fix. None of these five issues are new classes
+of bug otherwise; this
 entry exists specifically to record that they were pre-existing (or, for #5, a direct foreseeable
 consequence of ADR 0020 landing alongside it) and unrelated to the private-release-pipeline feature
 work in PR #8, not to claim anything beyond "CI is green again." The repo's optional dependencies
