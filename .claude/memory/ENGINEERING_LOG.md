@@ -10,6 +10,59 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-08-12 · `cut_release.py` CHANGELOG blank-line bug, found before it shipped a bad release — v0.1.0
+
+**Type:** fix (tooling correctness) · **Phase:** P12, discovered while actually cutting `v0.1.0` ·
+**Author:** Claude (agent)
+
+**What.** `scripts/cut_release.py`'s `render_changelog` used `\s*$` to match trailing whitespace on
+the `## [Unreleased]`/`## [X.Y.Z] - Unreleased` header lines. `\s` matches newlines too, so the
+greedy match consumed the header's own trailing newline (and, when a blank line followed, that
+blank line's newline as well); replacing the whole match with the plain dated header text then
+collapsed the blank line that's supposed to separate the header from the section body — e.g.
+`## [0.1.0] - 2026-08-12\nThe first development line...` instead of the correct
+`## [0.1.0] - 2026-08-12\n\nThe first development line...`. Changed both patterns from `\s*$` to
+`[ \t]*$` (trailing spaces/tabs only, never a newline).
+
+**Why.** Found by actually running `python scripts/cut_release.py prepare --version 0.1.0 --dry-run`
+against the real `CHANGELOG.md` on `staging` before cutting the real release — the existing unit
+tests didn't catch it because `TestRenderChangelog.FIRST_RELEASE_CHANGELOG`'s fixture put `###
+Added` directly under the header with no intervening body paragraph, unlike the real file, which
+has a descriptive paragraph there. A tool that mis-formats every future release's CHANGELOG is
+worse than the manual process it's meant to replace, so this was fixed and verified before being
+trusted to prepare the actual `v0.1.0` release PR.
+
+**Design decisions.** Fixed the regex, and separately fixed the *test fixture* to match the real
+file's shape (a body paragraph, not just a subsection header, directly after the dated header) —
+fixing only the regex without the fixture would have left the exact same gap for the next person
+who changes this file. Added a dedicated regression test asserting the blank line survives, and
+verified it actually fails without the fix (not a vacuously-passing assertion) before verifying it
+passes with the fix.
+
+**Architecture changes.** None.
+
+**Files/modules affected.** `scripts/cut_release.py`, `tests/unit/test_cut_release.py`.
+
+**Breaking changes.** None — `cut_release.py` was merged to `dev`/`staging` in the private-release-
+pipeline work but had not yet been used to cut a real release; no CHANGELOG has shipped in the
+broken form.
+
+**Feature version / revision.** `0.1.0` — found and fixed immediately before this script's first
+real use.
+
+**Migration notes.** N/A.
+
+**Testing status.** `ruff check`/`ruff format --check` clean, `mypy --strict` clean,
+`pytest tests/unit/test_cut_release.py` — 16/16 passed (15 prior + 1 new regression test).
+Confirmed the new test fails on the pre-fix regex (reverted the fix locally, re-ran just that test,
+saw the exact collapsed-blank-line assertion failure) before confirming it passes on the fix.
+`prepare --version 0.1.0 --dry-run` against the real `staging` `CHANGELOG.md` now renders the
+correct blank line.
+
+**Known limitations / future improvements.** None.
+
+---
+
 ## 2026-08-12 · Private release pipeline + release automation script — v0.1.0
 
 **Type:** feature (CI/CD + tooling) · **Phase:** P12 (CI/CD, packaging & publishing), narrowed by
