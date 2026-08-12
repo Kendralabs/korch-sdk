@@ -5,7 +5,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from korchestrator.clients import KorchestratorClient as _ClientsKorchestratorClient
+import pytest
+
+pytest.importorskip("httpx")
+
+from korchestrator.clients import (
+    KorchestratorClient as _ClientsKorchestratorClient,
+)
 from korchestrator.remote import KorchestratorClient
 
 
