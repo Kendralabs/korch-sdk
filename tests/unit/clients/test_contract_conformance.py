@@ -13,13 +13,14 @@ direct tests against ``_request`` — repeating them per endpoint would be volum
 
 from __future__ import annotations
 
-import httpx
 import pytest
-import respx
 
-from korchestrator.clients import KorchestratorClient
-from korchestrator.exceptions import ApiError, KorchError
-from korchestrator.models import AgentConfig, AgentPersona
+httpx = pytest.importorskip("httpx")
+respx = pytest.importorskip("respx")
+
+from korchestrator.clients import KorchestratorClient  # noqa: E402 — after importorskip guards
+from korchestrator.exceptions import ApiError, KorchError  # noqa: E402
+from korchestrator.models import AgentConfig, AgentPersona  # noqa: E402
 
 BASE_URL = "https://engine.example.com"
 _AGENT = AgentConfig(id="lead", persona=AgentPersona(role="review-lead"))
