@@ -149,7 +149,8 @@ async def _default_session_factory(config: MCPServerConfig) -> MCPSession:  # pr
     else:
         from mcp.client.sse import sse_client
 
-        assert config.url is not None  # noqa: S101 — guaranteed by MCPServerConfig's validator
+        # Guaranteed by MCPServerConfig's validator.
+        assert config.url is not None  # noqa: S101  # nosec B101
         read, write = await stack.enter_async_context(sse_client(config.url))
     session = await stack.enter_async_context(ClientSession(read, write))
     await session.initialize()
