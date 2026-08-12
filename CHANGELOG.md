@@ -26,6 +26,13 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
 
 ### Added
 
+- Private release pipeline (Phase 12, narrowed per [ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)):
+  `.github/workflows/release.yml` now publishes a GitHub Release on every `vX.Y.Z` tag — the built
+  wheel, sdist, and `SHA256SUMS` attached, notes drawn from this CHANGELOG, and an in-pipeline
+  install verification (`pip install git+https://...@vX.Y.Z`) using the run's own scoped token.
+  New `scripts/cut_release.py` automates the mechanical parts of cutting a release (version bump,
+  CHANGELOG dating, release-branch/PR creation, tag creation and push) described in
+  `docs/specs/10-release-versioning-and-cicd.md` §9.
 - Tool-calling for `WorkerAgent` (Phase 10, closes a gap left open since P4/P6): a mounted
   `AgentConfig.tools` list now runs a real bounded ReAct loop (predict → optionally call one tool
   → feed the result back → repeat, up to `max_react_steps`) instead of having no effect. `Korch`/
@@ -361,5 +368,10 @@ yet been published; the date is fixed when `0.1.0` is released (see the release 
   concrete runtime at construction rather than passed to `start()`, keeping `interfaces/` dependent
   on `models/` only. This lands before any release and before any implementation existed, so no
   consumer is affected. See [ADR 0010](docs/adr/0010-idurableruntime-shape-now-start-wait-signal.md).
+- **Install instructions now point at a private GitHub Release, not PyPI.** `korchestrator` is not
+  published to PyPI ([ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md));
+  install a released version with
+  `pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"`,
+  which needs a GitHub credential with read access to this repo. See docs/installation.md.
 
 [0.1.0]: https://github.com/kendralabs/korch-sdk/releases/tag/v0.1.0
