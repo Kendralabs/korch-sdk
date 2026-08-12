@@ -15,7 +15,7 @@ template is at the bottom of this file.
 **Type:** fix (CI hygiene, no production behavior change) · **Phase:** unblocks P12 (cutting
 `v0.1.0`) · **Author:** Claude (agent), directed by the maintainer
 
-**What.** Six independent, pre-existing CI failures on `dev`'s current tip, all unrelated to any
+**What.** Seven independent, pre-existing CI failures on `dev`'s current tip, all unrelated to any
 in-flight feature work, fixed so the branch is actually green before a release is cut from it. The
 first three were visible immediately; the rest were masked behind them and only surfaced once those
 were fixed (each CI job fails fast on its first broken step):
@@ -96,6 +96,14 @@ were fixed (each CI job fails fast on its first broken step):
      write access to the local cache directory), compensating control (consumers should keep DSPy's
      cache directory at normal user-only filesystem permissions — the OS default), and expiry (next
      scheduled dependency review, or immediately on a fix shipping).
+7. **Secret scan (masked behind every prior `security` job step above):** `gitleaks/gitleaks-action@v2`
+   failed with "missing gitleaks license" — the Action added a paid-license requirement for
+   organization-owned repos (`Kendralabs` is an org); this has nothing to do with any actual secret
+   finding. The underlying `gitleaks` CLI itself remains free and unlicensed. Replaced the Action
+   with a direct, version-pinned download of the CLI binary from its own GitHub release
+   (`v8.30.1`) and a plain `gitleaks detect --source . --redact -v` run step — same scanning engine,
+   no license gate. Verified locally (Windows build of the same pinned version): `223 commits
+   scanned`, `no leaks found`, exit `0`.
 
 **Why.** Cutting `v0.1.0` requires promoting `dev` → `staging` → `main`, and
 `.claude/rules/branching-and-promotion.md`/spec 10 §9 both require the source branch to be green on
