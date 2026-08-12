@@ -30,7 +30,12 @@ dependencies = ["pydantic>=2.7,<3"]
 # so the pin actually constrains the installed module. See ADR 0013.
 dspy = ["dspy>=2.6,<4"]
 temporal = ["temporalio>=1.7,<2"]
-routing = ["sentence-transformers>=3.0,<4", "numpy>=1.26"]
+# numpy<2.5: 2.5.x's bundled .pyi stubs use a PEP 695 `type` statement (Python 3.12+ only), which
+# breaks `mypy --strict` under this project's python_version = "3.10" (requires-python floor).
+# follow_imports = "skip" does not help — mypy reports the stub's syntax error before semantic
+# analysis (where follow_imports applies) ever runs. Revisit once numpy ships 3.10-compatible
+# stubs again or this project's minimum Python version rises to 3.12.
+routing = ["sentence-transformers>=3.0,<4", "numpy>=1.26,<2.5"]
 mcp = ["mcp>=1.2,<2"]
 remote = ["httpx>=0.27,<1"]
 otel = [
@@ -119,15 +124,6 @@ no_implicit_reexport = true
 [[tool.mypy.overrides]]
 module = ["dspy.*", "temporalio.*", "mcp.*", "sentence_transformers.*"]
 ignore_missing_imports = true
-
-# numpy's own bundled stubs started using PEP 695 `type` statements (Python 3.12+ only) in a
-# recent release; this project's python_version stays 3.10 (requires-python floor), so mypy can't
-# parse them. numpy is only reached via the optional [routing] extra — skip analyzing its stubs
-# rather than the module-level types they'd otherwise carry, matching the loose-typing treatment
-# already given to the other optional-extra dependencies above.
-[[tool.mypy.overrides]]
-module = ["numpy", "numpy.*"]
-follow_imports = "skip"
 
 # --- tests -----------------------------------------------------------------
 

@@ -141,7 +141,13 @@ jobs:
         # --skip-editable: korchestrator itself is installed editable (`pip install -e .`) and is
         # not published to any index (ADR 0020) — pip-audit can't look it up and fails outright
         # without this flag. Every real third-party dependency is still fully audited.
-        run: pip-audit --strict --skip-editable
+        #
+        # No --strict: pip-audit's --strict counts a --skip-editable skip as a collection failure
+        # too (confirmed empirically — it fails even though the package was deliberately, not
+        # accidentally, excluded), which defeats the point of combining the two flags. Without
+        # --strict, pip-audit still exits non-zero on any *actual* reported vulnerability; it only
+        # stops hard-failing on the one skip we asked for.
+        run: pip-audit --skip-editable
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2
         env:
