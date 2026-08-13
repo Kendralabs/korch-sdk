@@ -1,0 +1,1197 @@
+# Korchestrator SDK
+
+> Installable Python library (`korchestrator`) implementing a durable, deterministic, multi-agent execution kernel — Temporal for durability/replay, Pregel BSP supersteps for deterministic parallelism, and DSPy compiled signatures for typed reasoning. It is an SDK only: no frontend, backend, or hosted service ships from this repository.
+
+This is the single, self-contained `llms.txt` for this repository — optimized for LLMs and coding agents that need the full picture in one pass. It condenses `docs/specs/00`–`10`, the ADR index, `.claude/rules/`, `README.md`, and `CONTRIBUTING.md` into one reference covering architecture, modules, the public API, the execution model, extensibility, cross-cutting concerns, testing, release process, git workflow, repo layout, and dev setup. On any conflict between this file and the files under `docs/specs/`, the specs win — they are the authoritative, living source.
+
+---
+
+## Table of contents
+
+1. What this repository is
+2. Golden rules and scope
+3. Architecture and the dependency rule
+4. Module catalogue
+5. Domain models
+6. Public API and usage tiers
+7. Execution model (Pregel BSP kernel)
+8. Extensibility
+9. Configuration and cross-cutting concerns
+10. Testing and quality
+11. Release, versioning, and CI/CD
+12. Git workflow
+13. Repository layout
+14. Development setup
+15. Architecture Decision Records (index)
+16. Glossary
+
+---
+
+## 1. What this repository is
+
+The **Korchestrator SDK** (Kendra Orchestrator, "KOE") is an installable Python library (`korchestrator`) that packages a durable multi-agent execution kernel as a reusable framework. It is **one product: the SDK** — not a frontend, backend, or hosted service. Developers integrate through code (`pip install korchestrator`, `from korchestrator import Korch`), never by operating a service.
+
+Korchestrator runs each swarm (a directed graph of agents) as a **Pregel-style Bulk Synchronous Parallel (BSP) computation on top of Temporal**, which buys four properties ad-hoc agent frameworks lack:
+
+| Property | Mechanism |
+|---|---|
+| Crash-proof durability | Temporal event sourcing; every superstep is checkpointed |
+| Deterministic replay | BSP supersteps + order-independent reducers + no nondeterminism in workflow scope |
+| Parallel fan-out across 100+ agents | One `SuperstepActivity` fanning out with `asyncio.gather` |
+| Bitemporal auditability | Valid-time + transaction-time on every recorded fact |
+
+Three infrastructure primitives combine to deliver this:
+
+1. **Temporal.io** — durable workflow execution; every superstep checkpointed; crashes resume; human-in-the-loop pause/resume is native via durable signals (up to 24h).
+2. **Pregel (BSP)** — all active agents compute in parallel against a frozen state snapshot, exchange typed messages over directed edges, then a global synchronization barrier merges outputs through deterministic **reducers**. No locks, no races, no last-writer-wins.
+3. **DSPy compiled signatures** — reasoning is a declarative, typed, optimizable, versioned program, not a fragile prompt string. Each agent can run on a *different* model within the same superstep via scoped `dspy.context(lm=...)`.
+
+**Why not a DAG.** A directed *acyclic* graph cannot express reflection, retries, or multi-turn negotiation. The superstep kernel treats cycles as first-class:
+
+```
+event → decision → branch → parallel agents → merge → feedback → repeat
+```
+
+**How it compares:**
+
+| Dimension | LangChain / CrewAI / AutoGen | Korchestrator SDK |
+|---|---|---|
+| Failure model | In-memory; a crash loses all progress | Durable by default — resumes from the last superstep |
+| Concurrency | Ad-hoc sequential/async, shared-state races | Deterministic Pregel BSP with conflict-free reducers |
+| Model use | Typically one model per chain | Per-agent model isolation — heterogeneous models in one parallel step |
+| Memory | Flat string / vector RAG | Bitemporal governed Context Graph + MVC compiler |
+| Prompts | Fragile prompt strings | Compiled signatures (typed, versioned, reproducible) |
+| Human-in-the-loop | Bolt-on callbacks | Native durable HITL via signals |
+| Governance | None or bolt-on | Zero-trust governance (trust scores, policy, audit, approval) |
+| Portability | Framework-coupled | ARI ports — run local with just a key, or plug into enterprise services with no agent-logic change |
+
+**The ARI ports** — the portability contract. The SDK reaches the outside world through exactly three abstract ports, each with a local default and an enterprise implementation:
+
+| Port | Role | Local default | Enterprise implementation |
+|---|---|---|---|
+| `IIdentityProvider` | Authenticate agents to a DID | Local (unsecured) identity | KIAM / KACP |
+| `IExecutionSandbox` | Isolated tool/code execution | Local subprocess | OpenSandbox |
+| `IModelGateway` | Route reasoning to an LLM | Direct provider / MockLM | Kendra AI Gateway |
+
+**Sibling platform systems** (never re-implemented here — reached only through the ARI ports):
+
+| System | Role |
+|---|---|
+| KACP (Agentic Control Plane) | Policy Decision Point |
+| KCG (Kendra Context Graph) | Bitemporal memory + decision-trace graph |
+| KMCP (Kendra MCP Server) | Enterprise tool gateway, Policy Enforcement Point |
+| KIAM | Identity and access (JWTs, wallets) |
+| Kendra AI Gateway | Model hosting and routing |
+
+**The five-layer control plane:**
+
+| Layer | Name | Responsibility | SDK home |
+|---|---|---|---|
+| L1 | Runtime Kernel | Execution loop, scheduling, synchronization, communication | `core/`, `runtime/` |
+| L2 | Cognitive Reasoning | Planning, LLM routing, task decomposition, validation | `agents/`, `routing/`, `taxonomy/` |
+| L3 | Context Management | Context compiler, memory, state, event sourcing, Context Graph | `context/`, `persistence/`, `models/state.py` |
+| L4 | Interface & Tool Integration | APIs, MCP, enterprise systems, search, databases | `tools/`, `mcp/`, `a2a/` |
+| L5 | Governance & Security | RBAC, authz, audit, encryption, policy, PII redaction, HITL | `governance/`, `security/` |
+
+This is a **greenfield repository**: no existing package or backend to migrate from and no parity fallback. Correctness is defined by `docs/specs/` and the tests written alongside each phase.
+
+---
+
+## 2. Golden rules and scope
+
+These override every other consideration:
+
+1. **One product — the SDK.** This repository builds the installable `korchestrator` library and nothing else. No frontend, no backend, no service, no application. Ever.
+2. **Self-contained.** Never imports from `backend.*`, `apps.*`, `services.*` (external), or `frontend`. Dependencies are declared in this repo's own `pyproject.toml`. External behaviour needs a minimal interface in `interfaces/` plus an injected implementation.
+3. **Dynamic, not hardcoded.** Providers, runtime, router, and persistence are config-selected at runtime behind interfaces. No hardcoded URLs/keys/models/paths. Environment variables are read **only** in `config/`.
+4. **Determinism and backward compatibility are features.** The kernel behaves identically across runs and Temporal replays. The public API stays compatible within a major version.
+5. **Don't over-engineer.** Simplest correct design. No interface with a single forever-implementation; no speculative abstraction.
+6. **Deployment means publishing artifacts, not running a service.** A request to deploy a server from this repo is out of scope.
+
+### In scope
+
+Execution (durable/parallel/recursive/event-driven, recovery, scheduling, barriers), Agents (multi-agent coordination, meta/architect/planner agents, per-agent model isolation), Context (compiler, MVC extraction, pruning, event sourcing, Context Graph client), Reasoning (decomposition, planning, validation, routing, taxonomy, compiled signatures), Integration (AUB, MCP client, A2A messaging, connectors), Governance (trust scoring, policy, RBAC hooks, audit, HITL, PII redaction), Observability (tracing, event logs, streaming, optional OTel), Interface (one-liner, typed builder, kernel-direct embed, optional remote HTTP client), Lifecycle (tests, docs, examples, benchmarks, CI/CD, versioning, packaging, release).
+
+### Permanently out of scope
+
+HTTP server / FastAPI app / route handlers; frontend/dashboard/UI; deployment manifests for a hosted service (Helm, k8s, server Dockerfiles); infrastructure-as-code for someone else's platform; re-implementations of KCG/KIAM/KACP/KMCP; a second router/PII-redactor/error-base/config-source; speculative execution, FinOps quotas, declarative DSL (backlog, no current implementation). **Phase 13 (external backend adapter)** is out of scope and approval-gated — it belongs to a separate repository and must never become a build/test/release dependency of this one ([ADR 0007](docs/adr/0007-external-backend-boundary.md)).
+
+### Engineering principles (priority order on conflict: correctness → clarity → operability → change cost)
+
+Single responsibility · Open/closed (extend via providers/routers/connectors/plugins, never edit core) · Dependency inversion (depend on interfaces, never concrete infra) · Composition over inheritance · Convention over configuration (zero-config local run) · DI at the edges (wiring happens once, in `services/`) · API-first · Explicit over implicit (no magic, no import side effects, no monkey-patching).
+
+**The abstraction test** — before adding any interface, base class, factory, or plugin point, all three must hold: (1) a demonstrated variability point — ≥2 real implementations exist or are committed in a named phase; (2) the variation is on a stable axis; (3) the abstraction removes more code than it adds, or removes a dependency from an inner layer. If any fails, write the concrete implementation.
+
+### Anti-patterns (hard "no" in review)
+
+A second copy of a cross-cutting concern; a framework import inside `core/`; a feature smeared across horizontal `models/`/`utils/`; a God file (>~500 lines) or God function (>~50 lines); a sideways import between sibling feature modules or any import cycle; a raw `os.getenv` or hardcoded endpoint outside `config/`; any import from `backend`/`apps`/`services`/`frontend`; a public function returning a bare `dict`; a raw `temporalio`/`httpx`/`dspy` exception escaping the public API; catching an exception and returning a success value; a new abstraction with one implementation and no committed second.
+
+**When a request conflicts with these rules:** stop, state the conflict explicitly naming the rule, then either write a short ADR (structural deviation), say plainly it's out of scope, or ask (if ambiguous). Never silently work around a golden rule.
+
+---
+
+## 3. Architecture and the dependency rule
+
+> **Dependencies point inward. Never outward, never sideways.**
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  services/            FAÇADE — the composition root              │
+│                       Korch · Swarm · Agent builders             │
+│                       The ONLY place collaborators are wired.    │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │ depends on
+┌───────────────────────────▼──────────────────────────────────────┐
+│  agents/              L2 COGNITIVE — reasoning, compiled          │
+│                       signatures, worker + architect agents       │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │ depends on
+┌───────────────────────────▼──────────────────────────────────────┐
+│  core/                L1 KERNEL — Pregel BSP, graph, reducers     │
+│                       FRAMEWORK-FREE. pydantic + stdlib only.     │
+└───────────────────────────┬──────────────────────────────────────┘
+                            │ depends on
+┌───────────────────────────▼──────────────────────────────────────┐
+│  interfaces/  models/  THE CONTRACTS — ports, protocols, DTOs     │
+│                        Depend on nothing but pydantic + stdlib.   │
+└──────────────────────────────────────────────────────────────────┘
+
+FEATURE MODULES  routing · tools · mcp · a2a · governance
+                 persistence · context · events · runtime · taxonomy
+                 → depend INWARD on interfaces/ + models/ only
+                 → NEVER on each other
+
+ADAPTERS         providers/ · runtime/temporal_runtime.py · clients/
+                 → implement interfaces/, depend inward only
+
+LEAF UTILITIES   config · exceptions · logging · telemetry · serializers
+                 validators · security · types · constants
+                 → no upward dependencies, importable from anywhere
+```
+
+**Four mechanically checkable dependency rules:**
+
+| # | Rule | Enforcement |
+|---|---|---|
+| D1 | `core/` imports only `interfaces/`, `models/`, stdlib, `pydantic`. Never FastAPI, HTTP, Temporal, DSPy, httpx. | import-linter contract + review |
+| D2 | Feature modules never import sibling feature modules; they meet at `interfaces/`/`models/`. | import-linter contract + review |
+| D3 | Nothing imports `backend`/`apps`/`services`/`frontend` (external application packages). `korchestrator.services` (the façade inside this package) is legal. | isolation gate in CI + pre-commit hook |
+| D4 | No import cycles anywhere in the package. | import-linter contract |
+
+**Why `core/` is framework-free:** `import korchestrator` stays fast (base install = one dependency); the kernel test suite runs with only `pydantic` installed; the kernel embeds into a Temporal sandbox, a notebook, a Lambda, or another framework without dragging in a transport stack; a kernel bug can never be an integration bug because the kernel cannot reach an integration.
+
+**The ARI port boundary** — the only sanctioned way the SDK reaches identity, execution, and inference:
+
+```python
+from typing import Protocol
+from korchestrator.models.routing import ModelCard
+from korchestrator.models.state import Message
+
+
+class IModelGateway(Protocol):
+    """Route a reasoning request to a model.
+
+    Implementations MUST be safe to call concurrently from within a superstep
+    and MUST NOT introduce nondeterminism into workflow scope.
+    """
+
+    async def complete(
+        self, messages: list[Message], *, model: str, max_tokens: int | None = None
+    ) -> Message: ...
+
+    async def available_models(self) -> list[ModelCard]: ...
+```
+
+A port exists only when there is more than one real implementation. Adding a fourth port requires an ADR demonstrating the same.
+
+**Supporting protocols** (internal, same inward-dependency discipline, not ARI ports): `IDurableRuntime` (`local_runtime`, `temporal_runtime`), `GraphRepository` (in-memory default, mock, external post-1.0), `TenantStore` (in-memory default), `BaseRouter` (explicit, semantic, algorithmic, composite, user-function), `AUBConnector` (filesystem, search, MCP-backed, user-defined).
+
+**The composition root.** All wiring happens in `services/`. Nothing below it constructs its own collaborators:
+
+```python
+class Korch:
+    def __init__(
+        self, *, settings: Settings | None = None,
+        model_gateway: IModelGateway | None = None,
+        runtime: IDurableRuntime | None = None,
+        router: BaseRouter | None = None,
+        repository: GraphRepository | None = None,
+    ) -> None:
+        self._settings = settings or Settings()
+        self._gateway = model_gateway or resolve_gateway(self._settings)
+        self._runtime = runtime or resolve_runtime(self._settings)
+        self._router = router or resolve_router(self._settings)
+        self._repo = repository or resolve_repository(self._settings)
+```
+
+Consequences: `PregelRunner` never constructs a gateway — it receives one; no import-time singletons (a module-level `router = SemanticRouter()` is a defect); every default is overridable by argument (argument > config > built-in default); `resolve_*` functions live next to the composition root and are the only place a config string becomes a concrete class.
+
+**Determinism architecture** (three structural mechanisms): (1) **Frozen snapshot** — agents compute against an immutable state view and emit `StateUpdate` deltas; no agent observes another's partial work within a superstep. (2) **Order-independent reducers** — the barrier merges deltas via associative, order-independent reducers, so `asyncio.gather` completion order cannot change the result. (3) **Nondeterminism confined to activities** — wall-clock, randomness, network I/O, and model calls live on the activity side of the runtime boundary; workflow-path code uses the injected clock. This is what makes Temporal replay exact.
+
+**Optional-dependency architecture.** Base install is `pydantic` only. Each heavy dependency has exactly one module allowed to import it (`dspy`→`agents/`, `temporalio`→`runtime/temporal_runtime.py`, `httpx`→`clients/`, OTel→`telemetry/`, embedding libs→`routing/`), imported **inside the function that needs it**, never at module top level. A missing extra raises an actionable `KorchError`, never a bare `ImportError`:
+
+```python
+def _load_dspy():  # inside agents/worker.py
+    try:
+        import dspy
+    except ImportError as exc:
+        raise MissingExtraError(
+            "The cognitive layer requires the 'dspy' extra. "
+            "Install it with: pip install 'korchestrator[dspy]'"
+        ) from exc
+    return dspy
+```
+
+The kernel suite passing with only `pydantic` installed is a distinct, load-bearing CI job.
+
+**Architectural decision points** — one package/several distributions → one `korchestrator` distribution with extras ([ADR 0001](docs/adr/0001-package-naming-and-client-class.md), [ADR 0004](docs/adr/0004-dependency-extras-matrix.md)); version location → `src/korchestrator/version.py` ([ADR 0002](docs/adr/0002-single-authoritative-version.md)); local-only/Temporal-only/both → both, behind `IDurableRuntime` ([ADR 0006](docs/adr/0006-runtime-split-local-and-temporal.md)); one activity per superstep vs. child workflow per agent → one activity per superstep ([ADR 0006](docs/adr/0006-runtime-split-local-and-temporal.md)); SDK-to-hosted-backend relationship → one-way, backend consumes the published SDK ([ADR 0007](docs/adr/0007-external-backend-boundary.md)); remote auth → Bearer token, one scheme ([ADR 0005](docs/adr/0005-remote-auth-bearer-token.md)).
+
+---
+
+## 4. Module catalogue
+
+One row per directory under `src/korchestrator/`. "Allowed imports" is exhaustive beyond stdlib + `pydantic` + own submodules — anything not listed is a review-blocking violation.
+
+| Module | Responsibility | Layer | Allowed imports (beyond stdlib+pydantic) | Extra | Phase |
+|---|---|---|---|---|---|
+| `config/` | Own the single typed `Settings` object; only place that reads env/`.env` | Leaf | `pydantic-settings`, `exceptions` | — | P0, P8 |
+| `interfaces/` | Declare ARI ports and structural protocols | Contract | `models` | — | P1 |
+| `models/` | Pydantic domain models exchanged across every boundary | Contract | `types`, `constants` | — | P1, P2 |
+| `core/` | Framework-free Pregel BSP kernel: graph, supersteps, reducers, activation, halting | Kernel | `interfaces`, `models`, `exceptions`, `types`, `constants` | — | P2 |
+| `agents/` | DSPy reasoning layer: agent base, worker, architect meta-agent, compiled signatures | Cognitive | `core`, `interfaces`, `models`, `exceptions`, `logging`, `dspy` (lazy) | `[dspy]` | P4 |
+| `taxonomy/` | Classify intent/difficulty; hold agent descriptors for planning/routing | Cognitive | `models`, `interfaces`, `exceptions` | — | P4 |
+| `routing/` | Select a model per agent via strategies behind one `BaseRouter` | Cognitive | `interfaces`, `models`, `config`, `exceptions`, `logging` | `[routing]` for semantic | P5 |
+| `runtime/` | Implement `IDurableRuntime` twice: `local_runtime`, `temporal_runtime` | Adapter | `core`, `interfaces`, `models`, `config`, `exceptions`, `logging`, `temporalio` (lazy, `temporal_runtime.py` only) | `[temporal]` | P3 |
+| `context/` | Compile execution context; extract Minimum Viable Context; prune/summarize | Context | `interfaces`, `models`, `config`, `exceptions` | — | P6 |
+| `persistence/` | Bitemporal Context Graph client behind `GraphRepository`, in-memory default | Context | `interfaces`, `models`, `config`, `exceptions`, `serializers` | backend drivers optional | P7 |
+| `providers/` | Default ARI implementations: local identity, local sandbox, OpenAI-compatible gateway, MockLM | Adapter | `interfaces`, `models`, `config`, `exceptions`, `logging` | provider clients optional | P4 |
+| `tools/` | Agent Utility Bridge: connector registry, schema validation, timeouts, rate limits, Shield gate | Integration | `interfaces`, `models`, `config`, `exceptions`, `security`, `telemetry`, `logging` | — | P6 |
+| `mcp/` | MCP client; register discovered tools into the AUB registry | Integration | `interfaces`, `models`, `config`, `exceptions`, `mcp` (lazy) | `[mcp]` | P6 |
+| `a2a/` | Transform agent-to-agent handoffs into typed directed messages | Integration | `models`, `exceptions` | — | P6 |
+| `governance/` | Trust scoring, policy evaluation, HITL pause/resume decisions | Governance | `interfaces`, `models`, `config`, `exceptions`, `logging` | — | P7 |
+| `security/` | PII/secret redaction and output sanitization; one consolidated Shield | Leaf | `config`, `exceptions`, `constants` | — | P7, P8 |
+| `events/` | Publish transport-agnostic execution events; drive hook dispatch | Integration | `models`, `exceptions`, `logging` | — | P6 |
+| `clients/` | Remote HTTP client, re-exported as `korchestrator.remote` | Client | `models`, `exceptions`, `config`, `httpx` (lazy) | `[remote]` | P9 |
+| `services/` | Compose the object graph; expose `Korch`/`Swarm`/`Agent` — the one wiring site | Façade | every module | — | P2–P9 |
+| `serializers/` | Deterministic, version-tagged round-trip to JSON/dict/YAML | Leaf | `models`, `exceptions`, `constants` | — | P8 |
+| `validators/` | Boundary validation: parameters, config, graphs, tool schemas, responses | Leaf | `models`, `exceptions`, `constants` | — | P8 |
+| `telemetry/` | Optional OpenTelemetry spans/metrics, zero cost when disabled | Leaf | `config`, `models`, OTel (lazy) | `[otel]` | P8 |
+| `logging/` | Namespaced `korchestrator` logger; `enable_logging()`/`disable_logging()` | Leaf | `config` | — | P8 |
+| `exceptions/` | The whole `KorchError` tree | Leaf | `constants` | — | P1 |
+| `types/` | Shared type aliases, `TypedDict`s, non-ARI `Protocol`s | Leaf | — | — | P1 |
+| `constants/` | Default values, error-code enums, event names | Leaf | — | — | P0 |
+
+**Import rules CI enforces:** `core/` must not import any feature/adapter/client/façade module or any third-party package other than `pydantic`; no module except `services/` may import a sibling feature module; `temporalio` only in `runtime/temporal_runtime.py`, `dspy` only under `agents/`, `httpx` only under `clients/`, OTel only under `telemetry/`, each imported inside the function that needs it; no module imports `backend.*`/`apps.*`/`services.*` (external)/`frontend`; `os.environ`/`os.getenv`/`dotenv` only under `config/`.
+
+**Module contract** (every module directory must satisfy): explicit `__all__` in `__init__.py`; a module docstring naming its layer and allowed imports; no file >~500 lines, no function >~50 lines (split by responsibility, not line count); one responsibility per module (a second router/redactor/error-base/config-source is rejected — variation is a new strategy behind the existing interface); full type annotations, `mypy --strict` clean; every public callable has a Google-style docstring with a runnable offline example; public functions return typed Pydantic models, never bare `dict`.
+
+---
+
+## 5. Domain models
+
+All models live under `models/` and are authoritative. Every workflow-path model is `frozen=True` with `extra="forbid"`; mutable-looking fields use `tuple[...]` not `list[...]`. `types.JSONValue` is the shared alias: `str | int | float | bool | None | list[JSONValue] | dict[str, JSONValue]`.
+
+**`models/state.py`** — enums and messages:
+
+- `MessageRole` (str Enum): `system` / `user` / `assistant` / `tool`
+- `Performative` (str Enum, FIPA-lite speech act): `inform` / `request` / `propose` / `accept` / `reject` / `query` / `failure`
+- `RunStatus` (str Enum, the only status vocabulary): `started` / `running` / `governance_paused` / `completed` / `failed` / `cancelled` / `timed_out`
+- `Message` — one immutable message: `id`, `role`, `performative`, `kind` (`thought`|`tool`|`answer`|`handoff`), `sender`, `recipient`, `content`, `superstep`, `valid_time`, `metadata`. `id` MUST be deterministic: `f"{run_id}:{superstep}:{sender}:{index}"`; `valid_time` MUST come from the injected clock — never `uuid4()`/`datetime.now()` defaults.
+- `StateUpdate` — the typed delta an agent emits: `agent_id`, `updates`, `messages`, `halt`, `trust_delta` (−1.0..1.0), `valid_time`
+- `AgentState` — global shared state threaded through every superstep: `schema_version`, `run_id`, `tenant_id`, `objective` (min length 10), `messages`, `context`, `inbox`, `superstep`, `halted`, `status`, `trust_score` (0.0–1.0), `transaction_time`
+
+**`models/agent.py`** — `AgentPersona` (`role`, `goal`, `backstory`); `AgentConfig` (`id` pattern `^[a-z0-9][a-z0-9_-]{0,63}$`, `persona`, `model`, `tools`, `max_react_steps` 0–10, `hitl_threshold` 0.0–1.0, `timeout_seconds`); `AgentDescriptor` (taxonomy entry: `id`, `description`, `capabilities`, `intents`, `preferred_models`).
+
+**`models/plan.py`** — `TaskDecomposition` (`task_id`, `description`, `assigned_agent`, `depends_on`, `expected_output`); `ExecutionPlan` — the Architect meta-agent's output: `objective`, `intent`, `difficulty` (`trivial`|`moderate`|`complex`), `agents` (≥1), `edges`, `tasks`, `max_supersteps` (1–100, default 10), `rationale`.
+
+**`models/routing.py`** — `ModelCard` (`name`, `provider`, `description`, `capabilities`, `context_window`, `cost_per_1k_input_usd`, `cost_per_1k_output_usd`, `latency_p50_ms`, `quality_score`, `fallbacks`); `TaskSemantics` (`intent`, `difficulty`, `required_capabilities`, token estimates, `embedding`); `RoutingContext` (`agent_id`, `task`, `candidates`, `explicit_model`, `tenant_id`); `RoutingResult` (`model_name`, `strategy` — `explicit`|`semantic`|`algorithmic`|`composite`|`user_function`|`fallback`, `score`, `reason`, `fallbacks`, `estimated_cost_usd`).
+
+**`models/result.py` / `models/tool.py`** — `RunResult` (terminal/paused outcome, identical across runtimes): `run_id`, `status`, `final_answer`, `supersteps`, `messages`, `state`, `trust_score`, `error_code`, `error`, `started_at`, `completed_at`. `RunResult.final_answer` MUST be the derived concatenation, in message order, of every message with `kind == "answer"` — never independently authored. `ToolResult` (normalized tool-invocation outcome): `tool`, `ok`, `output`, `error_code`, `error`, `duration_ms`, `redacted`.
+
+**Compatibility surface** (SemVer-guarded — fields never removed/narrowed within a major version): `AgentState`, `Message`/`Performative`/`RunStatus`, `StateUpdate`, `AgentConfig`/`AgentPersona`, `ExecutionPlan`/`TaskDecomposition`, `ModelCard`/`TaskSemantics`/`RoutingContext`/`RoutingResult`, `RunResult`/`ToolResult` — all yes. `AgentDescriptor` — not yet (may change until 1.0). Anything under `core/`, `services/`, `providers/` not listed — no, internal.
+
+**Bitemporality.** Valid time (`Message.valid_time`, `StateUpdate.valid_time`) — when a fact was true — is set by the emitting agent's activity from the injected clock. Transaction time (`AgentState.transaction_time`) — when the kernel recorded the fact — is stamped once per barrier by the runtime. `persistence/` preserves both on every node it writes, answering "what did the agent know at the moment it decided?" The barrier constructs the next `AgentState` with `model_copy(update=...)`; in-place mutation of shared state is a defect, not a style choice.
+
+---
+
+## 6. Public API and usage tiers
+
+> Users interact with a **small, curated surface**. Everything else is internal and may change in any release.
+
+`korchestrator/__init__.py` exports only public names via an explicit `__all__`. If a name is not in `__all__`, not an ARI port, not a documented model, and not the remote contract, it is internal — regardless of importability.
+
+### Four tiers
+
+**Tier 1 — one-liner, zero infrastructure.** Works on a base install with no configuration (MockLM by default, a real model when a key is present):
+
+```python
+from korchestrator import Korch
+result = Korch().run("Research durable agent execution and summarize the top 3")
+print(result.final_answer)
+```
+
+**Tier 2 — typed swarm builder.** Explicit topology, per-agent model isolation, fluent and fully typed; builder methods return `Self`:
+
+```python
+from korchestrator import Swarm, Agent
+swarm = (
+    Swarm(objective="Review this PR for security and performance")
+    .add(Agent(id="security", role="security-reviewer", model="claude-3.5-sonnet"))
+    .add(Agent(id="perf", role="performance-reviewer", model="gpt-4o-mini"))
+    .add(Agent(id="lead", role="review-lead"))
+    .edges([("security", "lead"), ("perf", "lead")])
+)
+result = swarm.run(max_supersteps=5)
+```
+
+**Tier 3 — kernel direct (embed / advanced).** For embedding the deterministic kernel into another system; collaborators are injected, the runner constructs nothing:
+
+```python
+from korchestrator.core import PregelRunner, AgentGraph
+from korchestrator.models import AgentState
+runner = PregelRunner(graph=my_graph, model_gateway=my_gateway)
+state: AgentState = await runner.run_superstep(state)
+```
+
+**Tier 4 — remote (drive a hosted engine), optional `[remote]` extra.** Nothing in Tiers 1–3 depends on Tier 4:
+
+```python
+from korchestrator.remote import KorchestratorClient
+client = KorchestratorClient("https://engine.example.com", api_key="sk-...")
+result = client.run_and_wait("Summarize Q3 incident reports")
+```
+
+### API design rules (every public callable obeys all)
+
+| # | Rule | Rationale |
+|---|---|---|
+| A1 | Fully type-hinted, `mypy --strict` clean | Autocomplete and static safety are the product |
+| A2 | Returns a typed model, never a bare `dict` | Structure, not string keys |
+| A3 | Google-style docstring with a runnable MockLM/offline example | Self-documenting and testable |
+| A4 | Keyword-only optional parameters (`*` separator) | Adding a parameter later stays non-breaking |
+| A5 | Raises only `KorchError` subclasses | No optional dependency's exception type leaks |
+| A6 | No side effects at import time | Importing is free and safe |
+| A7 | Consistent vocabulary across the whole surface | One concept, one name |
+| A8 | Async-first, with a sync wrapper where it helps DX | The kernel is async |
+
+**Naming vocabulary** (one concept, one name, everywhere): start work → `run` (never `execute`/`launch`/`invoke`/`start`); start explicit swarm → `run_swarm`; start and block → `run_and_wait`; remote client class → `KorchestratorClient` (always, everywhere); run identifier → `run_id`; one parallel round → `superstep`; agent's emitted delta → `StateUpdate`; terminal output text → `final_answer`.
+
+### The compatibility surface — exactly four things are public
+
+1. `korchestrator.__all__` — the exported names
+2. The ARI ports (`IIdentityProvider`, `IExecutionSandbox`, `IModelGateway`) and documented supporting protocols
+3. The documented models (§5's "compatibility surface: yes" rows)
+4. The remote contract (below)
+
+Everything else — private names, unre-exported module paths, internal module structure, untested behaviour — may change in any release.
+
+**Breaking (MAJOR) vs. not (MINOR/PATCH):**
+
+| Breaking | Not breaking |
+|---|---|
+| Removing/renaming a name in `__all__` | Adding a name to `__all__` |
+| Removing/renaming a public model field | Adding an optional field with a default |
+| Adding a required parameter | Adding a keyword-only parameter with a default |
+| Narrowing an accepted input type | Widening an accepted input type |
+| Widening a returned type | Narrowing a returned type |
+| Changing an exception type at a boundary | Adding a subclass of an already-raised type |
+| Changing a default that alters results | Changing a default that only affects performance |
+| Changing a serialized schema untagged | Adding a version-tagged migration |
+| Removing a supported Python version | Adding a supported Python version |
+
+While `0.x`, a MINOR may break, stated loudly in the CHANGELOG. From `1.0.0` the policy is absolute. The surface is guarded by a golden-file snapshot test over `korchestrator.__all__`; updating the golden file requires a CHANGELOG entry and an explicit version decision in the same PR.
+
+### Deprecation policy
+
+Never remove a public name without notice: (1) emit `DeprecationWarning` naming the replacement and removal version; (2) keep it working ≥1 minor release; (3) document replacement/migration/removal in CHANGELOG and migration guide; (4) remove only in a MAJOR (or a MINOR while `0.x` that says so). Deprecations ship with a test asserting the warning fires and the old path still returns the same result.
+
+### The exported surface (illustrative — check `src/korchestrator/__init__.py` for the live list)
+
+```python
+from korchestrator.config import Settings, configure
+from korchestrator.exceptions import (
+    AuthError, GovernanceHaltError, KorchError, MissingExtraError, NetworkError,
+    ProviderError, QuotaExceededError, RateLimitError, RoutingError,
+    RunFailedError, RunTimeoutError, ToolError, ValidationError,
+)
+from korchestrator.interfaces import (
+    IDurableRuntime, IExecutionSandbox, IIdentityProvider, IModelGateway,
+)
+from korchestrator.logging import enable_logging
+from korchestrator.models import AgentState, Message, RunResult, RunStatus, StateUpdate
+from korchestrator.serializers import from_json, to_json
+from korchestrator.services import Agent, Korch, Swarm
+from korchestrator.version import __version__
+
+__all__ = [
+    "Agent", "AgentState", "AuthError", "GovernanceHaltError",
+    "IDurableRuntime", "IExecutionSandbox", "IIdentityProvider", "IModelGateway",
+    "Korch", "KorchError", "Message", "MissingExtraError", "NetworkError",
+    "ProviderError", "QuotaExceededError", "RateLimitError", "RoutingError",
+    "RunFailedError", "RunResult", "RunStatus", "RunTimeoutError", "Settings",
+    "StateUpdate", "Swarm", "ToolError", "ValidationError", "__version__",
+    "configure", "enable_logging", "from_json", "to_json",
+]
+```
+
+`korchestrator.remote` is never imported here (stays behind `[remote]`, keeps `httpx` out of the base install). `TimeoutError` in the `KorchError` tree is deliberately not re-exported at top level (would shadow the builtin) — reachable as `korchestrator.exceptions.TimeoutError`; `RunTimeoutError` (the one users actually catch) is exported.
+
+### Tier 4 — the remote contract
+
+Authoritative description of the HTTP API a hosted Korchestrator engine exposes. Creates **no dependency on any service existing** — Tiers 1–3 are unaffected if no engine is ever deployed.
+
+**Auth — one scheme:** `Authorization: Bearer <api-key | KIAM JWT>` ([ADR 0005](docs/adr/0005-remote-auth-bearer-token.md)). Scopes: `korchestrator:read`, `korchestrator:write`, `korchestrator:admin`. Status codes: 401 bad/missing credentials, 403 insufficient scope, 402 quota exceeded. Credentials are never logged, never written to disk, redacted from exceptions/telemetry. Tenant is derived server-side from the token.
+
+**Endpoints:**
+
+| Method & path | Scope | Purpose |
+|---|---|---|
+| `POST /v1/run/auto` | write | Start a run; the engine plans the graph |
+| `POST /v1/run/swarm` | write | Start a run with an explicit graph |
+| `POST /v1/run` | write | Start a run from a raw `AgentState` |
+| `GET /v1/run/{id}` | read | Full live state |
+| `GET /v1/run/{id}/stream` | read | SSE event stream |
+| `POST /v1/run/{id}/resume` | write | Resume a governance-paused run |
+| `POST /v1/run/{id}/cancel` | write | Cancel a run |
+| `POST /v1/run/{id}/edit-resume` | write | Modify state and resume |
+| `GET /v1/runs` | read | List runs |
+| `GET /v1/runs/{id}/summary` | read | Run summary |
+| `GET /v1/me`, `/v1/me/quota`, `/v1/me/runs` | read | Caller identity and usage |
+| `POST /v1/keys`, `GET /v1/keys`, `DELETE /v1/keys/{id}` | admin | Key management |
+| `GET /v1/tools`, `POST /v1/tools/register` | read/write | Tool registry |
+| `GET /v1/models` | read | Available models |
+| `GET /v1/swarm-templates` | read | Topology presets |
+
+**Lifecycle:** `started → running → (governance_paused → resume | cancel | edit-resume) → completed | failed | cancelled | timed_out`. The client normalizes numeric engine statuses: `1→running, 2→completed, 3→failed, 4→cancelled, 6→timed_out`. **Webhooks:** single POST on terminal state (`run_id`, `status`, `superstep`, `completed_at`, `final_answer`, `message_count`), 10s timeout, no retry — consumers must be idempotent.
+
+**Client behaviour:** default timeout 30s (overridable); 3 retries, exponential backoff with jitter; retry on 429/502/503/504/connection errors, never other 4xx; streaming via SSE as an async iterator; errors as `ApiError` (a `KorchError` subclass) carrying `status`/`message`/`code`/`trace_id`; transport is `httpx`, both async and sync surfaces.
+
+The TypeScript twin `@kendralabs/korchestrator-sdk` is specified but deferred ([ADR 0008](docs/adr/0008-typescript-client-deferred.md)) — a parity matrix documents every method as `TS: planned`.
+
+---
+
+## 7. Execution model (Pregel BSP kernel)
+
+### The superstep
+
+A run is a sequence of supersteps, each with five phases in fixed order:
+
+| # | Phase | What happens | Where |
+|---|---|---|---|
+| 1 | Plan | The Architect agent (or preset topology) produces the typed `AgentGraph`. Once, at superstep 0, unless explicitly re-derived. | Activity |
+| 2 | Compute | Every active node runs concurrently via `asyncio.gather` against a frozen `AgentState` snapshot, returns a `StateUpdate`. | Activity |
+| 3 | Synchronise | The barrier waits for all compute tasks; no update visible until all complete. | Workflow |
+| 4 | Reduce | Deltas merged into the next `AgentState` by channel reducers, deterministic order. | Workflow |
+| 5 | Checkpoint | New state persisted durably so the run can resume after a crash. | Workflow/event history |
+
+State transition: `S(t+1) = f(S(t), M(t))` — `f` MUST be pure: same `S(t)` and multiset `M(t)` → byte-identical `S(t+1)`.
+
+**Frozen-snapshot rule.** An agent receives an immutable `AgentState` and returns a `StateUpdate`. It must not mutate its input, hold a reference past the compute phase, or observe a sibling's output from the same superstep — this removes locks and races entirely.
+
+### Activation and halting
+
+- Superstep 0 activates all nodes. Superstep n>0 activates only nodes whose inbox is non-empty. A node that returned `halt=True` is never reactivated.
+- Activation is computed from state alone — never wall-clock, `asyncio` completion order, or external services.
+
+| Halting condition | Resulting `RunStatus` |
+|---|---|
+| No node active for the next superstep | `completed` |
+| Every active node returned `halt=True` | `completed` |
+| `superstep + 1 > max_supersteps` (default 10) | `completed`, `error_code = "MAX_SUPERSTEPS_REACHED"` |
+| Governance raised an intervention | `governance_paused` (resumable) |
+| An activity exhausted its retry policy | `failed` |
+| The run deadline elapsed | `timed_out` |
+| A cancel signal received | `cancelled` |
+
+`max_supersteps` is a hard bound enforced by the kernel itself, identically on both runtimes.
+
+### Reducers and the barrier
+
+Shared state mutates only through typed reducer channels — a key in `AgentState.context` (or `messages`) bound to exactly one reducer. Exactly four reducers exist; a fifth requires an ADR:
+
+| Reducer | Behaviour | Associative | Order-independent | Idempotent |
+|---|---|---|---|---|
+| `LastValue` | Keep value with highest `(superstep, agent_id)` sort key | Yes | Yes | Yes |
+| `Append` | Concatenate into a list channel, `agent_id` order | Yes | Yes (sorted, not arrival order) | **No** (by design) |
+| `UniqueAppend` | Append only unseen values, preserve first-seen position | Yes | Yes | Yes |
+| `MergeDict` | Deep-merge mapping channels; conflicting leaves via `LastValue` | Yes | Yes | Yes |
+
+Why the laws matter: `asyncio.gather` doesn't guarantee completion order, and Temporal replay may interleave differently. An order-dependent reducer would make replay diverge from the original run. The barrier sorts deltas by `agent_id` before folding so completion order can never leak into the result. `Append` is deliberately non-idempotent and must have a test proving so.
+
+### Message routing
+
+`AgentGraph` is a directed graph of `Node` (`AgentConfig` + bound callable) and `Edge` (`(source_id, target_id)`); cycles are legal and first-class. A `StateUpdate.messages` entry with `recipient=None` broadcasts along every outbound edge; an explicit recipient delivers only if `(sender, recipient)` is a graph edge, otherwise the barrier raises `ValidationError`. Delivery is into `AgentState.inbox[target_id]`; inboxes clear at the start of each compute phase (delivered exactly once, next superstep only). Messages with `kind == "answer"` accumulate into `AgentState.messages` and form `RunResult.final_answer`. Graph validation happens once before superstep 0: unique node ids, resolvable edge endpoints, ≥1 node, no self-edge unless `AgentGraph(allow_self_edges=True)`.
+
+### The determinism contract
+
+Workflow-path code (barrier, reducers, activation, halting, checkpoint assembly, the `PregelMaster` loop) MUST NOT: call `datetime.now()`/`utcnow()`/`time.time()`/`time.monotonic()`; call `random`/`secrets`/`uuid.uuid4()`; read env vars/files/sockets/process-global mutable state; iterate an unordered collection in a way affecting the result; depend on `asyncio` task completion order.
+
+Instead: time comes from `IDurableRuntime.now()` (`workflow.now()` under Temporal, an injected monotone clock locally); identifiers are derived (`Message.id = f"{run_id}:{superstep}:{sender}:{index}"`, run ids generated once in an activity before the workflow starts); all nondeterminism lives in activities; workflow-path behaviour changes are gated with Temporal's `patched()`/`deprecate_patch()` and recorded in an ADR.
+
+### `IDurableRuntime` and its two adapters
+
+```python
+class IDurableRuntime(Protocol):
+    def now(self) -> datetime: ...                                   # NEVER datetime.now()
+    async def start(self, graph: AgentGraph, state: AgentState, *, max_supersteps: int = 10) -> str: ...
+    async def wait(self, run_id: str, *, timeout_seconds: float | None = None) -> RunResult: ...
+    async def signal(self, run_id: str, name: str, payload: dict[str, str]) -> None: ...
+```
+
+**`runtime/local_runtime.py`** — the default (`KORCH_RUNTIME=local`), in-process, zero infrastructure, no `temporalio` import; drives the same `PregelRunner` loop, checkpoints to the configured `GraphRepository` (in-memory default); `now()` is an injectable monotone clock; crash recovery is out of scope (the process is the durability boundary).
+
+**`runtime/temporal_runtime.py`** — the durable adapter. A single **`PregelMaster` workflow** drives the superstep loop and invokes **one `SuperstepActivity` per superstep** (that activity fans out to all active agents with `asyncio.gather`). It does **not** spawn a child workflow per agent — at 100+ agents per superstep this would multiply event-history entries toward Temporal's 50k-event cap, widen the nondeterminism surface, and move parallelism out of `asyncio` (where it's free) into the Temporal task-queue hot path.
+
+| Pregel concept | Temporal primitive |
+|---|---|
+| Agent session / run | Workflow (`PregelMaster`, may sleep for months) |
+| Plan phase | `plan_execution_activity` |
+| Compute phase (all active agents) | one `SuperstepActivity`, auto-retried with backoff |
+| Synchronise (barrier) | Activity completion inside workflow scope |
+| Reduce | Pure workflow-scope code |
+| Checkpoint | Workflow event history + `GraphRepository` write |
+| Human-in-the-loop | Signal + `workflow.wait_condition` |
+| Cancel / resume / edit-resume | Signals |
+| Current time | `workflow.now()` |
+
+`temporalio` is imported inside this module's functions only, never at top level.
+
+### HITL, retries, and roll-over
+
+**HITL.** When `governance/` returns an intervention (trust score below `hitl_threshold`, else `GOVERNANCE_TRUST_THRESHOLD`), the barrier sets `status = governance_paused` and the workflow awaits a durable signal, bounded by a default 24h deadline (expires → `timed_out`). Signals: `resume` (continue unchanged), `edit_resume` (apply an operator `StateUpdate` through normal reducers, then continue), `cancel` (terminate `cancelled`). A paused run consumes no compute.
+
+**Retries.** Exponential backoff with mandatory jitter. Defaults: initial interval 1s, backoff coefficient 2.0, max interval 60s, max attempts 3. Non-retryable `KorchError` subclasses: `ValidationError`, `AuthError`, `QuotaExceededError`, `GovernanceHaltError`.
+
+**Roll-over.** Temporal caps an execution at 50,000 events. `PregelMaster` tracks its event count and calls `continue_as_new` before the cap, carrying forward the checkpointed `AgentState`, graph, superstep counter, and run deadline. `run_id` stays stable across roll-over; the workflow run id does not (and nothing public depends on it).
+
+### Runtime equivalence
+
+Runtime is selected purely by configuration (`KORCH_RUNTIME=local|temporal` or `Korch(runtime=...)`), no agent/graph/tool/routing code change. Both adapters MUST produce an equivalent `RunResult` for the same graph/initial state/MockLM gateway (identical `status`, `final_answer`, `supersteps`, `trust_score`, `messages` modulo runtime-specific timestamps) — asserted by `tests/e2e/test_runtime_equivalence.py`.
+
+---
+
+## 8. Extensibility
+
+An extension point exists only when there is more than one real implementation today, or a named third party already needs to substitute one. "We might want to swap this later" does not justify it.
+
+| Port / protocol | Second implementation that justifies it |
+|---|---|
+| `IModelGateway` | `MockLM` (offline default) and the OpenAI-compatible gateway |
+| `IExecutionSandbox` | Local subprocess and an external sandbox service |
+| `IIdentityProvider` | Local unsecured identity and a JWT-based enterprise provider |
+| `IDurableRuntime` | `local_runtime` and `temporal_runtime` |
+| `BaseRouter` | Explicit, algorithmic, and composite strategies |
+| `AUBConnector` | File-system, search, and MCP-backed connectors |
+| `GraphRepository` | In-memory default and external graph/SQL backends |
+
+For backlog capabilities (Context Graph backends, speculative execution, FinOps quotas, the KL DSL): **interface now, implement minimally** — define the port with an in-memory or no-op default so the SDK runs standalone; never ship a partial implementation behind a flag.
+
+### Registration — exactly two mechanisms
+
+**1. Explicit registration at the composition root** (`services/`, the only wiring site, and the primary path used by every example/test):
+
+```python
+from korchestrator import Korch
+korch = Korch(
+    model_gateway=MyGateway(), router=MyRouter(), repository=MyRepository(),
+    connectors=[MyConnector()], middleware=[MyMiddleware()],
+)
+```
+
+**2. Entry-point plugin discovery** for distribution-installed extensions, via `importlib.metadata.entry_points()`:
+
+| Entry-point group | Expected object |
+|---|---|
+| `korchestrator.gateways` | zero-arg callable → `IModelGateway` |
+| `korchestrator.routers` | zero-arg callable → `BaseRouter` |
+| `korchestrator.connectors` | zero-arg callable → `AUBConnector` |
+| `korchestrator.repositories` | zero-arg callable → `GraphRepository` |
+| `korchestrator.middleware` | zero-arg callable → `Middleware` |
+
+Discovery is opt-in (`Settings.plugins_enabled`, `KORCH_PLUGINS_ENABLED`, default `false`); explicit registration always wins over a same-named plugin; a raising factory is skipped with a logged `WARNING`, never aborts startup; discovery happens once, at composition-root construction, never inside the superstep loop.
+
+### Custom agents
+
+An agent turns a frozen `AgentState` into a `StateUpdate`. Subclass the base and implement `think`:
+
+```python
+from korchestrator.agents import Agent
+from korchestrator.models import AgentState, Message, MessageRole, StateUpdate
+
+class WordCountAgent(Agent):
+    async def think(self, state: AgentState) -> StateUpdate:
+        total = len(state.objective.split())
+        message = Message(
+            id=f"{state.run_id}:{state.superstep}:{self.id}:0",
+            role=MessageRole.ASSISTANT, kind="answer", sender=self.id,
+            content=f"{total} words", superstep=state.superstep,
+            valid_time=self.clock.now(),
+        )
+        return StateUpdate(agent_id=self.id, messages=(message,), halt=True, valid_time=message.valid_time)
+```
+
+`think` must not mutate `state`, must not call `datetime.now()` (use `self.clock`), must not read a sibling's output, and must return within `AgentConfig.timeout_seconds`. Register via `Swarm().add(WordCountAgent(id="counter", persona=...))` — no core edit, no registry entry.
+
+### Routers
+
+```python
+from korchestrator.models import RoutingContext, RoutingResult
+from korchestrator.routing import BaseRouter
+
+class CheapestRouter(BaseRouter):
+    async def select_model(self, context: RoutingContext) -> RoutingResult:
+        if not context.candidates:
+            raise RoutingError("No candidate models available.", code="ROUTING_NO_CANDIDATES")
+        best = min(context.candidates, key=lambda card: card.cost_per_1k_input_usd)
+        return RoutingResult(model_name=best.name, strategy="user_function", score=1.0,
+            reason=f"lowest input cost among {len(context.candidates)} candidates", fallbacks=best.fallbacks)
+```
+
+`select_model` must be pure w.r.t. `RoutingContext` (routing decisions are replayed), must populate `reason` actionably, must raise `RoutingError` rather than silently defaulting. Register via `Korch(router=CheapestRouter())`.
+
+### Tools and connectors
+
+```python
+from korchestrator.models import ToolResult
+from korchestrator.tools import AUBConnector
+
+class UppercaseConnector(AUBConnector):
+    name = "uppercase"
+    schema = {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}
+    async def execute(self, tool: str, args: dict[str, str]) -> ToolResult:
+        return ToolResult(tool=tool, ok=True, output=args["text"].upper())
+```
+
+`execute` never raises for expected failures — returns `ToolResult(ok=False, error_code=..., error=...)`; unexpected failures surface as `ToolError`. Arguments are schema-validated by the bridge before `execute` runs. Every invocation passes through `tools/bridge.py`'s timeout, rate limit, Shield gate, and telemetry span. Register via `Korch(connectors=[UppercaseConnector()])`; agents mount tools by name via `AgentConfig.tools` — an unmounted tool yields `TOOL_ACCESS_DENIED`.
+
+### MCP servers
+
+```python
+from korchestrator.mcp import MCPServerConfig
+korch = Korch(mcp_servers=[MCPServerConfig(name="fs", transport="stdio", command="mcp-fs")])
+```
+
+Registered by connection descriptor, not code. The client discovers the server's tools at composition time and registers each as an `AUBConnector`-backed entry in the same registry — agents can't tell an MCP tool from a native one. Discovery failures never abort the run (server skipped, `WARNING` logged, its tools resolve to `TOOL_NOT_FOUND`).
+
+### Persistence backends
+
+```python
+class GraphRepository(Protocol):
+    async def save_checkpoint(self, state: AgentState) -> None: ...
+    async def load_checkpoint(self, run_id: str, *, superstep: int | None = None) -> AgentState | None: ...
+    async def list_runs(self, *, tenant_id: str, limit: int = 50) -> tuple[str, ...]: ...
+```
+
+Every method must be tenant-scoped (mandatory, never optional metadata); writes preserve both `valid_time` and `transaction_time`; `save_checkpoint` must be idempotent per `(run_id, superstep)`. `PERSISTENCE_BACKEND=none` leaves the SDK fully functional with an in-memory repository.
+
+### Middleware and event hooks
+
+Middleware wraps a phase and may observe or veto; hooks observe only.
+
+```python
+class SuperstepTimer(Middleware):
+    async def before_superstep(self, state: AgentState) -> None: ...
+    async def after_superstep(self, state: AgentState) -> None: ...
+
+korch.on("superstep", handler)          # fired after each barrier
+korch.on("message", handler)            # fired per message routed
+korch.on("governance_pause", handler)   # fired when a run pauses for HITL
+```
+
+Supported phases: `before_superstep`/`after_superstep`, `before_tool`/`after_tool`. Ordering: `before_*` runs in registration order, `after_*` in reverse (nests like a stack); middleware always precedes event hooks for the same phase; event handlers run in registration order. Both run in **activity scope**, never workflow scope — a hook can do I/O without breaking determinism, but must never influence `S(t+1)`.
+
+**Error isolation:** an event hook or `after_superstep` middleware that raises is caught, logged at `ERROR`, run continues unaffected — a hook can never fail a run. `before_superstep` middleware raising `GovernanceHaltError` is the **only** sanctioned way for middleware to stop a run (→ `governance_paused`); raising anything else is caught/logged/ignored. `before_tool` middleware raising `ToolError` denies the call (`TOOL_ACCESS_DENIED`).
+
+### How NOT to extend (review-blocking)
+
+Editing `core/` to add a feature; monkey-patching a symbol at import time; import-time side effects in a plugin module; reading `os.environ` in a provider/connector; a second router/redactor/error-base/config-source; wall-clock or `random` inside `think` or a reducer; a new interface with one implementation; mutating `AgentState` from a hook; raising from a hook to abort a run; subclassing `PregelRunner` (not part of the compatibility surface — compose it or inject a different `IDurableRuntime` instead).
+
+---
+
+## 9. Configuration and cross-cutting concerns
+
+### Configuration
+
+There is exactly one configuration object, `korchestrator.config.Settings` (built on `pydantic-settings`). `config/` is the **only** package that may read `os.environ`/`os.getenv`/`.env`. Precedence, highest first: explicit argument → environment variable → `.env` file → declared default. Zero-config behaviour: MockLM gateway, `local` runtime, in-memory persistence, explicit routing, logging off, telemetry off — the Tier-1 one-liner must work with nothing configured.
+
+```python
+from korchestrator.config import configure, get_settings
+configure(mock_llm=True, korch_runtime="local", governance_trust_threshold=0.7)
+settings = get_settings()
+```
+
+`configure(**overrides)` validates immediately (never at first use) and installs the new default; `get_settings()` returns the cached instance; `configure()` must never be called from inside a superstep.
+
+**Recognised environment variables** (each consumed by exactly the module named):
+
+| Variable | Type | Default | Consumed by |
+|---|---|---|---|
+| `MOCK_LLM` | bool | `true` unless a gateway key is present | `providers/`, `agents/` |
+| `KENDRA_AI_GATEWAY_URL` | str\|None | `None` | `providers/` |
+| `LLM_GATEWAY_URL` | str\|None | `None` (alias) | `providers/` |
+| `KENDRA_GATEWAY_API_KEY` | SecretStr\|None | `None` | `providers/` |
+| `GOVERNANCE_TRUST_THRESHOLD` | float 0–1 | `0.5` | `governance/` |
+| `PERSISTENCE_BACKEND` | `none`\|`memory`\|`kcg` | `memory` | `persistence/` |
+| `ROUTING_STRATEGY` | `explicit`\|`semantic`\|`algorithmic`\|`composite` | `explicit` | `routing/` |
+| `AGENT_MODEL_MAP` | JSON dict | `{}` | `routing/` |
+| `ROUTING_WEIGHTS` | JSON dict | `{quality:0.5, cost:0.3, latency:0.2}` | `routing/` |
+| `ROUTING_PRIORITY_ORDER` | CSV tuple | `(explicit, algorithmic, fallback)` | `routing/` |
+| `EMBEDDING_PROVIDER` | str\|None | `None` | `routing/` (`[routing]`) |
+| `MODELCARD_SOURCE` | `builtin`\|`file`\|`url` | `builtin` | `routing/` |
+| `MODELCARD_PATH`, `MODELCARD_URL` | str\|None | `None` | `routing/` |
+| `MODELCARD_CACHE_TTL_SECONDS` | int | `900` | `routing/` |
+| `KORCH_RUNTIME` | `local`\|`temporal` | `local` | `runtime/` |
+| `KORCH_MAX_SUPERSTEPS` | int 1–100 | `10` | `core/`, `runtime/` |
+| `KORCH_PLUGINS_ENABLED` | bool | `false` | `services/` |
+| `KORCH_LOG_LEVEL` | str | `WARNING` | `logging/` |
+| `KORCH_TELEMETRY_ENABLED` | bool | `false` | `telemetry/` |
+| `KORCH_ENGINE_URL` | str\|None | `None` | `clients/` |
+| `KORCH_ENGINE_API_KEY` | SecretStr\|None | `None` | `clients/` |
+| `KORCH_ENGINE_NAMESPACE` | str | `default` | `clients/` |
+| `KORCH_ENGINE_TASK_QUEUE` | str | `korchestrator` | `clients/` |
+| `TEMPORAL_ADDRESS` | str | `localhost:7233` | `runtime/temporal_runtime.py` |
+| `TEMPORAL_NAMESPACE` | str | `default` | `runtime/temporal_runtime.py` |
+| `TEMPORAL_TASK_QUEUE` | str | `korchestrator` | `runtime/temporal_runtime.py` |
+| `TEMPORAL_API_KEY` | SecretStr\|None | `None` (set ⇒ TLS) | `runtime/temporal_runtime.py` |
+| `TEMPORAL_HITL_TIMEOUT_SECONDS` | int | `86400` | `runtime/temporal_runtime.py` |
+
+Every secret-bearing field is `SecretStr`; `Settings.__repr__`/serialization renders secrets as `**********`. A CI test asserts environment access never escapes `config/`.
+
+### Error handling
+
+Everything catchable descends from one `KorchError` base:
+
+```
+KorchError
+├── ConfigurationError      KORCH_CONFIG_INVALID
+├── ValidationError         KORCH_VALIDATION_FAILED
+├── AuthError                KORCH_AUTH_FAILED / KORCH_AUTH_FORBIDDEN
+├── NetworkError             KORCH_NETWORK_UNAVAILABLE
+├── TimeoutError              KORCH_TIMEOUT   (deliberately shadows the builtin; import explicitly)
+├── RateLimitError           KORCH_RATE_LIMITED
+├── QuotaExceededError       KORCH_QUOTA_EXCEEDED
+├── ProviderError            KORCH_PROVIDER_FAILED
+├── RoutingError             KORCH_ROUTING_FAILED / ROUTING_NO_CANDIDATES
+├── ToolError                TOOL_NOT_FOUND / TOOL_ACCESS_DENIED / NOT_IMPLEMENTED
+├── GovernanceHaltError      KORCH_GOVERNANCE_HALT
+├── RunFailedError           KORCH_RUN_FAILED
+└── RunTimeoutError           KORCH_RUN_TIMEOUT
+```
+
+Error codes live in `constants/error_codes.py` and are part of the compatibility surface — never renamed or reused within a major version. No raw `temporalio`/`httpx`/`dspy`/database-driver/MCP exception may cross a module boundary — always wrap with `raise ... from exc` at the layer owning the dependency. Messages state what failed, which value, and what to do — never a secret or a full prompt:
+
+| Bad | Good |
+|---|---|
+| `"Invalid configuration"` | `"ROUTING_STRATEGY='sematic' is not recognised. Valid values: explicit, semantic, algorithmic, composite."` |
+| `"Request failed"` | `"Gateway returned 429 for model 'gpt-4o-mini' after 3 attempts. Reduce concurrency or raise the tenant rate limit."` |
+
+### Logging
+
+One logger, `logging.getLogger("korchestrator")`, `NullHandler` attached, **off by default** — never calls `logging.basicConfig()`, never modifies an embedding app's logging config. `enable_logging(level="INFO", *, stream=None)` attaches a single idempotent `StreamHandler`; `disable_logging()` removes it. No `print()` anywhere in `src/` (ruff `T20`). Structured fields via `extra=` (`run_id`, `tenant_id`, `superstep`, `agent_id`, `event`, `outcome`, `duration_ms`, `trace_id`), never string-interpolated. Never logged: API keys, JWTs, `SecretStr` values, raw prompts/completions, unredacted tool arguments, personal data.
+
+### Telemetry
+
+Optional, behind `[otel]` + `KORCH_TELEMETRY_ENABLED` (default `false`); OTel imported inside `telemetry/` only. Zero overhead when off — `start_span()` returns a no-op singleton. Span tree follows OpenTelemetry GenAI conventions: `agent.run` → `agent.superstep` → `agent.plan` → `tool.call` / `gen_ai.call` (attributes never include prompt text). Metrics: `korch.run.duration`, `korch.superstep.duration`, `korch.agents.active`, `korch.tool.calls`, `korch.model.tokens`, `korch.run.status`. Metric attributes are low-cardinality — never `run_id`.
+
+### Security
+
+**Secrets** — read only through `Settings` as `SecretStr`; never on disk, in a span, in a log record, or in an exception message; only `.env.example` with inert placeholders is tracked in git. **Redaction (Shield)** — one consolidated redactor in `security/`, masking to `[MASKED_<TYPE>]` (`PAN`, `IBAN`, `PHONE`, `SSN`, `EMAIL`, `SECRET`); coverage includes Luhn-validated card numbers, IBAN, international phone formats, national identifiers, credential patterns; applied on ingest before persistence/telemetry/logs/event subscribers. **Fail closed** — for high-sensitivity flows, an unavailable/timed-out redactor, policy engine, or identity provider **denies** the operation, never allows it through unredacted; `governance/` pauses or raises `GovernanceHaltError`, never degrades to permissive. **Development fallbacks are explicit and observable** — the local unsecured `IIdentityProvider` logs a `WARNING` on construction and is rejected when `KORCH_RUNTIME=temporal` with a configured `TEMPORAL_API_KEY`. **Input validation** — every boundary-crossing identifier is checked against an allowlist pattern before use; no string-built paths/commands/queries. **Output sanitization** — model/tool output is untrusted: schema-validated, redacted, never `eval`'d or used to construct a path/command. **Tenancy** — `tenant_id` is mandatory on state, checkpoints, and repository calls; a repository method without tenant scope is a defect.
+
+### Serialization
+
+`serializers/` round-trips `AgentState`, `AgentGraph` (excluded from `to_json`/`from_json` per [ADR 0017](docs/adr/0017-agentgraph-excluded-from-json-serialization.md) — its nodes carry live compute callables), `ExecutionPlan`, `ModelCard`, `RunResult` — deterministic, version-tagged:
+
+```python
+from korchestrator import from_json, to_json
+payload: str = to_json(result)
+restored: RunResult = from_json(payload, RunResult)
+assert to_json(restored) == payload  # byte-stable round trip
+```
+
+Requirements: deterministic output (sorted keys, fixed separators, UTF-8, `ensure_ascii=False`); every envelope carries `schema_version` and `korchestrator_version`; timestamps are ISO-8601 with explicit UTC offset, microsecond precision; floats use `repr` round-trip fidelity; a shape-breaking change requires a `schema_version` bump plus a `migrate_<model>_v<n>_to_v<n+1>` function — `from_json` applies migrations in sequence, and a payload with a *higher* schema version than installed raises `ValidationError` rather than guessing; additive optional-field changes don't bump the version but need a golden-file test proving old payloads still load. Golden fixtures live in `tests/fixtures/serde/` and are append-only.
+
+### Validation
+
+Fail-fast at the boundary, before any model call, tool call, or checkpoint write:
+
+| Trust boundary | Validated | Enforced in |
+|---|---|---|
+| Public façade arguments | `objective` ≥10 chars; `max_supersteps` 1–100; agent ids unique/pattern-matching | `services/`, `validators/` |
+| Settings construction | Types, ranges, enum membership, mutually exclusive credentials | `config/` |
+| Graph construction | ≥1 node; resolvable edges; no duplicate ids; no unpermitted self-edge | `core/graph.py` |
+| Agent output | `StateUpdate` validity; `agent_id` match; sender match | `core/pregel.py` |
+| Routing | Selected model resolvable or a declared fallback | `routing/` |
+| Tool invocation | Args vs. JSON schema; tool mounted on the calling agent | `tools/bridge.py` |
+| MCP responses | Descriptors conform to schema; unknown fields rejected | `mcp/` |
+| Remote responses | Typed models, `extra="forbid"`; status normalised to `RunStatus` | `clients/` |
+| Deserialization | Schema version supported; envelope well-formed | `serializers/` |
+
+Validation happens once, at the boundary — interior code assumes validated input. A failure raises `ValidationError` naming the field and accepted values; never returns `None`/a default/a partially valid object. No validation is ever skipped in production via a flag.
+
+---
+
+## 10. Testing and quality
+
+**Principle:** a capability with no test is not delivered. Test at the lowest layer that proves the behaviour; determinism is a tested feature, not an aspiration.
+
+### The six test types
+
+| Type | Proves | Lives in | Budget | CI trigger |
+|---|---|---|---|---|
+| Unit | One module in isolation, incl. failure paths | `tests/unit/` (mirrors `src/`) | <50ms/test, suite <60s | Every push/PR, full Python matrix |
+| Integration | Two+ real components agree at their seam | `tests/integration/` | <500ms/test, suite <120s | Every push/PR |
+| E2E | A full objective → `RunResult` via the façade, real runtime, MockLM | `tests/e2e/` | <5s/test, suite <120s | Every PR; `[temporal]` subset on its own job |
+| Regression | A fixed defect stays fixed; failed on old code | `tests/regression/` | Same as layer | Every push/PR |
+| Performance | Parallelism/import time/memory within baseline | `benchmarks/` | Unbounded, alone | Manual dispatch + release branches — never blocking |
+| Smoke | A fresh install imports, reports version, runs the Tier-1 one-liner | `tests/smoke/` | <10s total | Post-build against the wheel + post-publish |
+
+### Hard rules (absolute — violating any fails review regardless of coverage)
+
+Never touch the network (remote-client tests use `respx`); never call a real model (MockLM everywhere); never `sleep`; never read the wall clock (inject the fake clock); never depend on shared developer state; never depend on test order; never require an API key or running service; never assert only that code ran — every test asserts an observable outcome.
+
+Every `skip`/`skipif`/`xfail` names a reason and owner: `reason="<what> — owner: <handle> — <tracking ref>"`. `xfail` is strict (`--xfail-strict`). `skipif` on an extra tests importability, never an env var.
+
+### Test doubles — one per boundary
+
+| Boundary | Double | Use for |
+|---|---|---|
+| `IModelGateway` | **MockLM** — deterministic, scriptable, recorded call log | Every test reaching the reasoning layer (the default gateway) |
+| `IDurableRuntime` (local) | `LocalRuntime` (real) | Most unit/integration/e2e tests |
+| `IDurableRuntime` (durable) | Temporal time-skipping test environment | Replay/durability tests, marked `temporal` |
+| `GraphRepository` | In-memory repository | Persistence/context-graph tests |
+| Clock | **FakeClock** | Anything with a timeout/TTL/timestamp |
+| `IIdentityProvider` | Local identity provider (real) | Identity propagation tests |
+| `IExecutionSandbox` | Stub sandbox | Tool/sandbox-boundary tests |
+| `AUBConnector` | Stub connector | Tool-bridge/registry/governance-denial tests |
+| HTTP transport | `respx` mock router | Every `korchestrator.remote` test |
+| MCP server | Stub in-process server | MCP client/registry tests |
+
+A double must implement the same interface as the real component, never a looser one; monkeypatching internals instead of injecting a double is prohibited.
+
+### Determinism testing (first-class)
+
+- **Repeatability** — same graph/seed/MockLM script → byte-identical serialized `RunResult`, asserted on `model_dump_json()` output, and across processes (catches `PYTHONHASHSEED` dependence).
+- **Reducer algebraic laws** (Hypothesis property-based, not hand-picked examples) — associativity `r(r(a,b),c) == r(a,r(b,c))`; order independence for `MergeDict`/`UniqueAppend`; identity; idempotence for `UniqueAppend`/`LastValue`; determinism. `Append` is explicitly tested as non-idempotent/order-preserving.
+- **Temporal replay** — recorded workflow histories run through the replayer with no nondeterminism error; a superstep-affecting workflow change adds a new history fixture (old ones still pass) or gates behind `patched()`. A crash-recovery test forces a mid-run failure and asserts resume from the last checkpoint with no duplicated work.
+- **Serialization stability** — round-trip losslessness; canonical byte-identical form; version tagging; forward compatibility against committed golden files; rejection of unknown/newer schema versions.
+
+### The base-install test
+
+The kernel suite MUST pass with **only `pydantic` installed** — the load-bearing proof that `core/` is genuinely framework-free. CI: clean venv, no extras (+`pytest`/`pytest-asyncio` only), asserts `dspy`/`temporalio`/`httpx`/`mcp`/OTel are NOT importable, runs `pytest tests/unit/core tests/unit/models tests/smoke`, runs the Tier-1 one-liner end to end.
+
+| Job | Installs | Runs |
+|---|---|---|
+| `base` | no extras (+pytest) | Kernel, models, smoke; asserts extras absent |
+| `full` | `[dev]` (implies `[all]`) | Complete suite, every Python version |
+| `temporal` | `[temporal]` + pytest | `tests/e2e -m temporal`, replay, crash-recovery |
+| `remote` | `[remote]` + `respx` | `tests/unit/clients`, remote integration |
+| `import-cost` | no extras | Asserts `import korchestrator` pulls no optional dependency |
+
+### Coverage policy
+
+| Scope | Floor |
+|---|---|
+| Global (`korchestrator`) | **90%** |
+| `korchestrator/core/` | **97%** |
+| `korchestrator/models/` | **99%** |
+
+Ratcheted from 80/95/95 at P10.6. Floors move up, never down; lowering one (or adding `# pragma: no cover` to pass a build) requires an ADR with an owner and removal plan. Coverage is necessary but not sufficient — every public function needs a failure-path test asserting the specific `KorchError` subclass and code; every boundary condition (empty, single, max, max+1, `None`) gets an explicit test; tenant isolation/authz/governance-denial paths get explicit tests; `assert result is not None` alone doesn't count. Measured with branch coverage enabled.
+
+### Quality gates (all blocking unless noted)
+
+| # | Gate | Command |
+|---|---|---|
+| 1 | Lint | `ruff check src/korchestrator tests examples benchmarks` |
+| 2 | Format | `ruff format --check src/korchestrator tests examples benchmarks` |
+| 3 | Types | `mypy --strict src/korchestrator` |
+| 4 | Tests + coverage | `pytest tests --cov=korchestrator --cov-report=term-missing --cov-report=xml` |
+| 5 | Base-install kernel suite | clean env, no extras, `pytest tests/unit/core tests/unit/models tests/smoke` |
+| 6 | Static security scan | `bandit -c pyproject.toml -r src/korchestrator` |
+| 7 | Dependency audit | `pip-audit --strict` |
+| 8 | Secret scan | `gitleaks detect --no-banner --redact` |
+| 9 | Import-isolation gate | `scripts/check_isolation.sh` — MUST print `OK` |
+| 10 | Env-read confinement | `python scripts/check_env_reads.py` |
+| 11 | Version single-sourcing | `python scripts/validate_version.py` |
+| 12 | Build | `python -m build` |
+| 13 | Clean-env install smoke | install the built wheel in a fresh venv, import, run the one-liner |
+| 14 | Docs build | `mkdocs build --strict` |
+| 15 | Examples run | execute every script in `examples/` under MockLM |
+| 16 | Benchmarks | `pytest benchmarks -m benchmark` — **not blocking, informational** |
+
+Gate 9 exactly:
+
+```bash
+grep -RnE "from (backend|apps|services|frontend)\.|import (backend|apps|services|frontend)\." \
+  src/korchestrator && echo "ISOLATION VIOLATION" || echo "OK"
+```
+
+Gates 1–4 and 9–11 also run locally via `.pre-commit-config.yaml`; gate 9 plus the engineering-log requirement run via `.claude/hooks/pre-commit-check.sh` before every commit.
+
+A security-scan suppression requires, inline and in the PR: owner, reason, expiry date (ISO), and compensating control — no exceptions, and expired suppressions block the release.
+
+### Code review checklist
+
+A reviewer must check: scope (in scope? narrowly targeted?); layering (imports point inward? `core/` still framework-free? heavy imports still lazy/confined?); public surface (does `__all__` change, and is it documented per §6?); determinism (any clock/randomness in workflow-path code? new reducers proven associative/order-independent?); tests (fails without the change? regression test for bug fixes? meaningful assertions?); failure paths (every new one wrapped in `KorchError` with `raise ... from exc`, tested?); trust boundaries (identity/tenant carried through? validated at the boundary? fails closed?); secrets/logs (structured, no credentials/PII, no `print()`, no root-logger mutation?); configuration (env reads confined to `config/`? no hardcoded values?); docs/changelog (runnable docstring example? CHANGELOG entry for user-visible changes?); engineering log (ten-field entry for any `src/` change?); evidence (which gates actually ran, reported honestly — unrun checks are never reported as passed).
+
+---
+
+## 11. Release, versioning, and CI/CD
+
+### Versioning policy
+
+Semantic Versioning 2.0.0. Development starts at `0.1.0`. MAJOR = backward-incompatible change to the compatibility surface; MINOR = backward-compatible new functionality, a new deprecation, a new optional extra; PATCH = backward-compatible fixes/docs/perf/internal refactors.
+
+**The compatibility surface** (only this is SemVer-covered — everything else may change in any release, including patch): `korchestrator.__all__` names; the ARI ports and documented protocols (`IDurableRuntime`, `GraphRepository`, `BaseRouter`, `AUBConnector`); documented Pydantic models (field names/types/serialized form); the `KorchError` hierarchy and error codes (not message wording); the remote contract (endpoints, shapes, auth scheme, status vocabulary — not retry timing or internal client structure); recognised environment variables and `Settings` field names; the serialized on-the-wire form tagged with schema version.
+
+**The 0.x caveat**, stated verbatim in README, CHANGELOG top, and the docs versioning page: *"While the version is 0.x, a MINOR release may contain breaking changes."* Even so: a breaking change still requires an ADR, a CHANGELOG entry, and a migration note; PATCH releases are never breaking, at any version. From `1.0.0` the policy applies without exception.
+
+**Supported Python:** 3.10, 3.11, 3.12, 3.13 (`requires-python = ">=3.10"`), tested across the full CI matrix. Dropping a version is MINOR while `0.x`, MAJOR thereafter, and requires an ADR.
+
+### Deprecation policy
+
+A `DeprecationWarning` names the replacement and removal version; the deprecated name works for ≥1 full MINOR release; the CHANGELOG and migration guide document replacement/path/removal version; removal happens only in the announced MAJOR (or a loudly-stated MINOR while `0.x`).
+
+### Current distribution status
+
+`v0.1.0` is released **privately** — tagged and published as a GitHub Release on this private repo, **not on PyPI** ([ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)). `release.yml` builds the wheel and sdist, verifies the artifact in a clean environment, and publishes a GitHub Release with the wheel, sdist, and `SHA256SUMS` attached.
+
+```bash
+# from an installed tag (needs a GitHub credential with read access)
+pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[all] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+```
+
+### Cutting a release
+
+Cut from `staging`, never from `dev` or directly on `main`:
+
+```bash
+python scripts/cut_release.py prepare --bump patch   # or --bump minor / --bump major / --version X.Y.Z
+# after the release PR is reviewed and merged into main:
+python scripts/cut_release.py tag
+```
+
+Tagging `main` triggers `.github/workflows/release.yml`. Full runbook including the merge-back that keeps `dev`/`staging`/`main` in sync afterward: `docs/releases.md`.
+
+### Project status (phase completion)
+
+| Phase | Delivers | Status |
+|---|---|---|
+| P0–P1 | Scaffold, decisions, frozen API contracts | Complete |
+| P2–P3 | Superstep kernel; local + durable runtimes | Complete |
+| P4–P5 | Agents, compiled signatures, model routing | Complete |
+| P6–P7 | Tools/MCP/A2A, streaming, governance, context graph | Complete |
+| P8–P9 | Cross-cutting foundations; remote client | Complete |
+| P10 | Testing, benchmarks & quality gates | Complete |
+| P11 | Documentation, examples & DX | Complete |
+| P12 | CI/CD, packaging & publishing | Private-distribution pipeline shipped; PyPI publishing deferred |
+
+Current state, including known gaps: `.claude/memory/PROJECT_STATE.md`.
+
+---
+
+## 12. Git workflow
+
+### Branch model — three long-lived branches, forward-only promotion
+
+```
+<type>/<slug>  →  dev  →  staging  →  main
+```
+
+| Branch | Role | Receives from |
+|---|---|---|
+| `dev` | Integration — everything lands here first | Short-lived work branches |
+| `staging` | Release-candidate verification | `dev` |
+| `main` | Released; the only branch tags are cut from; the repo default | `staging` |
+
+`main` is the GitHub default branch, so work PRs must retarget to `dev` (GitHub proposes `main`, which is always wrong for feature work). Promotion merges `--no-ff`, so `main` contains `staging`'s history, which contains `dev`'s. Between promotions, `dev` legitimately runs ahead of `staging`, and `staging` ahead of `main` — that's pending work, not drift. What must never happen is the reverse: a commit on `main`/`staging` that never passed through the stage below it.
+
+### Doing the work
+
+1. Branch off `dev` as `<type>/p<phase>-<slug>` — `feat`/`fix`/`docs`/`refactor`/`test`/`chore`/`security`/`perf`. Example: `feat/p2-superstep-kernel`.
+2. Conventional Commits with a phase tag: `feat(core): add reducers [P2]`.
+3. PR into `dev`, merged `--no-ff`. Delete the work branch after merge.
+
+### Promoting
+
+A PR like any other, merged `--no-ff`: **forward-only** (never cherry-pick a subset — that's what breaks the invariant and produces "fixed in dev, still broken in main"); **no skipping** (`dev → main` directly is prohibited, even for "trivial" changes); **green first** (the source branch is green on the full CI matrix before the promotion PR opens).
+
+`src/korchestrator/version.py` is edited only in the `staging → main` release PR; tags are cut only on `main`.
+
+### Hotfixes — the one exception
+
+A production defect too urgent for `dev` may branch `fix/<slug>` off `main`, PR back into `main`, and is then **immediately back-merged `main → staging → dev`, in that order, in the same session**. Skipping the back-merge silently reverts the fix on the next ordinary promotion.
+
+### Never
+
+Commit directly to `dev`/`staging`/`main`; force-push or rewrite history on any of the three; `git commit --no-verify`; promote a red branch or promote "to get CI to run on it".
+
+---
+
+## 13. Repository layout
+
+```text
+korch-sdk/
+├── src/korchestrator/
+│   ├── __init__.py          PUBLIC API — the only surface users import (explicit __all__)
+│   ├── py.typed              PEP 561 marker
+│   ├── version.py            SINGLE source of truth for the SemVer version
+│   ├── config/  interfaces/  core/  models/  agents/  taxonomy/  routing/  runtime/
+│   ├── context/  persistence/  providers/  tools/  mcp/  a2a/  governance/  security/
+│   ├── events/  clients/  services/  serializers/  validators/  telemetry/  logging/
+│   ├── exceptions/  types/  constants/
+├── tests/                    mirrors src/ — unit / integration / e2e / regression / smoke
+├── examples/                 executable examples, run unmodified on a clean install
+├── docs/
+│   ├── specs/                 this specification set (00–12, authoritative)
+│   ├── adr/                   Architecture Decision Records
+│   └── background/            superseded source inputs (provenance only, never build from these)
+├── benchmarks/                performance suites + committed baseline
+├── scripts/                   build, validation, release helper scripts
+├── .github/                   workflows, issue/PR templates
+├── .claude/                   agent operating manual, memory, hooks, settings
+├── pyproject.toml             authoritative Python manifest
+├── README.md · LICENSE (Apache-2.0) · CHANGELOG.md · CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md · SECURITY.md · .env.example
+└── mkdocs.yml                 documentation site build configuration
+```
+
+`src/` layout (not a root-level package) is deliberate: imports resolve only through an installed distribution, packaging bugs surface at test time, and root-directory shadowing of `tests/`/`docs/`/`scripts/` is impossible. Tests import `korchestrator` as an installed distribution — never via `sys.path` manipulation.
+
+There is no `clients/typescript/` directory — the TypeScript client is specified but deferred ([ADR 0008](docs/adr/0008-typescript-client-deferred.md)).
+
+**Package directory rules:** every package has `__init__.py` (no implicit namespace packages); a package re-exports only its own public names with an explicit `__all__` and never imports sibling feature packages; `core/` imports are limited to `interfaces/`/`models/`/stdlib/`pydantic`; heavy third-party imports are lazy and confined to their owning package; `os.environ`/`os.getenv` only under `config/`; modules should stay under ~500 lines, functions under ~50.
+
+---
+
+## 14. Development setup
+
+```bash
+# 1. Clone and install (dev extras: every extra + lint/type/test/docs tooling)
+git clone <repository-url> && cd korch-sdk
+pip install -e '.[dev]'
+
+# 2. Verify the import — works on the base install, no extras, no network
+python -c "import korchestrator; print(korchestrator.__version__)"
+
+# 3. Run your first swarm, entirely offline against MockLM
+python examples/01_one_liner.py
+python examples/02_swarm.py          # typed builder, multiple agents, per-agent models
+
+# 4. Explore the rest of the example set
+python examples/03_custom_agent.py   # subclass Agent, override its reasoning step
+python examples/04_custom_tool.py    # write and mount a custom tool connector
+python examples/05_mcp_tool.py       # discover tools from an MCP server (needs [mcp])
+python examples/06_custom_router.py  # write a custom per-agent model router
+python examples/07_streaming.py      # consume execution events as a run progresses
+python examples/08_support_escalation_swarm.py
+
+# 5. Run the full quality gate the way CI does
+ruff check src/korchestrator tests
+ruff format --check src/korchestrator tests
+mypy --strict src/korchestrator
+pytest tests --cov=korchestrator --cov-report=term-missing
+
+# 6. Build and preview the documentation site locally
+mkdocs build --strict
+mkdocs serve      # → http://127.0.0.1:8000
+```
+
+**Windows note.** `pip install -e '.[dev]'` installs console scripts into the per-user `Scripts` directory (e.g. `%APPDATA%\Python\Python3xx\Scripts`). If a bare command isn't found, run it as `python -m <tool>` or add that directory to `PATH`. See `docs/troubleshooting.md`.
+
+**Testing a single module** (tests mirror `src/korchestrator/<module>` under `tests/unit/<module>/`):
+
+```bash
+pytest tests/unit/core -v          # kernel
+pytest tests/unit/providers -v     # MockLM, gateways, identity/sandbox
+pytest tests/unit/routing -v       # model routing strategies
+pytest tests/unit/tools -v         # Agent Utility Bridge
+pytest tests/unit/governance -v    # trust scoring, policy, HITL
+pytest tests/unit/clients -v       # remote client contract
+```
+
+**The base-install kernel suite** (what must pass with only `pydantic` installed):
+
+```bash
+pytest tests/unit/core tests/unit/models tests/smoke
+```
+
+**Extras** (`[dspy]`, `[temporal]`, `[routing]`, `[mcp]`, `[remote]`, `[otel]`; `[all]` = every extra; `[dev]` = `[all]` + build/test/lint/type/doc tooling). Full table: `docs/installation.md`.
+
+**One-time setup for the local Claude Code commit hook:**
+
+```bash
+chmod +x .claude/hooks/pre-commit-check.sh
+```
+
+**Local gate mirroring CI** (from `CONTRIBUTING.md`):
+
+```bash
+ruff check src/korchestrator tests examples benchmarks
+ruff format --check src/korchestrator tests examples benchmarks
+mypy --strict src/korchestrator
+pytest tests --cov=korchestrator --cov-report=term-missing
+bash scripts/check_isolation.sh          # prints OK
+python scripts/check_env_reads.py
+python scripts/validate_version.py
+```
+
+---
+
+## 15. Architecture Decision Records (index)
+
+ADRs record *why* — one material decision, the forces, the rejected alternatives, the cost of reversing. `docs/specs/` records *what*; `.claude/memory/ENGINEERING_LOG.md` records *what was actually built, when*. Numbering is zero-padded and monotonic (`0001`, `0002`, …), never reused. Status lifecycle: `Proposed → Accepted → Superseded` (or `Rejected`); once `Accepted`, a file is immutable — you supersede, never edit.
+
+An ADR is **required** before: altering a public API contract; adding/removing/renaming a dependency or extra; changing a boundary or layering rule; deviating structurally from `docs/specs/`; changing a security-relevant default; any breaking change. Not required for: bug fixes restoring documented behaviour, surface-preserving refactors, added tests, doc edits, in-range dependency bumps.
+
+| # | Title | Summary |
+|---|---|---|
+| [0001](docs/adr/0001-package-naming-and-client-class.md) | Package naming and client class | Distribution/import name `korchestrator`; remote client ships as `korchestrator.remote` (not a separate distribution); class is `KorchestratorClient` everywhere; vocabulary `run`/`run_swarm`/`run_and_wait`. |
+| [0002](docs/adr/0002-single-authoritative-version.md) | Single authoritative version | `src/korchestrator/version.py` is the only version literal; `pyproject.toml` reads it dynamically via hatchling; a `version-validate` CI job fails on disagreement; starts at `0.1.0`. |
+| [0003](docs/adr/0003-license-apache-2-0.md) | License: Apache-2.0 | Chosen for its express patent grant (enterprise procurement, OEM embedding); applied to `LICENSE`, metadata, `NOTICE`, SPDX headers, with a CI license-compatibility check. |
+| [0004](docs/adr/0004-dependency-extras-matrix.md) | Dependency extras matrix | Base install is `pydantic` alone; capabilities ship as independently installable extras with heavy deps lazy-imported. |
+| [0005](docs/adr/0005-remote-auth-bearer-token.md) | Remote auth: Bearer token | `Authorization: Bearer <api-key \| KIAM JWT>` as the single scheme; 401/403/402 map to `AuthError`/`AuthError`/`QuotaExceededError`; credentials never logged/stored/disclosed. |
+| [0006](docs/adr/0006-runtime-split-local-and-temporal.md) | Runtime split: local and Temporal | Two adapters behind `IDurableRuntime` — zero-infra `local_runtime` (default) and `temporal_runtime` using one `SuperstepActivity` per superstep. |
+| [0007](docs/adr/0007-external-backend-boundary.md) | External backend boundary | No import from `backend.*`/`apps.*`/`services.*`/`frontend`; any engine is a downstream consumer of the published SDK; enforced by the isolation gate. |
+| [0008](docs/adr/0008-typescript-client-deferred.md) | TypeScript client deferred | `@kendralabs/korchestrator-sdk` specified but not built in Phases 0–12; re-entry requires a named consumer and a remote contract stable across ≥1 minor release. |
+| [0009](docs/adr/0009-settings-on-pydantic-core-no-pydantic-settings.md) | Settings on pydantic-core, no `pydantic-settings` | — |
+| [0010](docs/adr/0010-idurableruntime-shape-now-start-wait-signal.md) | `IDurableRuntime` shape: `now`/`start`/`wait`/`signal` | — |
+| [0011](docs/adr/0011-httpx-confined-to-clients-and-gateway.md) | `httpx` confined to `clients/` and the gateway | — |
+| [0012](docs/adr/0012-unified-agent-declarative-and-behavioral.md) | Unified agent: declarative and behavioral | — |
+| [0013](docs/adr/0013-cognitive-layer-requires-dspy-target-3x.md) | Cognitive layer requires `dspy` (target 3.x) | — |
+| [0014](docs/adr/0014-router-registration-injection-over-entrypoints.md) | Router registration: injection over entry points | — |
+| [0015](docs/adr/0015-tool-registration-via-registry-and-injection.md) | Tool registration via registry and injection | — |
+| [0016](docs/adr/0016-settings-finalization-no-pydantic-settings-error-split.md) | Settings finalization; `ConfigurationError`/`ValidationError` split | `Settings.from_env()` + a hand-written `.env` reader instead of `pydantic-settings`; `configure()` wraps `pydantic.ValidationError` into `korchestrator.ValidationError`; `ConfigurationError` stays submodule-only. |
+| [0017](docs/adr/0017-agentgraph-excluded-from-json-serialization.md) | `AgentGraph` excluded from `to_json`/`from_json` | The serializer supports `AgentState`/`ExecutionPlan`/`ModelCard`/`RunResult` only — `AgentGraph` nodes carry live, non-serialisable compute callables. |
+| [0018](docs/adr/0018-worker-react-loop-via-itoolinvoker-port.md) | Worker ReAct loop via `IToolInvoker` port | — |
+| [0019](docs/adr/0019-governance-halt-veto-wired-in-hooks-and-pregel.md) | Governance halt veto wired in hooks and Pregel | — |
+| [0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md) | Private distribution defers PyPI publishing | `v0.1.0` publishes as a GitHub Release on this private repo; PyPI publish target deferred; versioning/deprecation/CHANGELOG/CI policy unaffected. |
+
+Full detail for every ADR: `docs/adr/`. Index and process: `docs/adr/README.md`.
+
+---
+
+## 16. Glossary
+
+| Term | Meaning |
+|---|---|
+| Swarm | A directed graph of agents executed as one run |
+| Superstep | One parallel round: compute → barrier → reduce → checkpoint |
+| Barrier | The global synchronization point separating supersteps |
+| Reducer | A deterministic, order-independent merge function for a state channel |
+| `StateUpdate` | The typed delta an agent emits; agents never mutate shared state directly |
+| Frozen snapshot | The immutable view of state an agent computes against during a superstep |
+| FractalFlow | The recursive, cyclic, event-driven execution shape (as opposed to a DAG) |
+| ARI | Agent Runtime Interface — the three ports (`IIdentityProvider`, `IExecutionSandbox`, `IModelGateway`) |
+| AUB | Agent Utility Bridge — the unified tool layer |
+| MVC | Minimum Viable Context — the smallest context sufficient for a task |
+| Compiled signature | A typed, versioned, optimizable DSPy reasoning program |
+| HITL | Human-in-the-loop; a durable pause awaiting human input |
+| Trust score | A 0.0–1.0 governance score that can gate a run into a paused state |
+| Bitemporal | Carrying both valid-time (when true) and transaction-time (when recorded) |
+| Architect Agent | The meta-agent that performs intent analysis and synthesizes the agent graph |
+| Tier 1–4 | The four levels of SDK usage — one-liner, typed builder, kernel-direct, remote client |
+
+---
+
+*Generated from `docs/specs/00`–`10`, `docs/adr/README.md`, `.claude/rules/`, `README.md`, and `CONTRIBUTING.md`. The specs are the living source of truth; regenerate this file when they change materially.*
