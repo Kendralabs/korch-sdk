@@ -22,8 +22,9 @@ team; reach for `Swarm` when you already know it. Both drive the same kernel und
 ## Does this need any infrastructure to try?
 
 No. The zero-config default is: local (in-process) runtime, `MockLM` (deterministic, offline)
-gateway, in-memory persistence. `pip install "korchestrator[dspy]"` and `Korch().run(...)` need no
-API key, no network, and no service running. See the [Quick Start](quickstart.md).
+gateway, in-memory persistence. Installing with the `[dspy]` extra and calling `Korch().run(...)`
+needs no API key, no network, and no service running. See the
+[Quick Start](quickstart.md) for the exact install command.
 
 ## Is this production-ready?
 

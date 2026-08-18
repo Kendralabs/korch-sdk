@@ -2,7 +2,7 @@
 
 !!! note "Private distribution (ADR 0020)"
     Korchestrator is not published to PyPI. The repository is private, and per
-    [ADR 0020](adr/0020-private-distribution-defers-pypi-publishing.md) releases distribute as
+    [ADR 0020](https://github.com/kendralabs/korch-sdk/blob/main/docs/adr/0020-private-distribution-defers-pypi-publishing.md) releases distribute as
     **GitHub Releases on this private repo** instead — PyPI has no free private-index tier, and
     publishing there would make the SDK world-readable regardless of the repo's own visibility.
     `.github/workflows/release.yml` builds, verifies, checksums, and publishes a GitHub Release on

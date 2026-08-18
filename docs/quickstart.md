@@ -5,13 +5,19 @@ library and Korchestrator itself — no API key, no network, no infrastructure.
 
 ## Install
 
+Korchestrator is not on PyPI during beta — the repository is private, a deliberate and
+documented choice ([ADR 0020](https://github.com/kendralabs/korch-sdk/blob/main/docs/adr/0020-private-distribution-defers-pypi-publishing.md)).
+Install from the tagged release, which needs a GitHub credential (SSH key or personal access
+token) with read access to the repository:
+
 ```bash
-pip install "korchestrator[dspy]"
+pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
 ```
 
 `[dspy]` is required: every reasoning agent is built on [DSPy](https://dspy.ai), so it's needed to
 actually *run* a swarm, not just import the package. See [Installation](installation.md) for the
-full extras table — and, until the package is published, how to install from source instead.
+full extras table, editable installs from a local clone, and what to do if you do not have
+repository access yet.
 
 ## Run your first swarm
 
