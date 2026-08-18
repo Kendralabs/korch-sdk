@@ -9,9 +9,12 @@ starting at `0.1.0`.
 | **MINOR** | Backward-compatible new functionality; a new deprecation; a new optional extra |
 | **PATCH** | Backward-compatible bug fixes, documentation, performance, and internal refactors |
 
-!!! warning "0.x notice"
-    While the version is `0.x`, a MINOR release may contain breaking changes. PATCH releases are
-    never breaking. See below.
+!!! warning "Beta testing — 0.x notice"
+    **`v0.1.0` is a beta release**, published for early access and real-world feedback while the
+    public API is still being validated by integrators. While the version is `0.x`, a MINOR
+    release may contain breaking changes — PATCH releases never do. If you adopt it during this
+    period, pin the exact version you tested against and read the `CHANGELOG.md` before bumping.
+    See below for exactly what's covered by the compatibility promise even during beta.
 
 ## The compatibility surface
 
