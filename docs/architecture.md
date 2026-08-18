@@ -26,6 +26,25 @@ It buys two properties ad-hoc agent loops don't have:
   graph and the same inputs produce the same result, every time, including across a crash and
   replay.
 
+### Why determinism is a provable property, not a hope
+
+"Deterministic" is a precise claim here, not marketing language — it follows from three algebraic
+properties every state-merging **reducer** in the kernel is required to satisfy, the same
+correctness conditions distributed systems have long relied on for conflict-free merges:
+
+- **Associativity** — `merge(merge(a, b), c) == merge(a, merge(b, c))`. The barrier can fold
+  concurrent updates in any grouping and get the same answer.
+- **Order-independence** — the merged result does not depend on which agent's task happened to
+  complete first. This is what makes `asyncio` scheduling noise, and Temporal's replay reordering
+  events from history, irrelevant to the outcome.
+- **Totality** — a reducer is defined for every valid input, including the empty and single-element
+  case, so a merge can never crash the barrier.
+
+Every reducer the kernel ships (`LastValue`, `Append`, `UniqueAppend`, `MergeDict`) is verified
+against these laws with property-based tests over generated inputs, not hand-picked examples — see
+[docs/specs/06-execution-model.md](https://github.com/kendralabs/korch-sdk/blob/main/docs/specs/06-execution-model.md)
+§3 for the exact laws and which reducers are (and are deliberately not) idempotent.
+
 ## Two runtimes, one contract
 
 The kernel that runs the supersteps (`PregelRunner`) is the same either way. What differs is what
@@ -96,6 +115,15 @@ Every message and state update carries two timestamps, not one:
 
 Together they answer "what did the agent know at the moment it decided?" independently of any
 later correction — the basis for the SDK's audit trail.
+
+This distinction is not a Korchestrator invention: it's the two-timestamp model bitemporal
+databases have used for decades to separate *what was true* from *what the system believed and
+when* (the same problem "why did the agent do that?" turns out to be, once an agent's decision is
+treated as a recorded fact rather than a transient log line). Applying it here means a later
+correction — a tool result that turns out to have been wrong, a human overriding a decision — never
+rewrites history. It adds a new fact with a later transaction time, and the old belief remains
+queryable exactly as the system held it at the time. That's what makes replay and audit the same
+mechanism instead of two separate features to maintain.
 
 ## Next
 
