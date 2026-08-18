@@ -4,7 +4,7 @@ Korchestrator requires **Python 3.10 or newer**.
 
 !!! note "Private distribution, not PyPI (ADR 0020)"
     `Kendralabs/korch-sdk` is a private repository and Korchestrator is not published to PyPI —
-    see [ADR 0020](adr/0020-private-distribution-defers-pypi-publishing.md). Every `pip install
+    see [ADR 0020](https://github.com/kendralabs/korch-sdk/blob/main/docs/adr/0020-private-distribution-defers-pypi-publishing.md). Every `pip install
     korchestrator` below needs one substitution: replace `korchestrator` with a git reference
     pinned to a released tag, `korchestrator @ git+https://github.com/Kendralabs/korch-sdk.git@vX.Y.Z`.
     You need GitHub credentials with read access to the repo — see below.
