@@ -22,8 +22,14 @@ other.
 > their assets all return 200). It is published on `127.0.0.1:5100` only, so it is not yet
 > reachable from the internet — that last step needs public ingress for
 > `koe.kendralabs.com`, which is blocked because ports 80 and 443 on that host belong to the
-> Kendra Nexus dashboard container. Until it lands, the publicly reachable address remains
-> `http://koe.kendralabs.com:5888`. See [Cutting over](#cutting-over-from-port-5888).
+> Kendra Nexus dashboard container.
+>
+> **The old `:5888` URL no longer works either.** `koe.kendralabs.com` is now proxied through
+> Cloudflare, which only proxies a fixed set of ports — 5888 is not one — so the hostname no
+> longer reaches the origin on it. The container is healthy and the origin still serves the
+> site on that port; it is the hostname route that is gone. So this documentation currently
+> has **no working public URL**, which makes finishing the ingress the fix rather than a
+> nicety. See [Cutting over](#cutting-over-from-port-5888).
 
 ## Why it moved
 
