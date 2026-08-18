@@ -16,10 +16,14 @@ static directory on disk and never proxies it to the KOE application, and the KO
 deliberately defines no `/docs` route — so either can be redeployed without touching the
 other.
 
-> **Migration status.** The `/docs` arrangement is defined in the KOE repository at
-> `deploy/nginx.conf`. Until it is applied on the VPS, the documentation remains reachable at
-> its previous address, `http://koe.kendralabs.com:5888` — plain HTTP on a non-standard port.
-> See [Cutting over](#cutting-over-from-port-5888) below.
+> **Migration status.** The origin is built and running: the KOE stack is deployed on the
+> VPS and serves this documentation at `/docs/` from `/opt/korch-sdk-docs/site`, verified
+> end to end (`/docs/`, `/docs/installation/`, `/docs/reference/`, `/docs/tutorials/` and
+> their assets all return 200). It is published on `127.0.0.1:5100` only, so it is not yet
+> reachable from the internet — that last step needs public ingress for
+> `koe.kendralabs.com`, which is blocked because ports 80 and 443 on that host belong to the
+> Kendra Nexus dashboard container. Until it lands, the publicly reachable address remains
+> `http://koe.kendralabs.com:5888`. See [Cutting over](#cutting-over-from-port-5888).
 
 ## Why it moved
 
@@ -33,16 +37,22 @@ public beta:
 - **Disconnected from the ecosystem.** Nothing linked the docs to the rest of Kendra Labs, or
   the rest of Kendra Labs to the docs.
 
-Serving the same static build at `https://koe.kendralabs.com/docs/` fixes all three at once,
-reuses the certificate the ecosystem site already has, needs no new DNS record, and matches
-how Kendra Nexus already serves its own documentation at `nexus.kendralabs.com/docs`.
+Serving the same static build at `https://koe.kendralabs.com/docs/` fixes all three at once:
+one origin for the site and its documentation, one certificate covering both, no new DNS
+record, and the same shape Kendra Nexus already uses for its own documentation at
+`nexus.kendralabs.com/docs`. (That certificate does not exist yet — issuing it is part of
+the public-ingress step below.)
 
 ## How it is built and deployed
 
 1. **Build.** `mkdocs build --strict` produces a static `site/` directory (~4.2 MB).
 2. **Transfer.** The build is copied to the VPS at `/opt/korch-sdk-docs/site/`.
-3. **Serve.** nginx serves that directory at `/docs/` on the `koe.kendralabs.com` server
-   block, with long-lived caching on hashed assets and revalidation on the HTML.
+3. **Serve.** The `koe-proxy` container mounts that directory read-only and serves it at
+   `/docs/`, with long-lived caching on the hashed assets and revalidation on the HTML.
+   The configuration is `deploy/nginx.conf` in the KOE repository.
+
+Nothing in the KOE deployment has to change when the documentation is rebuilt: the proxy
+reads the directory directly, so a new build is live as soon as it is copied.
 
 ### Redeploying an updated build
 
@@ -62,15 +72,19 @@ points at `koe.kendralabs.com/docs/` because that is the address the ecosystem a
 
 ### Cutting over from port 5888
 
-The steps to retire the standalone container, in order:
+Steps 1 and 2 are done — the KOE stack is deployed at `/opt/koe` and already serves this
+documentation at `/docs/` internally. What remains:
 
-1. Apply `deploy/nginx.conf` from the KOE repository on the VPS and reload nginx.
-2. Confirm `https://koe.kendralabs.com/docs/` serves the site, and that in-page navigation,
+3. **Give `koe.kendralabs.com` public ingress** to `127.0.0.1:5100`. Ports 80 and 443 on
+   this host belong to the `kcg-dashboard` container (production Kendra Nexus), so this
+   needs a deliberate decision — most safely a Cloudflare tunnel or origin rule, since the
+   zone is already on Cloudflare and `nexus.kendralabs.com` is already proxied.
+4. Confirm `https://koe.kendralabs.com/docs/` serves the site, and that in-page navigation,
    search, and static assets all resolve.
-3. Stop and remove the old Compose project at `/opt/korch-sdk-docs/docker-compose.yml`. The
-   `site/` directory stays — nginx now reads it directly.
-4. Close port `5888` in both the Hostinger panel firewall and the server's `ufw`.
-5. Update any link still pointing at `:5888`.
+5. Stop and remove the old Compose project at `/opt/korch-sdk-docs/docker-compose.yml`. The
+   `site/` directory stays — the KOE proxy reads it directly.
+6. Close port `5888` in both the Hostinger panel firewall and the server's `ufw`.
+7. Update any link still pointing at `:5888`.
 
 ### Known limitations
 
