@@ -90,13 +90,18 @@ Steps 1–4 are done:
    from outside the VPS: `/`, `/installation/`, `/quickstart/`, `/reference/`, `/tutorials/`
    all return `200` over valid HTTPS.
 
-**Still outstanding:**
+Steps 5–7 are also done, as of 2026-08-24:
 
-5. Stop and remove the old Compose project at `/opt/korch-sdk-docs/docker-compose.yml` (the
-   `korch-sdk-docs` container is still running as of 2026-08-24). The `site/` directory
-   stays — the KOE proxy reads it directly.
-6. Close port `5888` in both the Hostinger panel firewall and the server's `ufw`.
-7. Update any link still pointing at `:5888`.
+5. ~~Stop and remove the old Compose project~~ — done (`docker compose down` at
+   `/opt/korch-sdk-docs`; the `site/` directory was left in place, since `koe-proxy` reads it
+   directly).
+6. ~~Close port `5888` in `ufw`~~ — done (both the IPv4 and IPv6 rules, which were already
+   labeled "retire after koe ingress," removed). Confirmed `http://koe.kendralabs.com:5888/`
+   no longer connects. **Hostinger panel firewall** (hPanel, separate from `ufw`) was not
+   checked from this session — verify there directly if it also has a rule for 5888.
+7. ~~Update any link still pointing at `:5888`~~ — repo-wide grep found no live links, only
+   historical mentions explaining why the port stopped working (this file, the engineering
+   log, `PROJECT_STATE.md`).
 
 ### Known limitations
 
