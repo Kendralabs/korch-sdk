@@ -28,11 +28,13 @@ needs no API key, no network, and no service running. See the
 
 ## Is this production-ready?
 
-Korchestrator is `0.x` and pre-first-release (see [Project status in the
-README](https://github.com/kendralabs/korch-sdk#project-status)) — Phases 0–10 (the kernel,
-runtimes, agents, routing, tools, governance, the remote client, and the full test/benchmark
-suite) are complete and tested; Phase 11 (this documentation) is in progress, and Phase 12
-(publishing) hasn't shipped. Judge readiness for your use case against that state directly rather
+Korchestrator is `0.x` and at its first release, `v0.1.0` (see [Project status in the
+README](https://github.com/kendralabs/korch-sdk#project-status)) — Phases 0–11 (the kernel,
+runtimes, agents, routing, tools, governance, the remote client, the full test/benchmark suite,
+and this documentation) are complete and tested; Phase 12's private-distribution release pipeline
+has shipped and `v0.1.0` is tagged and published as a private GitHub Release (PyPI publishing
+stays deferred — [ADR 0020](https://github.com/kendralabs/korch-sdk/blob/main/docs/adr/0020-private-distribution-defers-pypi-publishing.md)).
+Judge readiness for your use case against that state directly rather
 than a blanket label — see [`.claude/memory/PROJECT_STATE.md`](https://github.com/kendralabs/korch-sdk/blob/main/.claude/memory/PROJECT_STATE.md)
 in the repository for the current, detailed snapshot.
 

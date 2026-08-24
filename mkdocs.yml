@@ -54,6 +54,7 @@ nav:
       - Releases: releases.md
       - Deployment: deployment.md
       - Migration: migration.md
+      - Remote client parity (Python/TypeScript): parity-matrix.md
       - FAQ: faq.md
       - Troubleshooting: troubleshooting.md
 
