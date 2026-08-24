@@ -10,6 +10,74 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-08-24 · Public docs URL confirmed live (DOCS_DEPLOYMENT.md was itself stale); disk-space cleanup
+
+**Type:** verification + docs fix + ops · **Phase:** none (post-P12 beta-readiness hardening) ·
+**Author:** Claude (agent)
+
+**What.** Given SSH access to the deployment VPS (`vps` alias, already configured), did read-only
+reconnaissance before any change: `docker ps`, `/opt/koe/docker-compose.yml`, and DNS resolution
+for `koe.kendralabs.com`. Found that public ingress — the thing `DOCS_DEPLOYMENT.md` described as
+still blocked — is **already live**: `koe-proxy` (nginx) publishes `0.0.0.0:8080`; Cloudflare
+terminates TLS for `koe.kendralabs.com` and connects back via an Origin Rule to that port (8080 is
+one of Cloudflare's supported origin ports, unlike the old `5888`); `ufw` restricts 8080 to
+Cloudflare's own ranges. Verified from outside the VPS, over the real internet, with a fresh
+`curl`: `https://koe.kendralabs.com/{,docs/,docs/installation/,docs/quickstart/,docs/reference/,
+docs/tutorials/}` all return `200` with valid Cloudflare-issued TLS. Corrected
+`DOCS_DEPLOYMENT.md`'s "Migration status" block and "Cutting over from port 5888" section
+accordingly — steps 1–4 are done (previously all described as pending); steps 5–7 (decommission
+the still-running old `:5888` container, close the port, sweep stale links) remain open and are
+now called out explicitly as outstanding rather than buried in a "remaining work" list that
+implied nothing had shipped yet.
+
+Separately, this machine's `C:` drive was found nearly full (300G/301G used, previous entry)
+during earlier dependency-audit attempts. Identified the two safe, clearly-identifiable causes —
+a 4.2GB stale Visual Studio/.NET installer staging cache (`%TEMP%\ib2o1bhu`, dated two days prior,
+installer manifests only, safely re-creatable) and a 334MB abandoned `pip-unpack-*` directory from
+an earlier interrupted install — and removed only those two, leaving VS Code's own cache and
+Windows diagnostics untouched since either could be in active use. Freed the drive from ~890MB to
+~4.6GB available.
+
+**Why.** Requested: free up disk space, and use SSH access to address the VPS-hosted docs ingress
+item flagged as blocking in the prior session. Read-only recon first, because this VPS also hosts
+the live production Kendra Nexus dashboard (`kcg-dashboard`, ports 80/443) and several other
+running services — the goal was to find out what's actually true before proposing or making any
+change, not to assume the prior write-up was still accurate.
+
+**Design decisions.** Did not touch the still-running old `korch-sdk-docs` container (`:5888`) or
+its firewall rule — stopping a running production container and closing a port is a distinct,
+further action from confirming an already-live status, and wasn't done without being asked
+specifically. Did not attempt the `scp` redeploy of this session's updated docs build in this
+entry — the harness's own permission classifier declined that specific action pending explicit
+confirmation, and the instruction not to work around a declined tool action was followed rather
+than finding another path to the same end.
+
+**Architecture changes.** None. No `src/` or deployment-config files in this repository changed
+production behavior — `DOCS_DEPLOYMENT.md` is a description of infrastructure state, not
+infrastructure-as-code.
+
+**Files/modules affected.** `DOCS_DEPLOYMENT.md`. No `src/` changes. (VPS: read-only inspection
+only, plus local-machine `%TEMP%` cleanup — no VPS state changed.)
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0` (documentation-only; no version bump).
+
+**Migration notes.** N/A.
+
+**Testing status.** Public docs URL re-verified live with real `curl` requests from outside the
+VPS (see above) — not inferred from internal-only checks. No local test suite affected (no
+`src/` change).
+
+**Known limitations / future improvements.** The content currently live at
+`https://koe.kendralabs.com/docs/` predates this session's documentation fixes (stale-release
+corrections, the new Contributing/Feedback page) — redeploying it needs the `scp` step above,
+still pending confirmation. The old `:5888` container and firewall rule are still open (cutover
+steps 5–7). `docs/competitive-analysis.md`'s placement is still an open decision, unchanged from
+the prior entry.
+
+---
+
 ## 2026-08-24 · Contributing/feedback flow surfaced on the docs site; two more stale-release doc fixes; bandit clean
 
 **Type:** docs fix + verification · **Phase:** none (post-P12 beta-readiness hardening) ·
