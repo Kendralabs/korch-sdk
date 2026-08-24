@@ -10,6 +10,79 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-08-24 · Beta-readiness verification pass — full gate suite re-run, stale release-status docs corrected
+
+**Type:** verification + docs fix · **Phase:** none (post-P12 beta-readiness hardening; not a
+numbered phase) · **Author:** Claude (agent)
+
+**What.** Ran the complete local verification suite end to end against the current `dev`-derived
+branch (`docs/koe-ecosystem-integration`): `ruff check`/`ruff format --check` (clean), `mypy
+--strict` on 105 source files (clean), the import-isolation gate, `check_env_reads.py`,
+`validate_version.py` (all `OK`), the 4 import-linter contracts (all kept), `pytest
+--doctest-modules` (99 passed), the full test suite excluding `-m temporal` (**836 passed, 0
+failed**, 96.92% coverage — above the 90% floor and `core`/`models`' 97%/99% floors), `python -m
+build` + `scripts/smoke_install.sh` (base install pulls in only `pydantic`, reports `0.1.0` from a
+throwaway venv outside the source tree), `mkdocs build --strict` (no broken links), and all 8
+`examples/*.py` scripts (all complete offline against MockLM). Separately confirmed via `gh
+release view v0.1.0` that `v0.1.0` is already tagged and published as a private GitHub Release
+(published 2026-08-12T08:43:24Z, not a draft/prerelease, wheel+sdist+SHA256SUMS attached,
+`github-actions[bot]`-authored — i.e. the P12 release pipeline actually ran end to end).
+
+That last fact contradicted three docs that still described the release as pending: `CHANGELOG.md`
+(`[0.1.0]` section said "has not yet been published"), `.claude/memory/PROJECT_STATE.md` (said
+"tag pending" and "Next: cut and tag v0.1.0 itself"), and `docs/faq.md` ("Is this
+production-ready?" said "Phase 12 (publishing) hasn't shipped" — directly contradicting
+`README.md`'s own accurate "Project status" table, which it links to). Corrected all three to state
+the release has shipped. Also added `docs/parity-matrix.md` to `mkdocs.yml`'s nav — it existed and
+built cleanly but wasn't reachable from the published site's navigation.
+
+**Why.** Requested: work through the beta-release checklist (a local, uncommitted tracking doc —
+see `docs/status/beta-release-checklist.md`, intentionally not part of this repo's history) and
+document findings. Verification surfaced the stale-release-status inconsistency as a genuine,
+user-facing documentation defect, not a hypothetical one — `docs/faq.md` is a published page that
+actively contradicted `README.md`.
+
+**Design decisions.** Fixed only the demonstrably false claims (the release having already shipped
+is a verifiable fact, checked against the actual GitHub Release, not an inference). Did not bump
+`version.py`, cut a new tag, change repository visibility, or touch PyPI — those are separate,
+higher-risk decisions flagged back to the user rather than taken unilaterally (repo visibility and
+PyPI both reverse ADR 0020; a new tag would be a second real release). Did not commit
+`docs/status/*` per explicit instruction — those are local tracking notes, not part of this
+repository's public documentation.
+
+**Architecture changes.** None.
+
+**Files/modules affected.** `CHANGELOG.md`, `.claude/memory/PROJECT_STATE.md`, `docs/faq.md`,
+`mkdocs.yml`. No `src/` changes.
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0` (documentation-only correction; no version bump).
+
+**Migration notes.** N/A.
+
+**Testing status.** All gates above re-run and green as of this entry. One environment-specific
+finding, not a korchestrator defect: the local `pytest` run required `-p no:hypothesispytest` to
+avoid a `MemoryError` — `hypothesis` 6.158.0's `is_local_module_file()` only checks
+`site.getsitepackages()`, not `site.getusersitepackages()`; on this machine every third-party
+package (including `torch`, `transformers`) installs to the user site-packages and gets
+misclassified as "local source," so hypothesis tries to AST-parse and cache constants from all of
+them at collection time. CI's Linux runners install into a clean venv and are unlikely to hit this,
+but worth a quick check if the same `MemoryError` ever appears there. Separately reconfirmed the
+pre-existing, already-tracked `pytest -m temporal` / Temporal e2e limitation on this machine
+(`beartype`/`temporalio` sandbox-import conflict — unchanged from the P7.4 entry, and already
+documented for readers in `docs/troubleshooting.md`).
+
+**Known limitations / future improvements.** Two items outside this repository's control, both
+needed before a *public* beta announcement: (1) the documentation site
+(`https://koe.kendralabs.com/docs/`) has no working public URL yet — deployed and internally
+verified on the VPS, but blocked on public ingress (ports 80/443 held by another container) per
+`DOCS_DEPLOYMENT.md`; (2) whether this already-published `v0.1.0` GitHub Release should be
+retroactively marked as a "pre-release" to read as a beta to consumers, or whether a fresh
+beta-labeled tag is wanted instead, is an open product decision, not something inferred here.
+
+---
+
 ## 2026-08-12 · `cut_release.py` CHANGELOG blank-line bug, found before it shipped a bad release — v0.1.0
 
 **Type:** fix (tooling correctness) · **Phase:** P12, discovered while actually cutting `v0.1.0` ·

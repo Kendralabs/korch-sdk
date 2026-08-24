@@ -11,9 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0] - 2026-08-12
 
-The first development line. This version is being assembled phase by phase and has not
-yet been published; the date is fixed when `0.1.0` is released (see the release runbook in
-`docs/specs/10-release-versioning-and-cicd.md` §9).
+The first development line, released as a private [GitHub
+Release](https://github.com/Kendralabs/korch-sdk/releases/tag/v0.1.0) on this date (see the
+release runbook in `docs/specs/10-release-versioning-and-cicd.md` §9). Not published to PyPI —
+see [ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md).
 
 ### Fixed
 
