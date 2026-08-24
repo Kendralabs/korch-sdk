@@ -10,6 +10,75 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-08-24 · Contributing/feedback flow surfaced on the docs site; two more stale-release doc fixes; bandit clean
+
+**Type:** docs fix + verification · **Phase:** none (post-P12 beta-readiness hardening) ·
+**Author:** Claude (agent)
+
+**What.** Continuation of the same-day beta-readiness pass. Three things:
+
+1. **Surfaced the developer-collaboration flow on the published docs site.** The full engineering
+   contribution workflow already existed (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
+   `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.yml`, `.github/PULL_REQUEST_TEMPLATE.md`)
+   but was only reachable by browsing the GitHub repo root — nothing in `mkdocs.yml`'s nav pointed
+   to any of it, so a beta user reading `koe.kendralabs.com/docs/` had no path to "how do I report
+   a bug" short of guessing. Added `docs/contributing.md`, a short signpost page (links out to the
+   canonical files rather than duplicating them, per the one-canonical-page-per-topic doc rule)
+   that splits the two real audiences: beta users reporting a bug/requesting a feature/asking a
+   question (issue templates, discussions, `SECURITY.md`) versus people writing SDK code
+   (`CONTRIBUTING.md`'s full phase-based engineering workflow). Wired into `mkdocs.yml`'s nav and
+   linked from `docs/index.md`'s "Get started" list.
+2. **Two more stale "not released yet" claims**, same root cause as the previous entry's three:
+   `CONTRIBUTING.md` still stated the pre-P10.6 coverage floors (global 80%; `core`/`models` 95%)
+   instead of the current 90%/97%/99% (`docs/specs/09-testing-and-quality.md` §"Coverage floors"
+   is authoritative). `docs/migration.md` called `0.1.0` "pre-first-release," which is no longer
+   true now that it's a published GitHub Release — reworded to "first release" without changing
+   the surrounding claim that nothing is deprecated yet (still true). Grepped the full public doc
+   tree afterward for `pre-first-release`/`has not yet been published`/`tag pending`/`hasn't
+   shipped` — no further hits outside `docs/status/` (not committed) and `docs/specs/`/
+   `docs/background/` (excluded from the built site; historical by design).
+3. **Ran `bandit -c pyproject.toml -r src/korchestrator`** (matches CI's `security` job exactly):
+   clean, no issues, 8961 lines scanned. Started an isolated-venv `pip-audit --skip-editable
+   --ignore-vuln PYSEC-2026-2447` run (matching CI's exact command) in the background, because the
+   same run directly in this machine's shared global site-packages returned ~40 findings that
+   turned out to be noise — `pypdf`, `soupsieve`, and `pyasn1` have zero packages requiring them in
+   this environment at all (leftovers from unrelated local projects sharing this Python install),
+   and `tornado`/`pillow` trace to `jupyter_server`/`ImageHash`/`google-genai` — none of which are
+   in korchestrator's own dependency closure. Confirmed with `importlib.metadata` which installed
+   packages actually require each flagged one before dismissing them, rather than assuming.
+
+**Why.** Requested: build out the developer-collaboration flow explicitly, and continue the
+beta-readiness checklist. The collaboration flow turned out to already exist almost completely —
+the actual gap was discoverability from the published site, not the workflow itself.
+
+**Design decisions.** Did not duplicate `CONTRIBUTING.md`'s content into the docs site — added a
+short page that routes to the right existing document instead, consistent with the "one canonical
+page per topic" documentation rule. Did not delete or rewrite `docs/competitive-analysis.md`
+(pre-existing, untracked, internal/commercial in nature, not a public-site page) — flagged for a
+placement decision rather than acted on unilaterally.
+
+**Architecture changes.** None.
+
+**Files/modules affected.** `docs/contributing.md` (new), `mkdocs.yml`, `docs/index.md`,
+`CONTRIBUTING.md`, `docs/migration.md`. No `src/` changes.
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0` (documentation-only; no version bump).
+
+**Migration notes.** N/A.
+
+**Testing status.** `mkdocs build --strict` clean after every edit in this entry. `bandit` clean.
+The isolated `pip-audit` run was still in progress when this entry was written — see the next
+entry (or `docs/status/beta-release-checklist.md`, not committed) for its result; do not treat
+this entry as covering dependency-vulnerability status.
+
+**Known limitations / future improvements.** Same two items as the previous entry: the public
+docs URL is still not reachable, and whether `v0.1.0` should be retroactively flagged as a GitHub
+pre-release is still an open product decision.
+
+---
+
 ## 2026-08-24 · Beta-readiness verification pass — full gate suite re-run, stale release-status docs corrected
 
 **Type:** verification + docs fix · **Phase:** none (post-P12 beta-readiness hardening; not a
