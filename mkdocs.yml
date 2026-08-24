@@ -57,6 +57,7 @@ nav:
       - Remote client parity (Python/TypeScript): parity-matrix.md
       - FAQ: faq.md
       - Troubleshooting: troubleshooting.md
+      - Contributing & Feedback: contributing.md
 
 # docs/specs/ and docs/adr/ are the engineering record, and docs/background/ holds superseded
 # source inputs — none of them are part of the published user site (spec 02 §5.2). Excluding
