@@ -11,13 +11,11 @@ Related: [02-repository-structure.md](02-repository-structure.md) for `pyproject
 `.github/` inventory, [04-public-api.md](04-public-api.md) for what the public surface contains, and
 [09-testing-and-quality.md](09-testing-and-quality.md) for the gates the pipelines run.
 
-> **Amendment (ADR 0020, 2026-08-12).** §6's `release.yml` publishes to PyPI via Trusted
-> Publishing; §10 describes PyPI as where consumers install from. As implemented, that publish
-> target is **deferred** — the repository is private and stays private, so releases publish as
-> GitHub Releases on this repo instead, with no PyPI job at all. §1–§5 (versioning policy,
-> deprecation, version single-sourcing, CHANGELOG, the CI pipeline) are implemented exactly as
-> written here and are unaffected. See [ADR 0020](../adr/0020-private-distribution-defers-pypi-publishing.md)
-> and [docs/releases.md](../releases.md) for what actually runs today.
+§6's `release.yml` and §10's PyPI install instructions are implemented as written here — see
+[ADR 0021](../adr/0021-repository-goes-public-pypi-trusted-publishing.md) (superseding
+[ADR 0020](../adr/0020-private-distribution-defers-pypi-publishing.md), which deferred PyPI
+publishing while the repository was private) and [docs/releases.md](../releases.md) for the
+one-time PyPI Trusted Publisher setup and what runs on every tag today.
 
 ---
 

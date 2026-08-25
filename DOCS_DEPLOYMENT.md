@@ -111,29 +111,28 @@ Steps 5–7 are also done, as of 2026-08-24:
 
 ## Repository
 
-**https://github.com/Kendralabs/korch-sdk** (private) — branches `dev` (integration) →
+**https://github.com/Kendralabs/korch-sdk** (public) — branches `dev` (integration) →
 `staging` (release candidate) → `main` (released, default branch; tags cut from here only).
 
 ## Package / release
 
-Not published to PyPI — the repository is private and stays that way for now ([ADR
-0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)). Releases are published
-as **GitHub Releases** on the repository instead, built and verified automatically on every
-version tag (`.github/workflows/release.yml`).
+Published to [PyPI](https://pypi.org/project/korchestrator/) via Trusted Publishing ([ADR
+0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md), superseding ADR 0020's
+private-distribution pass). Releases also publish as **GitHub Releases** on the repository, built
+and verified automatically on every version tag (`.github/workflows/release.yml`); see
+`docs/releases.md` for the full pipeline and the one-time PyPI Trusted Publisher setup.
 
 **Latest release:** [`v0.1.0`](https://github.com/Kendralabs/korch-sdk/releases/tag/v0.1.0) —
 assets: `korchestrator-0.1.0-py3-none-any.whl`, `korchestrator-0.1.0.tar.gz`, `SHA256SUMS`.
 
 ### Installing it
 
-Requires a GitHub credential (SSH key or PAT) with read access to this private repository.
-
-**From the tagged release** (no local clone needed):
+**From PyPI** (no credential needed):
 
 ```bash
-pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[dspy]"
 # or, every optional extra:
-pip install "korchestrator[all] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[all]"
 ```
 
 **From a local clone** (editable install, e.g. for development):

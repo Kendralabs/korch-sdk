@@ -10,6 +10,87 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-08-25 · Repository goes public; release pipeline rewritten for PyPI Trusted Publishing (ADR 0021, supersedes ADR 0020)
+
+**Type:** decision + CI/CD + docs · **Phase:** P12 (CI/CD, packaging & publishing) — implements
+P12.4/P12.6 as originally specified, closing the gap ADR 0020 deferred · **Author:** Claude (agent)
+
+**What.** By explicit maintainer instruction: made `Kendralabs/korch-sdk` public, and rewrote
+`.github/workflows/release.yml` to the full pipeline `docs/specs/10-release-versioning-and-cicd.md`
+§6 always specified — `build` (unchanged, plus a new CycloneDX SBOM and
+`actions/attest-build-provenance` build-provenance attestation), `publish` (new — PyPI Trusted
+Publishing via `pypa/gh-action-pypi-publish`, OIDC, no stored API token, gated on a `pypi` GitHub
+Environment), `github-release` (unchanged shape, now also carries the SBOM), `verify-published`
+(new, replaces `verify-private-install` — installs `korchestrator==X.Y.Z` from the real public
+PyPI index with no credential and a short retry loop for index-propagation lag), `deploy-docs`
+(new — calls the existing `docs.yml` workflow so a release always redeploys documentation).
+Recorded the decision as [ADR 0021](../../docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md),
+which supersedes ADR 0020 (its reasoning is unchanged — PyPI has no private-index tier — but the
+condition it was reasoning about, staying private, no longer holds). Updated every place in the
+repository that documented the private-distribution install path or cited ADR 0020 as current:
+`README.md`, `docs/installation.md`, `docs/quickstart.md`, `docs/releases.md` (rewritten — adds a
+"one-time PyPI Trusted Publisher setup" section), `docs/faq.md`, `docs/contributing.md`,
+`docs/specs/10-release-versioning-and-cicd.md` (removed the amendment note pointing to ADR 0020),
+`docs/specs/12-implementation-plan.md` (P12 table updated to reflect P12.3/P12.4/P12.6 as
+delivered, not narrowed), `.claude/memory/PROJECT_STATE.md`, `DOCS_DEPLOYMENT.md`,
+`MASTER_DOCUMENTATION.md` (4 stale references), and `CHANGELOG.md` (appended a dated addendum
+under the existing `[0.1.0]` entry rather than rewriting its historical framing — the entry
+correctly recorded that `v0.1.0` was *first* released privately on 2026-08-12; that fact doesn't
+change, so the addendum notes the 2026-08-25 event separately instead of rewriting history).
+
+**Why.** Explicit maintainer instruction to make the repository open source and publish the SDK to
+PyPI so `pip install korchestrator` works publicly, with the release process documented.
+
+**Design decisions.** Before touching visibility: scanned both the current tree and the *entire*
+git history (`git log --all -p`) for committed secrets (AWS/GitHub/OpenAI-style token patterns,
+private key blocks, `.env` files) — clean; the only matches were the redaction test's own
+documentation-example literals and the `.env.example` placeholder. Confirmed the PyPI project name
+`korchestrator` was unclaimed (`pypi.org/pypi/korchestrator/json` → 404) before writing the ADR
+around it. Did not cut a new version for the first PyPI publish — per explicit instruction, the
+already-published `v0.1.0` is re-published under the new pipeline (PyPI has never seen it; this is
+a first upload, not a re-upload). Did not attempt to configure the PyPI Trusted Publisher myself —
+it is a one-time action only the PyPI account owner can take (their own login, optionally 2FA);
+documented the exact steps in `docs/releases.md` instead of working around the missing access.
+Kept the git-ref/SSH install path in `docs/installation.md`, demoted to an "installing an
+unreleased commit" case rather than removed — still genuinely useful for pre-release/dev-branch
+installs even though it's no longer required for tagged releases. Left
+`docs/competitive-analysis.md` untouched — untracked, a dated strategic snapshot, and its
+placement was already a separate open decision before this change.
+
+**Architecture changes.** None in `src/`. `.github/workflows/release.yml` is the only executable
+change, and it is distribution-target configuration, not application code.
+
+**Files/modules affected.** `.github/workflows/release.yml`; `docs/adr/0021-*.md` (new);
+`README.md`; `docs/installation.md`; `docs/quickstart.md`; `docs/releases.md`; `docs/faq.md`;
+`docs/contributing.md`; `docs/specs/10-release-versioning-and-cicd.md`;
+`docs/specs/12-implementation-plan.md`; `.claude/memory/PROJECT_STATE.md`; `DOCS_DEPLOYMENT.md`;
+`MASTER_DOCUMENTATION.md`; `CHANGELOG.md`. No `src/` changes.
+
+**Breaking changes.** None to the SDK's public API. The *distribution* mechanism changes (install
+command no longer needs a GitHub credential) but this is strictly less friction, not a break.
+
+**Feature version/revision.** `0.1.0` (unchanged — this re-publishes the existing version under a
+new channel; no version bump).
+
+**Migration notes.** Existing consumers installing via the git-ref command keep working
+unchanged — that path was never removed. New consumers use `pip install korchestrator[dspy]`.
+
+**Testing status.** `ruff check`/`ruff format --check`/`mypy --strict` not re-run for this change
+(no `src/` touched). `release.yml`'s new `publish` and `verify-published` jobs are unexercised
+until the PyPI Trusted Publisher is registered (see Known limitations) — cannot be tested any other
+way, since Trusted Publishing is inherently tied to a real GitHub Actions OIDC run against a real
+PyPI project.
+
+**Known limitations / future improvements.** The PyPI Trusted Publisher registration
+(`docs/releases.md` "One-time setup") is still outstanding — it requires the PyPI account owner's
+own login and is the one step nothing in this repository or CI can perform. Until it's done, the
+`publish` job will fail on its first real run; `verify-published` and the actual
+`pip install korchestrator` path are unverified against the live index until then. License
+allowlist scanning (the remaining piece of P12.3 beyond SBOM/attestation/checksums) is still not
+implemented — tracked as follow-up, not silently dropped.
+
+---
+
 ## 2026-08-24 · Public docs URL confirmed live (DOCS_DEPLOYMENT.md was itself stale); disk-space cleanup
 
 **Type:** verification + docs fix + ops · **Phase:** none (post-P12 beta-readiness hardening) ·

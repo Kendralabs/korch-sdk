@@ -1,12 +1,13 @@
 # Releases
 
-!!! note "Private distribution (ADR 0020)"
-    Korchestrator is not published to PyPI. The repository is private, and per
-    [ADR 0020](https://github.com/kendralabs/korch-sdk/blob/main/docs/adr/0020-private-distribution-defers-pypi-publishing.md) releases distribute as
-    **GitHub Releases on this private repo** instead — PyPI has no free private-index tier, and
-    publishing there would make the SDK world-readable regardless of the repo's own visibility.
-    `.github/workflows/release.yml` builds, verifies, checksums, and publishes a GitHub Release on
-    every `vX.Y.Z` tag; see [Installation](installation.md) for how to `pip install` from it.
+!!! note "Public distribution via PyPI (ADR 0021)"
+    Korchestrator is public: the repository is public and releases publish to
+    [PyPI](https://pypi.org/project/korchestrator/) via **Trusted Publishing** (OIDC — no stored
+    API token). `pip install korchestrator[dspy]` works for anyone, no GitHub credential needed.
+    See [Installation](installation.md). This supersedes the private-distribution pass in
+    [ADR 0020](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0020-private-distribution-defers-pypi-publishing.md);
+    the decision to go public and enable PyPI is recorded in
+    [ADR 0021](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md).
 
 ## How a release is decided
 
@@ -47,34 +48,59 @@
      && echo OK
    ```
 
+## One-time setup: PyPI Trusted Publisher
+
+Before the **first** publish, and only then, the PyPI account that owns the `korchestrator`
+project must register this repository as a trusted publisher. This is an identity/ownership action
+on the PyPI account itself — no CI job, agent, or token can do it; it takes about five minutes:
+
+1. Sign in at [pypi.org](https://pypi.org) with the account that will own the `korchestrator`
+   project (create the account first if it doesn't exist yet — no need to reserve the name
+   manually, a pending publisher does that automatically on first publish).
+2. Go to **Account settings → Publishing** (directly:
+   [pypi.org/manage/account/publishing/](https://pypi.org/manage/account/publishing/)).
+3. Add a **pending publisher** with exactly:
+   - PyPI project name: `korchestrator`
+   - Owner: `Kendralabs`
+   - Repository name: `korch-sdk`
+   - Workflow name: `release.yml`
+   - Environment name: `pypi`
+4. In the GitHub repository, create a **Environment** named `pypi` (Settings → Environments) if it
+   doesn't already exist. Optionally add required reviewers for an auditable approval gate before
+   every publish — recommended given a PyPI publish is irreversible (see below).
+5. The **first** successful run of the `publish` job in `release.yml` (from the exact repo,
+   workflow file, and environment name above) creates the `korchestrator` project on PyPI
+   automatically and converts the pending publisher into an active one. No further setup is needed
+   for subsequent releases.
+
+Nothing else in this repository, CI, or an agent's local environment can perform this step — it
+requires the account owner's own PyPI login (and, if enabled, 2FA).
+
 ## What the release workflow does today
 
-On a `vX.Y.Z` tag push (`.github/workflows/release.yml`):
+On a `vX.Y.Z` tag push, or a manual `workflow_dispatch` run against an existing tag
+(`.github/workflows/release.yml`):
 
 1. **`build`** — validates the tag matches `src/korchestrator/version.py`, builds the wheel and
    sdist (`python -m build`), installs the **built wheel** (not the source tree) into a fresh
    virtualenv outside the repo and confirms `korchestrator.__version__` matches the tag, confirms
-   the sdist itself builds a wheel, and generates `SHA256SUMS` over both artifacts.
-2. **`github-release`** — publishes a GitHub Release for the tag with the wheel, sdist, and
+   the sdist itself builds a wheel, generates an SBOM (`cyclonedx-bom`, CycloneDX JSON), generates
+   `SHA256SUMS` over the wheel/sdist/SBOM, and attests build provenance
+   (`actions/attest-build-provenance`).
+2. **`publish`** — uploads the wheel and sdist to PyPI via **Trusted Publishing** (OIDC;
+   `pypa/gh-action-pypi-publish`) — no long-lived API token is stored anywhere. Gated on the `pypi`
+   GitHub Environment.
+3. **`github-release`** — publishes a GitHub Release for the tag with the wheel, sdist, SBOM, and
    `SHA256SUMS` attached, and notes extracted directly from the tagged `CHANGELOG.md` section.
-   Works identically on a private repo — release assets aren't subject to the plan restrictions
-   that gate GitHub Pages or Advanced Security features.
-3. **`verify-private-install`** — installs the package via
-   `pip install git+https://...@github.com/...@vX.Y.Z`, authenticated with the workflow run's own
-   short-lived `GITHUB_TOKEN`, and confirms `korchestrator.__version__` matches — proving the same
-   install path a real consumer with repo read access will use actually works.
-
-## What's deferred (ADR 0020)
-
-- Publishing to PyPI via [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) — the
-  package would become world-readable the moment a tag is pushed, which contradicts staying
-  private. Revisit only alongside an explicit decision to make the SDK public.
-- SBOM generation and build-provenance attestation. Checksums (`SHA256SUMS`) ship today; the rest
-  of the supply-chain tooling in `docs/specs/10-release-versioning-and-cicd.md` §6 is additive
-  follow-up work, not something this pass silently dropped.
-- A documentation site deploy tied to the release tag. `.github/workflows/docs.yml` already
-  deploys to GitHub Pages on every push to `main` (private-repo Pages requires a paid GitHub
-  plan); it isn't re-triggered by the release tag specifically.
+4. **`verify-published`** — installs the just-published version from the **real public PyPI
+   index** (`pip install korchestrator==X.Y.Z`, no git ref, no credential), retrying briefly for
+   index-propagation lag, and confirms `korchestrator.__version__` matches. This is the check that
+   proves `pip install korchestrator` actually works for a stranger with no relationship to this
+   repository.
+5. **`deploy-docs`** — redeploys documentation (`docs.yml`) so published docs stay in sync with
+   the release. The koe-proxy VPS deploy documented in `DOCS_DEPLOYMENT.md` remains the primary
+   published documentation URL; GitHub Pages (now free, since the repo is public) is a secondary
+   target the same workflow already produces.
 
 ## Releases are immutable
 
@@ -82,13 +108,16 @@ Once published, a version is never overwritten, re-tagged, or deleted:
 
 - A defective release is fixed **forward** with a new patch version — `0.2.1` supersedes `0.2.0`;
   `0.2.0` stays on the release list.
-- **Yank** a release only if it's actively harmful (a security defect, data loss, a wholly broken
-  artifact) — mark the GitHub Release as a pre-release/draft or add a prominent warning to its
-  notes so new installs are steered away, while existing pins keep working. This is not deletion.
+- **Yank** a release on PyPI (`pip install` still resolves an exact pin, but the version is hidden
+  from `pip install korchestrator` with no version pinned) or mark the GitHub Release as a
+  pre-release/draft — only if it's actively harmful (a security defect, data loss, a wholly broken
+  artifact). This is not deletion; existing pins keep working.
 - Tags never move. Consumers and anyone who downloaded a release asset assume a tag is permanent.
+- PyPI additionally **refuses to let the same version number ever be re-uploaded**, even after a
+  yank — this is a platform rule, not just a project convention.
 
 ## Next
 
-- [Installation](installation.md) — how to actually `pip install` a private release.
+- [Installation](installation.md) — how to `pip install` a release.
 - [Versioning](versioning.md) — how the bump itself is decided.
 - [Migration](migration.md) — what changes between versions and how it's communicated.
