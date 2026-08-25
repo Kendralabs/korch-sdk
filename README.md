@@ -2,16 +2,16 @@
 
 **Durable, deterministic, multi-agent execution as an installable Python library.**
 
-[![Status](https://img.shields.io/badge/status-alpha-orange)](docs/specs/11-build-phase-plan.md)
+[![Status](https://img.shields.io/badge/status-alpha-orange)](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/11-build-phase-plan.md)
 [![PyPI](https://img.shields.io/badge/pypi-korchestrator-blue)](https://pypi.org/project/korchestrator/)
-[![Version](https://img.shields.io/badge/version-0.1.0-blue)](docs/adr/0002-single-authoritative-version.md)
-[![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-blue)](docs/specs/02-repository-structure.md)
-[![License](https://img.shields.io/badge/license-Apache--2.0-green)](docs/adr/0003-license-apache-2-0.md)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue)](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0002-single-authoritative-version.md)
+[![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-blue)](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/02-repository-structure.md)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0003-license-apache-2-0.md)
 [![Docs](https://img.shields.io/badge/docs-koe.kendralabs.com-informational)](https://koe.kendralabs.com/docs/)
 
 > **First release, public.** `v0.1.0` is published on
 > [PyPI](https://pypi.org/project/korchestrator/) and as a GitHub Release
-> ([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)) — see
+> ([ADR 0021](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)) — see
 > [Installation](#installation). Documentation: **[koe.kendralabs.com/docs](https://koe.kendralabs.com/docs/)**.
 > See [Project status](#project-status).
 
@@ -71,13 +71,13 @@ from korchestrator.core import PregelRunner
 from korchestrator.remote import KorchestratorClient
 ```
 
-Full surface: [docs/specs/04-public-api.md](docs/specs/04-public-api.md).
+Full surface: [docs/specs/04-public-api.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/04-public-api.md).
 
 ## Features
 
 Everything below ships and is tested today — see [Project status](#project-status) for what's
 still outstanding. 26 subpackages under `src/korchestrator/`, each with a single layer and a
-single responsibility ([docs/specs/03-architecture.md](docs/specs/03-architecture.md)):
+single responsibility ([docs/specs/03-architecture.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/03-architecture.md)):
 
 | Module | Layer | What it does |
 |---|---|---|
@@ -133,7 +133,7 @@ pip install "korchestrator[all]"
 
 No GitHub credential needed — published on [PyPI](https://pypi.org/project/korchestrator/) via
 [Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
-([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)).
+([ADR 0021](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)).
 
 or from a local clone:
 
@@ -143,8 +143,8 @@ pip install -e '.[dspy]'      # cognitive layer (agents, compiled signatures) �
 pip install -e '.[all]'       # everything
 ```
 
-See [docs/installation.md](docs/installation.md) for the full extras table, and
-[docs/releases.md](docs/releases.md) for how releases are cut and tagged.
+See [docs/installation.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/installation.md) for the full extras table, and
+[docs/releases.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/releases.md) for how releases are cut and tagged.
 
 The base install has **one runtime dependency**. Everything heavy is an optional extra, lazy-imported
 so `import korchestrator` stays fast and the kernel stays embeddable. The default configuration runs
@@ -155,7 +155,7 @@ offline against a deterministic mock model — no keys, no services, no infrastr
 > `%APPDATA%\Python\Python3xx\Scripts`). If a bare command isn't found right after install, either
 > run it as `python -m <tool>` (e.g. `python -m mkdocs serve`) in the current shell, or add that
 > `Scripts` directory to your user `PATH` and open a new terminal. See
-> [docs/troubleshooting.md](docs/troubleshooting.md).
+> [docs/troubleshooting.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/troubleshooting.md).
 
 ## Quick start — first run to a passing test suite
 
@@ -217,7 +217,7 @@ pytest tests/unit/core tests/unit/models tests/smoke
 ```
 
 Coverage floor: 90% global, 97% for `core/`, 99% for `models/` — ratcheted up over time, never down.
-Full command reference: [docs/specs/09-testing-and-quality.md](docs/specs/09-testing-and-quality.md).
+Full command reference: [docs/specs/09-testing-and-quality.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/09-testing-and-quality.md).
 
 ## Project status
 
@@ -225,47 +225,47 @@ Full command reference: [docs/specs/09-testing-and-quality.md](docs/specs/09-tes
 signatures, model routing, tools/MCP/A2A, streaming, governance, the context graph, the remote
 client, the test and benchmark suite, and this documentation are all in place, and the release
 publishes to PyPI and GitHub Releases via Trusted Publishing
-([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)).
+([ADR 0021](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)).
 
-The project is still `0.x` — see [Versioning](docs/specs/10-release-versioning-and-cicd.md) for
+The project is still `0.x` — see [Versioning](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/10-release-versioning-and-cicd.md) for
 what that means for compatibility. Current state, including known gaps, is tracked in
-[`.claude/memory/PROJECT_STATE.md`](.claude/memory/PROJECT_STATE.md); the ordered build plan behind
-it is in [`docs/specs/`](docs/specs/README.md) for anyone contributing to the SDK itself.
+[`.claude/memory/PROJECT_STATE.md`](https://github.com/Kendralabs/korch-sdk/blob/main/.claude/memory/PROJECT_STATE.md); the ordered build plan behind
+it is in [`docs/specs/`](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/README.md) for anyone contributing to the SDK itself.
 
-**Versioning.** [SemVer](docs/specs/10-release-versioning-and-cicd.md). While `0.x`, a **minor
+**Versioning.** [SemVer](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/10-release-versioning-and-cicd.md). While `0.x`, a **minor
 release may contain breaking changes** — this is stated plainly in every changelog entry that
 carries one. From `1.0.0` the full compatibility policy applies without exception.
 
 ## Documentation
 
 **Published, browsable site: [koe.kendralabs.com/docs](https://koe.kendralabs.com/docs/)** — the
-same content built from [`docs/`](docs/) (MkDocs — `mkdocs serve` to preview locally):
+same content built from [`docs/`](https://github.com/Kendralabs/korch-sdk/tree/main/docs) (MkDocs — `mkdocs serve` to preview locally):
 
 | Start here | For |
 |---|---|
-| [docs/installation.md](docs/installation.md) | The base install and every optional extra |
-| [docs/quickstart.md](docs/quickstart.md) | Install to your first completed run |
-| [docs/tutorials/](docs/tutorials/index.md) | Swarms, custom agents/tools/routers, MCP, HITL, streaming |
-| [docs/reference/](docs/reference/index.md) | Auto-generated API reference |
+| [docs/installation.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/installation.md) | The base install and every optional extra |
+| [docs/quickstart.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/quickstart.md) | Install to your first completed run |
+| [docs/tutorials/](https://github.com/Kendralabs/korch-sdk/blob/main/docs/tutorials/index.md) | Swarms, custom agents/tools/routers, MCP, HITL, streaming |
+| [docs/reference/](https://github.com/Kendralabs/korch-sdk/blob/main/docs/reference/index.md) | Auto-generated API reference |
 
 The engineering record (not published to the docs site — internal, for anyone building the SDK
 itself):
 
 | Start here | For |
 |---|---|
-| [docs/specs/README.md](docs/specs/README.md) | The authoritative specification set (00–12) |
-| [docs/specs/00-overview.md](docs/specs/00-overview.md) | What Korchestrator is, and the glossary |
-| [docs/specs/03-architecture.md](docs/specs/03-architecture.md) | Layering, ARI ports, the dependency rule |
-| [docs/specs/04-public-api.md](docs/specs/04-public-api.md) | Public surface and compatibility contract |
-| [docs/specs/12-implementation-plan.md](docs/specs/12-implementation-plan.md) | The step-by-step task list |
-| [docs/specs/10-release-versioning-and-cicd.md](docs/specs/10-release-versioning-and-cicd.md) | Versioning policy, the CI/CD pipeline (`.github/workflows/`), and the release runbook |
-| [.claude/rules/](.claude/rules) | Enforceable constraints: architecture boundaries, determinism, testing, security, API compatibility |
-| [docs/adr/](docs/adr/README.md) | Why things were decided the way they were |
-| [docs/background/](docs/background/README.md) | Superseded source inputs, kept for provenance |
+| [docs/specs/README.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/README.md) | The authoritative specification set (00–12) |
+| [docs/specs/00-overview.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/00-overview.md) | What Korchestrator is, and the glossary |
+| [docs/specs/03-architecture.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/03-architecture.md) | Layering, ARI ports, the dependency rule |
+| [docs/specs/04-public-api.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/04-public-api.md) | Public surface and compatibility contract |
+| [docs/specs/12-implementation-plan.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/12-implementation-plan.md) | The step-by-step task list |
+| [docs/specs/10-release-versioning-and-cicd.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/10-release-versioning-and-cicd.md) | Versioning policy, the CI/CD pipeline (`.github/workflows/`), and the release runbook |
+| [.claude/rules/](https://github.com/Kendralabs/korch-sdk/tree/main/.claude/rules) | Enforceable constraints: architecture boundaries, determinism, testing, security, API compatibility |
+| [docs/adr/](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/README.md) | Why things were decided the way they were |
+| [docs/background/](https://github.com/Kendralabs/korch-sdk/blob/main/docs/background/README.md) | Superseded source inputs, kept for provenance |
 
 ## Contributing
 
-Read [docs/specs/01-scope-and-principles.md](docs/specs/01-scope-and-principles.md) first — it
+Read [docs/specs/01-scope-and-principles.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/01-scope-and-principles.md) first — it
 defines what belongs in this repository and what never will. Follow [Quick start](#quick-start--first-run-to-a-passing-test-suite)
 above to get installed and green, plus this one extra step:
 
@@ -278,17 +278,17 @@ Branches promote forward only: `dev` (integration) → `staging` (release candid
 PR against `dev` — GitHub proposes `main`, which is wrong for feature work. Use Conventional
 Commits with a phase tag (`feat(core): implement superstep kernel + reducers [P2]`). Never commit
 directly to `dev`, `staging`, or `main`, and never bypass the hooks. Every change touching `src/`
-updates [`.claude/memory/ENGINEERING_LOG.md`](.claude/memory/ENGINEERING_LOG.md) before it is
+updates [`.claude/memory/ENGINEERING_LOG.md`](https://github.com/Kendralabs/korch-sdk/blob/main/.claude/memory/ENGINEERING_LOG.md) before it is
 committed. The full model, including the hotfix exception, is in
-[`.claude/rules/branching-and-promotion.md`](.claude/rules/branching-and-promotion.md).
+[`.claude/rules/branching-and-promotion.md`](https://github.com/Kendralabs/korch-sdk/blob/main/.claude/rules/branching-and-promotion.md).
 
-Working with an AI coding agent? The repository is configured for it: [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
+Working with an AI coding agent? The repository is configured for it: [`.claude/CLAUDE.md`](https://github.com/Kendralabs/korch-sdk/blob/main/.claude/CLAUDE.md)
 is the always-on ruleset, `.claude/rules/` holds the enforceable constraints, and `/phase`, `/verify`,
 `/log`, and `/adr` cover the standard workflow.
 
 ### Releasing a version
 
-Cut from `staging`, never from `dev` or directly on `main`. [`scripts/cut_release.py`](scripts/cut_release.py)
+Cut from `staging`, never from `dev` or directly on `main`. [`scripts/cut_release.py`](https://github.com/Kendralabs/korch-sdk/blob/main/scripts/cut_release.py)
 automates the mechanical steps:
 
 ```bash
@@ -302,16 +302,16 @@ python scripts/cut_release.py tag
 `release.yml` builds the wheel and sdist, verifies the built artifact in a clean environment, and
 publishes a GitHub Release with the wheel, sdist, and `SHA256SUMS` attached — see
 [Installation](#installation) for how consumers then install it. Full runbook, including the
-merge-back step that keeps `dev`/`staging`/`main` in sync afterward: [docs/releases.md](docs/releases.md).
+merge-back step that keeps `dev`/`staging`/`main` in sync afterward: [docs/releases.md](https://github.com/Kendralabs/korch-sdk/blob/main/docs/releases.md).
 
 ## Non-goals
 
 This repository ships **one product: the SDK**. It will never contain a frontend, a backend, an HTTP
 server, or deployment manifests for a hosted service. "Deployment" here means publishing package
 artifacts, not running anything. A hosted engine, if one exists, is a downstream consumer of the
-published package — see [ADR 0007](docs/adr/0007-external-backend-boundary.md).
+published package — see [ADR 0007](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0007-external-backend-boundary.md).
 
 ## License
 
 Apache-2.0 — chosen for its explicit patent grant. See
-[ADR 0003](docs/adr/0003-license-apache-2-0.md).
+[ADR 0003](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0003-license-apache-2-0.md).
