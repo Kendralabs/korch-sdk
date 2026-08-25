@@ -48,6 +48,7 @@ ad-hoc chain/graph-based agent frameworks.
 - [Tutorials](tutorials/index.md) — swarms, custom agents/tools/routers, MCP, human-in-the-loop, streaming
 - [Architecture](architecture.md) — how the superstep kernel, the ARI ports, and the layering fit together, and why
 - [API Reference](reference/index.md) — the full public surface
+- [Contributing & Feedback](contributing.md) — report a bug, request a feature, or contribute code
 
 ## Status
 

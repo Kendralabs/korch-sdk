@@ -1,11 +1,11 @@
 name: Release
 
-# Tag-triggered release pipeline for PRIVATE distribution (ADR 0020). It validates the version,
-# builds and verifies the artifact in a clean environment, checksums it, and publishes a GitHub
-# Release with the wheel/sdist attached — all reachable on a private repo with no PyPI
-# involvement. PyPI Trusted Publishing, SBOM generation, and provenance attestation remain the
-# target design in docs/specs/10-release-versioning-and-cicd.md §6 for if/when the SDK goes
-# public; they are deliberately deferred, not implemented here. See ADR 0020.
+# Tag-triggered release pipeline (ADR 0021, supersedes ADR 0020's private-distribution pass).
+# Builds and verifies the artifact in a clean environment, generates an SBOM and checksums,
+# attests build provenance, publishes to PyPI via Trusted Publishing (OIDC — no stored API
+# token), publishes a GitHub Release with the artifacts attached, verifies the real public
+# `pip install korchestrator` path, and redeploys documentation. Matches
+# docs/specs/10-release-versioning-and-cicd.md §6.
 
 on:
   push:
@@ -17,8 +17,12 @@ permissions:
 
 jobs:
   build:
-    name: Build, verify, and checksum the artifact
+    name: Build, verify, and attest
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
@@ -66,20 +70,50 @@ jobs:
           /tmp/sdist/bin/python -m pip install --upgrade pip build
           /tmp/sdist/bin/python -m pip install dist/*.tar.gz
 
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          python -m pip install "cyclonedx-bom>=7,<8"
+          cyclonedx-py environment --output-format json --output-file dist/sbom.cdx.json
+
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum ./*.whl ./*.tar.gz > SHA256SUMS
+          sha256sum ./*.whl ./*.tar.gz ./sbom.cdx.json > SHA256SUMS
           cat SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: "dist/*.whl,dist/*.tar.gz"
 
       - uses: actions/upload-artifact@v4
         with:
           name: release-dist
           path: dist/
 
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/korchestrator
+    permissions:
+      id-token: write # Trusted Publishing (OIDC); no API token is stored
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist/
+      - name: Remove non-distribution files before upload
+        run: rm -f dist/SHA256SUMS dist/sbom.cdx.json
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true
+
   github-release:
     name: Publish the GitHub release
-    needs: build
+    needs: [build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -99,30 +133,44 @@ jobs:
           test -s release-notes.md || { echo "no CHANGELOG section found"; exit 1; }
       - uses: softprops/action-gh-release@v2
         with:
+          # Explicit, not inferred from GITHUB_REF: softprops/action-gh-release only infers the
+          # tag from a `refs/tags/...` ref, so a workflow_dispatch run against a branch (e.g. to
+          # re-run the pipeline after a fix) fails with "GitHub Releases requires a tag" without
+          # this — harmless on a normal tag-push release, where it's simply redundant.
+          tag_name: v${{ needs.build.outputs.version }}
           body_path: release-notes.md
           files: |
             dist/*.whl
             dist/*.tar.gz
+            dist/sbom.cdx.json
             dist/SHA256SUMS
           fail_on_unmatched_files: true
 
-  verify-private-install:
-    name: Install from the tag (private git ref)
-    needs: [build, github-release]
+  verify-published:
+    name: Install from PyPI
+    needs: [build, publish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install via git+https, authenticated with the run's own scoped token
+      - name: Install the published distribution and import it
         run: |
-          python -m pip install \
-            "korchestrator @ git+https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git@v${{ needs.build.outputs.version }}"
+          for attempt in 1 2 3 4 5; do
+            if python -m pip install "korchestrator==${{ needs.build.outputs.version }}"; then
+              break
+            fi
+            echo "index not ready yet (attempt $attempt)"
+            [ "$attempt" -lt 5 ] || exit 1
+            sleep 15
+          done
           python -c "import korchestrator; print(korchestrator.__version__)"
 
-  # ---------------------------------------------------------------------------------------
-  # Deferred per ADR 0020 until a future decision makes the package public:
-  #   publish (PyPI Trusted Publishing) · SBOM generation · provenance attestation
-  #   docs deploy already runs independently on push to main (.github/workflows/docs.yml)
-  # See docs/specs/10-release-versioning-and-cicd.md §6 for the full target pipeline.
-  # ---------------------------------------------------------------------------------------
+  deploy-docs:
+    name: Deploy documentation for the release
+    needs: publish
+    uses: ./.github/workflows/docs.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

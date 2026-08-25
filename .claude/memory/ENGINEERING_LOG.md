@@ -10,6 +10,297 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-08-25 · Repository goes public; release pipeline rewritten for PyPI Trusted Publishing (ADR 0021, supersedes ADR 0020)
+
+**Type:** decision + CI/CD + docs · **Phase:** P12 (CI/CD, packaging & publishing) — implements
+P12.4/P12.6 as originally specified, closing the gap ADR 0020 deferred · **Author:** Claude (agent)
+
+**What.** By explicit maintainer instruction: made `Kendralabs/korch-sdk` public, and rewrote
+`.github/workflows/release.yml` to the full pipeline `docs/specs/10-release-versioning-and-cicd.md`
+§6 always specified — `build` (unchanged, plus a new CycloneDX SBOM and
+`actions/attest-build-provenance` build-provenance attestation), `publish` (new — PyPI Trusted
+Publishing via `pypa/gh-action-pypi-publish`, OIDC, no stored API token, gated on a `pypi` GitHub
+Environment), `github-release` (unchanged shape, now also carries the SBOM), `verify-published`
+(new, replaces `verify-private-install` — installs `korchestrator==X.Y.Z` from the real public
+PyPI index with no credential and a short retry loop for index-propagation lag), `deploy-docs`
+(new — calls the existing `docs.yml` workflow so a release always redeploys documentation).
+Recorded the decision as [ADR 0021](../../docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md),
+which supersedes ADR 0020 (its reasoning is unchanged — PyPI has no private-index tier — but the
+condition it was reasoning about, staying private, no longer holds). Updated every place in the
+repository that documented the private-distribution install path or cited ADR 0020 as current:
+`README.md`, `docs/installation.md`, `docs/quickstart.md`, `docs/releases.md` (rewritten — adds a
+"one-time PyPI Trusted Publisher setup" section), `docs/faq.md`, `docs/contributing.md`,
+`docs/specs/10-release-versioning-and-cicd.md` (removed the amendment note pointing to ADR 0020),
+`docs/specs/12-implementation-plan.md` (P12 table updated to reflect P12.3/P12.4/P12.6 as
+delivered, not narrowed), `.claude/memory/PROJECT_STATE.md`, `DOCS_DEPLOYMENT.md`,
+`MASTER_DOCUMENTATION.md` (4 stale references), and `CHANGELOG.md` (appended a dated addendum
+under the existing `[0.1.0]` entry rather than rewriting its historical framing — the entry
+correctly recorded that `v0.1.0` was *first* released privately on 2026-08-12; that fact doesn't
+change, so the addendum notes the 2026-08-25 event separately instead of rewriting history).
+
+**Why.** Explicit maintainer instruction to make the repository open source and publish the SDK to
+PyPI so `pip install korchestrator` works publicly, with the release process documented.
+
+**Design decisions.** Before touching visibility: scanned both the current tree and the *entire*
+git history (`git log --all -p`) for committed secrets (AWS/GitHub/OpenAI-style token patterns,
+private key blocks, `.env` files) — clean; the only matches were the redaction test's own
+documentation-example literals and the `.env.example` placeholder. Confirmed the PyPI project name
+`korchestrator` was unclaimed (`pypi.org/pypi/korchestrator/json` → 404) before writing the ADR
+around it. Did not cut a new version for the first PyPI publish — per explicit instruction, the
+already-published `v0.1.0` is re-published under the new pipeline (PyPI has never seen it; this is
+a first upload, not a re-upload). Did not attempt to configure the PyPI Trusted Publisher myself —
+it is a one-time action only the PyPI account owner can take (their own login, optionally 2FA);
+documented the exact steps in `docs/releases.md` instead of working around the missing access.
+Kept the git-ref/SSH install path in `docs/installation.md`, demoted to an "installing an
+unreleased commit" case rather than removed — still genuinely useful for pre-release/dev-branch
+installs even though it's no longer required for tagged releases. Left
+`docs/competitive-analysis.md` untouched — untracked, a dated strategic snapshot, and its
+placement was already a separate open decision before this change.
+
+**Architecture changes.** None in `src/`. `.github/workflows/release.yml` is the only executable
+change, and it is distribution-target configuration, not application code.
+
+**Files/modules affected.** `.github/workflows/release.yml`; `docs/adr/0021-*.md` (new);
+`README.md`; `docs/installation.md`; `docs/quickstart.md`; `docs/releases.md`; `docs/faq.md`;
+`docs/contributing.md`; `docs/specs/10-release-versioning-and-cicd.md`;
+`docs/specs/12-implementation-plan.md`; `.claude/memory/PROJECT_STATE.md`; `DOCS_DEPLOYMENT.md`;
+`MASTER_DOCUMENTATION.md`; `CHANGELOG.md`. No `src/` changes.
+
+**Breaking changes.** None to the SDK's public API. The *distribution* mechanism changes (install
+command no longer needs a GitHub credential) but this is strictly less friction, not a break.
+
+**Feature version/revision.** `0.1.0` (unchanged — this re-publishes the existing version under a
+new channel; no version bump).
+
+**Migration notes.** Existing consumers installing via the git-ref command keep working
+unchanged — that path was never removed. New consumers use `pip install korchestrator[dspy]`.
+
+**Testing status.** `ruff check`/`ruff format --check`/`mypy --strict` not re-run for this change
+(no `src/` touched). `release.yml`'s new `publish` and `verify-published` jobs are unexercised
+until the PyPI Trusted Publisher is registered (see Known limitations) — cannot be tested any other
+way, since Trusted Publishing is inherently tied to a real GitHub Actions OIDC run against a real
+PyPI project.
+
+**Known limitations / future improvements.** The PyPI Trusted Publisher registration
+(`docs/releases.md` "One-time setup") is still outstanding — it requires the PyPI account owner's
+own login and is the one step nothing in this repository or CI can perform. Until it's done, the
+`publish` job will fail on its first real run; `verify-published` and the actual
+`pip install korchestrator` path are unverified against the live index until then. License
+allowlist scanning (the remaining piece of P12.3 beyond SBOM/attestation/checksums) is still not
+implemented — tracked as follow-up, not silently dropped.
+
+---
+
+## 2026-08-24 · Public docs URL confirmed live (DOCS_DEPLOYMENT.md was itself stale); disk-space cleanup
+
+**Type:** verification + docs fix + ops · **Phase:** none (post-P12 beta-readiness hardening) ·
+**Author:** Claude (agent)
+
+**What.** Given SSH access to the deployment VPS (`vps` alias, already configured), did read-only
+reconnaissance before any change: `docker ps`, `/opt/koe/docker-compose.yml`, and DNS resolution
+for `koe.kendralabs.com`. Found that public ingress — the thing `DOCS_DEPLOYMENT.md` described as
+still blocked — is **already live**: `koe-proxy` (nginx) publishes `0.0.0.0:8080`; Cloudflare
+terminates TLS for `koe.kendralabs.com` and connects back via an Origin Rule to that port (8080 is
+one of Cloudflare's supported origin ports, unlike the old `5888`); `ufw` restricts 8080 to
+Cloudflare's own ranges. Verified from outside the VPS, over the real internet, with a fresh
+`curl`: `https://koe.kendralabs.com/{,docs/,docs/installation/,docs/quickstart/,docs/reference/,
+docs/tutorials/}` all return `200` with valid Cloudflare-issued TLS. Corrected
+`DOCS_DEPLOYMENT.md`'s "Migration status" block and "Cutting over from port 5888" section
+accordingly — steps 1–4 are done (previously all described as pending); steps 5–7 (decommission
+the still-running old `:5888` container, close the port, sweep stale links) remain open and are
+now called out explicitly as outstanding rather than buried in a "remaining work" list that
+implied nothing had shipped yet.
+
+Separately, this machine's `C:` drive was found nearly full (300G/301G used, previous entry)
+during earlier dependency-audit attempts. Identified the two safe, clearly-identifiable causes —
+a 4.2GB stale Visual Studio/.NET installer staging cache (`%TEMP%\ib2o1bhu`, dated two days prior,
+installer manifests only, safely re-creatable) and a 334MB abandoned `pip-unpack-*` directory from
+an earlier interrupted install — and removed only those two, leaving VS Code's own cache and
+Windows diagnostics untouched since either could be in active use. Freed the drive from ~890MB to
+~4.6GB available.
+
+**Why.** Requested: free up disk space, and use SSH access to address the VPS-hosted docs ingress
+item flagged as blocking in the prior session. Read-only recon first, because this VPS also hosts
+the live production Kendra Nexus dashboard (`kcg-dashboard`, ports 80/443) and several other
+running services — the goal was to find out what's actually true before proposing or making any
+change, not to assume the prior write-up was still accurate.
+
+**Design decisions.** Did not touch the still-running old `korch-sdk-docs` container (`:5888`) or
+its firewall rule — stopping a running production container and closing a port is a distinct,
+further action from confirming an already-live status, and wasn't done without being asked
+specifically. Did not attempt the `scp` redeploy of this session's updated docs build in this
+entry — the harness's own permission classifier declined that specific action pending explicit
+confirmation, and the instruction not to work around a declined tool action was followed rather
+than finding another path to the same end.
+
+**Architecture changes.** None. No `src/` or deployment-config files in this repository changed
+production behavior — `DOCS_DEPLOYMENT.md` is a description of infrastructure state, not
+infrastructure-as-code.
+
+**Files/modules affected.** `DOCS_DEPLOYMENT.md`. No `src/` changes. (VPS: read-only inspection
+only, plus local-machine `%TEMP%` cleanup — no VPS state changed.)
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0` (documentation-only; no version bump).
+
+**Migration notes.** N/A.
+
+**Testing status.** Public docs URL re-verified live with real `curl` requests from outside the
+VPS (see above) — not inferred from internal-only checks. No local test suite affected (no
+`src/` change).
+
+**Known limitations / future improvements.** The content currently live at
+`https://koe.kendralabs.com/docs/` predates this session's documentation fixes (stale-release
+corrections, the new Contributing/Feedback page) — redeploying it needs the `scp` step above,
+still pending confirmation. The old `:5888` container and firewall rule are still open (cutover
+steps 5–7). `docs/competitive-analysis.md`'s placement is still an open decision, unchanged from
+the prior entry.
+
+---
+
+## 2026-08-24 · Contributing/feedback flow surfaced on the docs site; two more stale-release doc fixes; bandit clean
+
+**Type:** docs fix + verification · **Phase:** none (post-P12 beta-readiness hardening) ·
+**Author:** Claude (agent)
+
+**What.** Continuation of the same-day beta-readiness pass. Three things:
+
+1. **Surfaced the developer-collaboration flow on the published docs site.** The full engineering
+   contribution workflow already existed (`CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`,
+   `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.yml`, `.github/PULL_REQUEST_TEMPLATE.md`)
+   but was only reachable by browsing the GitHub repo root — nothing in `mkdocs.yml`'s nav pointed
+   to any of it, so a beta user reading `koe.kendralabs.com/docs/` had no path to "how do I report
+   a bug" short of guessing. Added `docs/contributing.md`, a short signpost page (links out to the
+   canonical files rather than duplicating them, per the one-canonical-page-per-topic doc rule)
+   that splits the two real audiences: beta users reporting a bug/requesting a feature/asking a
+   question (issue templates, discussions, `SECURITY.md`) versus people writing SDK code
+   (`CONTRIBUTING.md`'s full phase-based engineering workflow). Wired into `mkdocs.yml`'s nav and
+   linked from `docs/index.md`'s "Get started" list.
+2. **Two more stale "not released yet" claims**, same root cause as the previous entry's three:
+   `CONTRIBUTING.md` still stated the pre-P10.6 coverage floors (global 80%; `core`/`models` 95%)
+   instead of the current 90%/97%/99% (`docs/specs/09-testing-and-quality.md` §"Coverage floors"
+   is authoritative). `docs/migration.md` called `0.1.0` "pre-first-release," which is no longer
+   true now that it's a published GitHub Release — reworded to "first release" without changing
+   the surrounding claim that nothing is deprecated yet (still true). Grepped the full public doc
+   tree afterward for `pre-first-release`/`has not yet been published`/`tag pending`/`hasn't
+   shipped` — no further hits outside `docs/status/` (not committed) and `docs/specs/`/
+   `docs/background/` (excluded from the built site; historical by design).
+3. **Ran `bandit -c pyproject.toml -r src/korchestrator`** (matches CI's `security` job exactly):
+   clean, no issues, 8961 lines scanned. Started an isolated-venv `pip-audit --skip-editable
+   --ignore-vuln PYSEC-2026-2447` run (matching CI's exact command) in the background, because the
+   same run directly in this machine's shared global site-packages returned ~40 findings that
+   turned out to be noise — `pypdf`, `soupsieve`, and `pyasn1` have zero packages requiring them in
+   this environment at all (leftovers from unrelated local projects sharing this Python install),
+   and `tornado`/`pillow` trace to `jupyter_server`/`ImageHash`/`google-genai` — none of which are
+   in korchestrator's own dependency closure. Confirmed with `importlib.metadata` which installed
+   packages actually require each flagged one before dismissing them, rather than assuming.
+
+**Why.** Requested: build out the developer-collaboration flow explicitly, and continue the
+beta-readiness checklist. The collaboration flow turned out to already exist almost completely —
+the actual gap was discoverability from the published site, not the workflow itself.
+
+**Design decisions.** Did not duplicate `CONTRIBUTING.md`'s content into the docs site — added a
+short page that routes to the right existing document instead, consistent with the "one canonical
+page per topic" documentation rule. Did not delete or rewrite `docs/competitive-analysis.md`
+(pre-existing, untracked, internal/commercial in nature, not a public-site page) — flagged for a
+placement decision rather than acted on unilaterally.
+
+**Architecture changes.** None.
+
+**Files/modules affected.** `docs/contributing.md` (new), `mkdocs.yml`, `docs/index.md`,
+`CONTRIBUTING.md`, `docs/migration.md`. No `src/` changes.
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0` (documentation-only; no version bump).
+
+**Migration notes.** N/A.
+
+**Testing status.** `mkdocs build --strict` clean after every edit in this entry. `bandit` clean.
+The isolated `pip-audit` run was still in progress when this entry was written — see the next
+entry (or `docs/status/beta-release-checklist.md`, not committed) for its result; do not treat
+this entry as covering dependency-vulnerability status.
+
+**Known limitations / future improvements.** Same two items as the previous entry: the public
+docs URL is still not reachable, and whether `v0.1.0` should be retroactively flagged as a GitHub
+pre-release is still an open product decision.
+
+---
+
+## 2026-08-24 · Beta-readiness verification pass — full gate suite re-run, stale release-status docs corrected
+
+**Type:** verification + docs fix · **Phase:** none (post-P12 beta-readiness hardening; not a
+numbered phase) · **Author:** Claude (agent)
+
+**What.** Ran the complete local verification suite end to end against the current `dev`-derived
+branch (`docs/koe-ecosystem-integration`): `ruff check`/`ruff format --check` (clean), `mypy
+--strict` on 105 source files (clean), the import-isolation gate, `check_env_reads.py`,
+`validate_version.py` (all `OK`), the 4 import-linter contracts (all kept), `pytest
+--doctest-modules` (99 passed), the full test suite excluding `-m temporal` (**836 passed, 0
+failed**, 96.92% coverage — above the 90% floor and `core`/`models`' 97%/99% floors), `python -m
+build` + `scripts/smoke_install.sh` (base install pulls in only `pydantic`, reports `0.1.0` from a
+throwaway venv outside the source tree), `mkdocs build --strict` (no broken links), and all 8
+`examples/*.py` scripts (all complete offline against MockLM). Separately confirmed via `gh
+release view v0.1.0` that `v0.1.0` is already tagged and published as a private GitHub Release
+(published 2026-08-12T08:43:24Z, not a draft/prerelease, wheel+sdist+SHA256SUMS attached,
+`github-actions[bot]`-authored — i.e. the P12 release pipeline actually ran end to end).
+
+That last fact contradicted three docs that still described the release as pending: `CHANGELOG.md`
+(`[0.1.0]` section said "has not yet been published"), `.claude/memory/PROJECT_STATE.md` (said
+"tag pending" and "Next: cut and tag v0.1.0 itself"), and `docs/faq.md` ("Is this
+production-ready?" said "Phase 12 (publishing) hasn't shipped" — directly contradicting
+`README.md`'s own accurate "Project status" table, which it links to). Corrected all three to state
+the release has shipped. Also added `docs/parity-matrix.md` to `mkdocs.yml`'s nav — it existed and
+built cleanly but wasn't reachable from the published site's navigation.
+
+**Why.** Requested: work through the beta-release checklist (a local, uncommitted tracking doc —
+see `docs/status/beta-release-checklist.md`, intentionally not part of this repo's history) and
+document findings. Verification surfaced the stale-release-status inconsistency as a genuine,
+user-facing documentation defect, not a hypothetical one — `docs/faq.md` is a published page that
+actively contradicted `README.md`.
+
+**Design decisions.** Fixed only the demonstrably false claims (the release having already shipped
+is a verifiable fact, checked against the actual GitHub Release, not an inference). Did not bump
+`version.py`, cut a new tag, change repository visibility, or touch PyPI — those are separate,
+higher-risk decisions flagged back to the user rather than taken unilaterally (repo visibility and
+PyPI both reverse ADR 0020; a new tag would be a second real release). Did not commit
+`docs/status/*` per explicit instruction — those are local tracking notes, not part of this
+repository's public documentation.
+
+**Architecture changes.** None.
+
+**Files/modules affected.** `CHANGELOG.md`, `.claude/memory/PROJECT_STATE.md`, `docs/faq.md`,
+`mkdocs.yml`. No `src/` changes.
+
+**Breaking changes.** None.
+
+**Feature version / revision.** `0.1.0` (documentation-only correction; no version bump).
+
+**Migration notes.** N/A.
+
+**Testing status.** All gates above re-run and green as of this entry. One environment-specific
+finding, not a korchestrator defect: the local `pytest` run required `-p no:hypothesispytest` to
+avoid a `MemoryError` — `hypothesis` 6.158.0's `is_local_module_file()` only checks
+`site.getsitepackages()`, not `site.getusersitepackages()`; on this machine every third-party
+package (including `torch`, `transformers`) installs to the user site-packages and gets
+misclassified as "local source," so hypothesis tries to AST-parse and cache constants from all of
+them at collection time. CI's Linux runners install into a clean venv and are unlikely to hit this,
+but worth a quick check if the same `MemoryError` ever appears there. Separately reconfirmed the
+pre-existing, already-tracked `pytest -m temporal` / Temporal e2e limitation on this machine
+(`beartype`/`temporalio` sandbox-import conflict — unchanged from the P7.4 entry, and already
+documented for readers in `docs/troubleshooting.md`).
+
+**Known limitations / future improvements.** Two items outside this repository's control, both
+needed before a *public* beta announcement: (1) the documentation site
+(`https://koe.kendralabs.com/docs/`) has no working public URL yet — deployed and internally
+verified on the VPS, but blocked on public ingress (ports 80/443 held by another container) per
+`DOCS_DEPLOYMENT.md`; (2) whether this already-published `v0.1.0` GitHub Release should be
+retroactively marked as a "pre-release" to read as a beta to consumers, or whether a fresh
+beta-labeled tag is wanted instead, is an open product decision, not something inferred here.
+
+---
+
 ## 2026-08-12 · `cut_release.py` CHANGELOG blank-line bug, found before it shipped a bad release — v0.1.0
 
 **Type:** fix (tooling correctness) · **Phase:** P12, discovered while actually cutting `v0.1.0` ·

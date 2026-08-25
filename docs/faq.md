@@ -22,16 +22,19 @@ team; reach for `Swarm` when you already know it. Both drive the same kernel und
 ## Does this need any infrastructure to try?
 
 No. The zero-config default is: local (in-process) runtime, `MockLM` (deterministic, offline)
-gateway, in-memory persistence. `pip install "korchestrator[dspy]"` and `Korch().run(...)` need no
-API key, no network, and no service running. See the [Quick Start](quickstart.md).
+gateway, in-memory persistence. Installing with the `[dspy]` extra and calling `Korch().run(...)`
+needs no API key, no network, and no service running. See the
+[Quick Start](quickstart.md) for the exact install command.
 
 ## Is this production-ready?
 
-Korchestrator is `0.x` and pre-first-release (see [Project status in the
-README](https://github.com/kendralabs/korch-sdk#project-status)) — Phases 0–10 (the kernel,
-runtimes, agents, routing, tools, governance, the remote client, and the full test/benchmark
-suite) are complete and tested; Phase 11 (this documentation) is in progress, and Phase 12
-(publishing) hasn't shipped. Judge readiness for your use case against that state directly rather
+Korchestrator is `0.x` and at its first release, `v0.1.0` (see [Project status in the
+README](https://github.com/kendralabs/korch-sdk#project-status)) — Phases 0–11 (the kernel,
+runtimes, agents, routing, tools, governance, the remote client, the full test/benchmark suite,
+and this documentation) are complete and tested; Phase 12's release pipeline has shipped and
+`v0.1.0` is tagged, published to [PyPI](https://pypi.org/project/korchestrator/), and published as
+a GitHub Release ([ADR 0021](https://github.com/kendralabs/korch-sdk/blob/main/docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)).
+Judge readiness for your use case against that state directly rather
 than a blanket label — see [`.claude/memory/PROJECT_STATE.md`](https://github.com/kendralabs/korch-sdk/blob/main/.claude/memory/PROJECT_STATE.md)
 in the repository for the current, detailed snapshot.
 
