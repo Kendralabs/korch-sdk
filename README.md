@@ -3,14 +3,17 @@
 **Durable, deterministic, multi-agent execution as an installable Python library.**
 
 [![Status](https://img.shields.io/badge/status-alpha-orange)](docs/specs/11-build-phase-plan.md)
+[![PyPI](https://img.shields.io/badge/pypi-korchestrator-blue)](https://pypi.org/project/korchestrator/)
 [![Version](https://img.shields.io/badge/version-0.1.0-blue)](docs/adr/0002-single-authoritative-version.md)
 [![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-blue)](docs/specs/02-repository-structure.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](docs/adr/0003-license-apache-2-0.md)
+[![Docs](https://img.shields.io/badge/docs-koe.kendralabs.com-informational)](https://koe.kendralabs.com/docs/)
 
 > **First release, public.** `v0.1.0` is published on
 > [PyPI](https://pypi.org/project/korchestrator/) and as a GitHub Release
 > ([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)) — see
-> [Installation](#installation). See [Project status](#project-status).
+> [Installation](#installation). Documentation: **[koe.kendralabs.com/docs](https://koe.kendralabs.com/docs/)**.
+> See [Project status](#project-status).
 
 ---
 
@@ -235,7 +238,8 @@ carries one. From `1.0.0` the full compatibility policy applies without exceptio
 
 ## Documentation
 
-The published docs site ([`docs/`](docs/), built with MkDocs — `mkdocs serve` to preview locally):
+**Published, browsable site: [koe.kendralabs.com/docs](https://koe.kendralabs.com/docs/)** — the
+same content built from [`docs/`](docs/) (MkDocs — `mkdocs serve` to preview locally):
 
 | Start here | For |
 |---|---|
