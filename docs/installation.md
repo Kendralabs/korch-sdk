@@ -2,32 +2,16 @@
 
 Korchestrator requires **Python 3.10 or newer**.
 
-!!! note "Private distribution, not PyPI (ADR 0020)"
-    `Kendralabs/korch-sdk` is a private repository and Korchestrator is not published to PyPI —
-    see [ADR 0020](https://github.com/kendralabs/korch-sdk/blob/main/docs/adr/0020-private-distribution-defers-pypi-publishing.md). Every `pip install
-    korchestrator` below needs one substitution: replace `korchestrator` with a git reference
-    pinned to a released tag, `korchestrator @ git+https://github.com/Kendralabs/korch-sdk.git@vX.Y.Z`.
-    You need GitHub credentials with read access to the repo — see below.
-
 ## Base install
 
 ```bash
-pip install "korchestrator @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install korchestrator
 ```
 
-Installing this way needs a GitHub credential with read access to `Kendralabs/korch-sdk`:
-
-- **SSH** (recommended for a personal machine): if you already have an SSH key registered with
-  GitHub, use an SSH remote instead —
-  `korchestrator @ git+ssh://git@github.com/Kendralabs/korch-sdk.git@v0.1.0`.
-- **HTTPS with a token** (recommended for CI): a fine-grained personal access token with
-  `contents:read` on this repo, supplied via a credential helper or embedded in the URL —
-  `git+https://<token>@github.com/Kendralabs/korch-sdk.git@v0.1.0`. Don't hardcode a token in a
-  committed file; inject it from a secret store or CI secret.
-
-Alternatively, download the wheel from the tag's [GitHub
-Release](https://github.com/Kendralabs/korch-sdk/releases) (requires being logged in with repo
-access) and `pip install` the local file directly.
+No GitHub credential needed — `Kendralabs/korch-sdk` is public and `korchestrator` is published on
+[PyPI](https://pypi.org/project/korchestrator/) via [Trusted
+Publishing](https://docs.pypi.org/trusted-publishers/) (see [ADR
+0021](https://github.com/Kendralabs/korch-sdk/blob/main/docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)).
 
 The base install depends on **`pydantic` alone** — no LLM SDK, no workflow engine, nothing heavy.
 It imports cleanly and lets you construct configuration and typed models, but it cannot yet *run*
@@ -47,18 +31,26 @@ Everything beyond `pydantic` is an **optional extra** — install only what your
 | `[otel]` | `opentelemetry-api`, `opentelemetry-sdk` | Optional tracing/metrics export |
 | `[all]` | every extra above | Development, or when you're not sure yet what you'll need |
 
-Extras compose — request as many as you need in one install. With `pip`, extras go after the
-package name inside the same quoted string as the git reference:
+Extras compose — request as many as you need in one install:
 
 ```bash
 # The common case: run swarms locally, durably, with real tools.
-pip install "korchestrator[dspy,temporal,mcp] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[dspy,temporal,mcp]"
 
 # Everything.
-pip install "korchestrator[all] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[all]"
 ```
 
-Or, working from a local clone:
+## Installing an unreleased commit
+
+To try something not yet in a tagged release (a `dev`-branch fix, an unmerged PR), install
+directly from git instead of PyPI:
+
+```bash
+pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@dev"
+```
+
+Or, working from a local clone (editable, for actually developing the SDK itself):
 
 ```bash
 git clone git@github.com:Kendralabs/korch-sdk.git && cd korch-sdk

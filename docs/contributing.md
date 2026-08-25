@@ -22,8 +22,8 @@ code for this.
   [`SECURITY.md`](https://github.com/kendralabs/korch-sdk/blob/main/SECURITY.md) for the private
   reporting channel and what to expect.
 
-All of the above need read access to `Kendralabs/korch-sdk` (private repository) — see
-[Installation](installation.md) for how that access is granted.
+`Kendralabs/korch-sdk` is public — no repository access request needed to file an issue, start a
+discussion, or open a PR.
 
 ## Contributing code
 

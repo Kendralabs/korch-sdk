@@ -7,9 +7,9 @@
 [![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-blue)](docs/specs/02-repository-structure.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](docs/adr/0003-license-apache-2-0.md)
 
-> **First release, distributed privately.** Phases 0–11 are complete; `v0.1.0` is tagged and
-> published as a GitHub Release on this private repo, not on PyPI
-> ([ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)) — see
+> **First release, public.** Phases 0–11 are complete; `v0.1.0` is tagged, published to
+> [PyPI](https://pypi.org/project/korchestrator/), and published as a GitHub Release
+> ([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)) — see
 > [Installation](#installation). See [Project status](#project-status).
 
 ---
@@ -123,14 +123,14 @@ Capability highlights that fall out of those modules:
 
 ## Installation
 
-**Distributed privately, not on PyPI** — `Kendralabs/korch-sdk` is a private repository and stays
-that way ([ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)). Install a
-released version straight from a tag (needs a GitHub credential with read access to this repo):
-
 ```bash
-pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
-pip install "korchestrator[all] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[dspy]"
+pip install "korchestrator[all]"
 ```
+
+No GitHub credential needed — published on [PyPI](https://pypi.org/project/korchestrator/) via
+[Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
+([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)).
 
 or from a local clone:
 
@@ -140,8 +140,8 @@ pip install -e '.[dspy]'      # cognitive layer (agents, compiled signatures) �
 pip install -e '.[all]'       # everything
 ```
 
-See [docs/installation.md](docs/installation.md) for the full extras table and credential setup
-(SSH key vs. PAT), and [docs/releases.md](docs/releases.md) for how releases are cut and tagged.
+See [docs/installation.md](docs/installation.md) for the full extras table, and
+[docs/releases.md](docs/releases.md) for how releases are cut and tagged.
 
 The base install has **one runtime dependency**. Everything heavy is an optional extra, lazy-imported
 so `import korchestrator` stays fast and the kernel stays embeddable. The default configuration runs
@@ -218,7 +218,7 @@ Full command reference: [docs/specs/09-testing-and-quality.md](docs/specs/09-tes
 
 ## Project status
 
-`v0.1.0` released (privately). Built in ordered phases:
+`v0.1.0` released, public. Built in ordered phases:
 
 | Phase | Delivers | Status |
 |---|---|---|
@@ -229,7 +229,7 @@ Full command reference: [docs/specs/09-testing-and-quality.md](docs/specs/09-tes
 | P8–P9 | Cross-cutting foundations; remote client | **Complete** |
 | P10 | Testing, benchmarks & quality gates | **Complete** |
 | P11 | Documentation, examples & DX | **Complete** |
-| P12 | CI/CD, packaging & publishing | Private-distribution pipeline shipped (ADR 0020); PyPI publishing deferred |
+| P12 | CI/CD, packaging & publishing | **Complete** — PyPI publishing via Trusted Publishing (ADR 0021) |
 
 Current state, including known gaps: [`.claude/memory/PROJECT_STATE.md`](.claude/memory/PROJECT_STATE.md).
 
