@@ -133,6 +133,11 @@ jobs:
           test -s release-notes.md || { echo "no CHANGELOG section found"; exit 1; }
       - uses: softprops/action-gh-release@v2
         with:
+          # Explicit, not inferred from GITHUB_REF: softprops/action-gh-release only infers the
+          # tag from a `refs/tags/...` ref, so a workflow_dispatch run against a branch (e.g. to
+          # re-run the pipeline after a fix) fails with "GitHub Releases requires a tag" without
+          # this — harmless on a normal tag-push release, where it's simply redundant.
+          tag_name: v${{ needs.build.outputs.version }}
           body_path: release-notes.md
           files: |
             dist/*.whl
