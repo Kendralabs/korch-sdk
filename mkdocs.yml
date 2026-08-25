@@ -1,6 +1,9 @@
 site_name: Korchestrator SDK
 site_description: Durable, deterministic, multi-agent execution as an installable Python library.
-site_url: https://kendralabs.github.io/korch-sdk
+# The canonical home of this documentation. It is served by nginx from the KOE
+# ecosystem site's own origin, at /docs — see DOCS_DEPLOYMENT.md. The GitHub Pages
+# deploy still publishes the same content, but this is the URL that is advertised.
+site_url: https://koe.kendralabs.com/docs/
 repo_url: https://github.com/kendralabs/korch-sdk
 repo_name: kendralabs/korch-sdk
 copyright: Copyright 2026 Kendra Laboratories Limited
@@ -51,8 +54,10 @@ nav:
       - Releases: releases.md
       - Deployment: deployment.md
       - Migration: migration.md
+      - Remote client parity (Python/TypeScript): parity-matrix.md
       - FAQ: faq.md
       - Troubleshooting: troubleshooting.md
+      - Contributing & Feedback: contributing.md
 
 # docs/specs/ and docs/adr/ are the engineering record, and docs/background/ holds superseded
 # source inputs — none of them are part of the published user site (spec 02 §5.2). Excluding
@@ -62,6 +67,17 @@ exclude_docs: |
   background/
   specs/
   adr/
+
+# A way back up to the ecosystem site from any documentation page, so the
+# KOE -> product -> documentation path also works in reverse.
+extra:
+  social:
+    - icon: material/home
+      link: https://koe.kendralabs.com
+      name: Kendra Labs ecosystem
+    - icon: fontawesome/brands/github
+      link: https://github.com/Kendralabs/korch-sdk
+      name: Repository
 
 plugins:
   - search
