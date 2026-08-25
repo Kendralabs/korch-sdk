@@ -28,7 +28,15 @@ dependencies = ["pydantic>=2.7,<3"]
 [project.optional-dependencies]
 # The `dspy-ai` distribution now redirects to the modern `dspy` package (3.x); target it directly
 # so the pin actually constrains the installed module. See ADR 0013.
-dspy = ["dspy>=2.6,<4"]
+#
+# litellm<1.98: dspy pulls litellm in transitively, uncapped. 1.98.0 (2026-08-2x) broke import on
+# Python 3.10 — litellm/llms/anthropic/experimental_pass_through/context_management/editors/
+# compact.py imports NotRequired straight from stdlib typing, which only has it from 3.11+; this
+# project's floor is 3.10. Confirmed 1.97.0 doesn't import NotRequired there at all (checked the
+# file at that tag), so this is a clean cap, not a workaround for something already broken before.
+# Upstream: BerriAI/litellm#38076 (bug, opened 2026-08-24), BerriAI/litellm#38003 (fix, open,
+# unmerged as of this pin). Raise the floor past whatever version ships that fix and drop this pin.
+dspy = ["dspy>=2.6,<4", "litellm<1.98"]
 temporal = ["temporalio>=1.7,<2"]
 # numpy<2.5: 2.5.x's bundled .pyi stubs use a PEP 695 `type` statement (Python 3.12+ only), which
 # breaks `mypy --strict` under this project's python_version = "3.10" (requires-python floor).

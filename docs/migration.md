@@ -6,7 +6,7 @@ persisted. This page covers both.
 ## API migrations (deprecated names)
 
 !!! note "Nothing deprecated yet"
-    Korchestrator is still `0.1.0`, pre-first-release — nothing in the public API has been
+    Korchestrator is still on its first release, `0.1.0` — nothing in the public API has been
     deprecated yet. This section explains the mechanism so you know what to expect, and it's where
     a before/after example lands the day something *is* deprecated (see
     [Versioning](versioning.md#deprecation-policy) for the policy itself).

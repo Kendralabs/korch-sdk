@@ -64,7 +64,7 @@ additionally enforces the import-isolation gate and the engineering-log requirem
   on shared developer state or test order. **MockLM** is the default gateway.
 - Kernel, runtime, reducer, and serialization changes ship determinism tests (repeatability,
   reducer laws, replay, serde stability).
-- Coverage floors (global 80%; `core/` and `models/` 95%) move up, never down. Do not lower
+- Coverage floors (global 90%; `core/` 97%; `models/` 99%) move up, never down. Do not lower
   a floor or add `# pragma: no cover` to make a build pass.
 
 See `docs/specs/09-testing-and-quality.md` for the full policy.
