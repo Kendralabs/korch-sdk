@@ -3,14 +3,17 @@
 **Durable, deterministic, multi-agent execution as an installable Python library.**
 
 [![Status](https://img.shields.io/badge/status-alpha-orange)](docs/specs/11-build-phase-plan.md)
+[![PyPI](https://img.shields.io/badge/pypi-korchestrator-blue)](https://pypi.org/project/korchestrator/)
 [![Version](https://img.shields.io/badge/version-0.1.0-blue)](docs/adr/0002-single-authoritative-version.md)
 [![Python](https://img.shields.io/badge/python-3.10%20%E2%80%93%203.13-blue)](docs/specs/02-repository-structure.md)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](docs/adr/0003-license-apache-2-0.md)
+[![Docs](https://img.shields.io/badge/docs-koe.kendralabs.com-informational)](https://koe.kendralabs.com/docs/)
 
-> **First release, distributed privately.** Phases 0–11 are complete; `v0.1.0` is tagged and
-> published as a GitHub Release on this private repo, not on PyPI
-> ([ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)) — see
-> [Installation](#installation). See [Project status](#project-status).
+> **First release, public.** `v0.1.0` is published on
+> [PyPI](https://pypi.org/project/korchestrator/) and as a GitHub Release
+> ([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)) — see
+> [Installation](#installation). Documentation: **[koe.kendralabs.com/docs](https://koe.kendralabs.com/docs/)**.
+> See [Project status](#project-status).
 
 ---
 
@@ -123,14 +126,14 @@ Capability highlights that fall out of those modules:
 
 ## Installation
 
-**Distributed privately, not on PyPI** — `Kendralabs/korch-sdk` is a private repository and stays
-that way ([ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)). Install a
-released version straight from a tag (needs a GitHub credential with read access to this repo):
-
 ```bash
-pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
-pip install "korchestrator[all] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[dspy]"
+pip install "korchestrator[all]"
 ```
+
+No GitHub credential needed — published on [PyPI](https://pypi.org/project/korchestrator/) via
+[Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
+([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)).
 
 or from a local clone:
 
@@ -140,8 +143,8 @@ pip install -e '.[dspy]'      # cognitive layer (agents, compiled signatures) �
 pip install -e '.[all]'       # everything
 ```
 
-See [docs/installation.md](docs/installation.md) for the full extras table and credential setup
-(SSH key vs. PAT), and [docs/releases.md](docs/releases.md) for how releases are cut and tagged.
+See [docs/installation.md](docs/installation.md) for the full extras table, and
+[docs/releases.md](docs/releases.md) for how releases are cut and tagged.
 
 The base install has **one runtime dependency**. Everything heavy is an optional extra, lazy-imported
 so `import korchestrator` stays fast and the kernel stays embeddable. The default configuration runs
@@ -218,20 +221,16 @@ Full command reference: [docs/specs/09-testing-and-quality.md](docs/specs/09-tes
 
 ## Project status
 
-`v0.1.0` released (privately). Built in ordered phases:
+`v0.1.0` is released and public: the kernel, local and durable runtimes, agents and compiled
+signatures, model routing, tools/MCP/A2A, streaming, governance, the context graph, the remote
+client, the test and benchmark suite, and this documentation are all in place, and the release
+publishes to PyPI and GitHub Releases via Trusted Publishing
+([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md)).
 
-| Phase | Delivers | Status |
-|---|---|---|
-| P0–P1 | Scaffold, decisions, frozen API contracts | **Complete** |
-| P2–P3 | Superstep kernel; local + durable runtimes | **Complete** |
-| P4–P5 | Agents, compiled signatures, model routing | **Complete** |
-| P6–P7 | Tools/MCP/A2A, streaming, governance, context graph | **Complete** |
-| P8–P9 | Cross-cutting foundations; remote client | **Complete** |
-| P10 | Testing, benchmarks & quality gates | **Complete** |
-| P11 | Documentation, examples & DX | **Complete** |
-| P12 | CI/CD, packaging & publishing | Private-distribution pipeline shipped (ADR 0020); PyPI publishing deferred |
-
-Current state, including known gaps: [`.claude/memory/PROJECT_STATE.md`](.claude/memory/PROJECT_STATE.md).
+The project is still `0.x` — see [Versioning](docs/specs/10-release-versioning-and-cicd.md) for
+what that means for compatibility. Current state, including known gaps, is tracked in
+[`.claude/memory/PROJECT_STATE.md`](.claude/memory/PROJECT_STATE.md); the ordered build plan behind
+it is in [`docs/specs/`](docs/specs/README.md) for anyone contributing to the SDK itself.
 
 **Versioning.** [SemVer](docs/specs/10-release-versioning-and-cicd.md). While `0.x`, a **minor
 release may contain breaking changes** — this is stated plainly in every changelog entry that
@@ -239,7 +238,8 @@ carries one. From `1.0.0` the full compatibility policy applies without exceptio
 
 ## Documentation
 
-The published docs site ([`docs/`](docs/), built with MkDocs — `mkdocs serve` to preview locally):
+**Published, browsable site: [koe.kendralabs.com/docs](https://koe.kendralabs.com/docs/)** — the
+same content built from [`docs/`](docs/) (MkDocs — `mkdocs serve` to preview locally):
 
 | Start here | For |
 |---|---|
