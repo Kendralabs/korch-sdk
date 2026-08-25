@@ -1,62 +1,138 @@
 # Korchestrator SDK — Documentation Site Deployment
 
-Short reference for the live, publicly hosted documentation site: what it is, how it got there, and how to install the SDK itself.
+Short reference for the publicly hosted documentation site: where it lives, how it is
+deployed, and how to install the SDK itself.
 
 ## Live link
 
-**https://koe.kendralabs.com:5888** — Korchestrator SDK docs (installation, quickstart, tutorials, API reference, architecture, versioning, releases, FAQ, troubleshooting)
+**https://koe.kendralabs.com/docs/** — Korchestrator SDK documentation (installation,
+quickstart, tutorials, API reference, architecture, versioning, releases, FAQ,
+troubleshooting).
 
-> Plain HTTP over a non-standard port, not HTTPS — see [Known limitations](#known-limitations) below.
+The documentation is served as a sub-path of the [KOE ecosystem
+site](https://koe.kendralabs.com), the Kendra Labs developer entry point, which links here as
+the SDK's documentation. The two are deployed independently — nginx answers `/docs/` from a
+static directory on disk and never proxies it to the KOE application, and the KOE application
+deliberately defines no `/docs` route — so either can be redeployed without touching the
+other.
 
-## What was done
+> **Migration status: live.** Public ingress is done. `koe-proxy` (nginx) listens on
+> `0.0.0.0:8080`; Cloudflare terminates TLS for `koe.kendralabs.com` and connects back to
+> this port via an Origin Rule (8080 is one of Cloudflare's supported origin ports — 5888,
+> the old port, is not, which is why that link stopped working). `ufw` admits only
+> Cloudflare's published IP ranges to 8080, so the origin cannot be reached directly by IP to
+> bypass the edge. Re-verified 2026-08-24 from outside the VPS, over the real internet:
+> `https://koe.kendralabs.com/docs/`, `/installation/`, `/quickstart/`, `/reference/`,
+> `/tutorials/` all return `200` with valid Cloudflare-issued TLS.
+>
+> The content currently live predates a same-day round of documentation fixes (stale
+> release-status claims, a new Contributing/Feedback page) — redeploy with the command below
+> to publish them. Steps 5–7 in [Cutting over](#cutting-over-from-port-5888) (decommissioning
+> the old `:5888` container) are still outstanding.
 
-The SDK's existing MkDocs documentation source (`docs/`, built via `mkdocs.yml`) was built into a static site and deployed to a VPS as its own, independent, containerized web app — separate from the SDK's own GitHub Pages deploy (`.github/workflows/docs.yml`, which continues to publish the same content to GitHub Pages on every push to `main`, unaffected by any of this).
+## Why it moved
 
-## How it was done
+The documentation was originally published from its own container at
+`http://koe.kendralabs.com:5888`. That worked, but had three problems worth fixing before a
+public beta:
 
-1. **Build.** `mkdocs build --strict` locally, producing a static `site/` directory (~4.2 MB).
-2. **Transfer.** Site copied to the VPS at `/opt/korch-sdk-docs/site/` over SSH/`scp`.
-3. **Serve.** A `docker-compose.yml` at `/opt/korch-sdk-docs/` runs one service — `nginx:1.27-alpine`, bind-mounting `./site` read-only, `restart: unless-stopped`. It's a fully standalone Compose project: own container, own network, no dependency on or interference with anything else on the box.
-4. **Expose.** The container publishes host port `5888`, opened as an `Accept / TCP / 5888 / Any` rule in the VPS provider's (Hostinger) panel-level network firewall — a separate layer from the server's own `ufw`, which was also opened for this port.
-5. **DNS.** `koe.kendralabs.com` → the VPS's IP, an `A` record (**DNS only** / not proxied through Cloudflare — the port-forwarding needed here isn't compatible with Cloudflare's default proxy).
+- **No TLS.** Every link shared with a user was plain HTTP.
+- **A port number in the URL.** `koe.kendralabs.com:5888` is not a URL anyone wants in a
+  README, and some corporate networks block non-standard ports outright.
+- **Disconnected from the ecosystem.** Nothing linked the docs to the rest of Kendra Labs, or
+  the rest of Kendra Labs to the docs.
+
+Serving the same static build at `https://koe.kendralabs.com/docs/` fixes all three at once:
+one origin for the site and its documentation, one certificate covering both, no new DNS
+record, and the same shape Kendra Nexus already uses for its own documentation at
+`nexus.kendralabs.com/docs`. (That certificate does not exist yet — issuing it is part of
+the public-ingress step below.)
+
+## How it is built and deployed
+
+1. **Build.** `mkdocs build --strict` produces a static `site/` directory (~4.2 MB).
+2. **Transfer.** The build is copied to the VPS at `/opt/korch-sdk-docs/site/`.
+3. **Serve.** The `koe-proxy` container mounts that directory read-only and serves it at
+   `/docs/`, with long-lived caching on the hashed assets and revalidation on the HTML.
+   The configuration is `deploy/nginx.conf` in the KOE repository.
+
+Nothing in the KOE deployment has to change when the documentation is rebuilt: the proxy
+reads the directory directly, so a new build is live as soon as it is copied.
 
 ### Redeploying an updated build
 
-From the repo root, after `mkdocs build --strict`:
+From the repository root:
 
 ```bash
+mkdocs build --strict
 scp -r site/* vps:/opt/korch-sdk-docs/site/
-ssh vps 'cd /opt/korch-sdk-docs && docker compose restart'
 ```
 
-(`vps` is an SSH config alias; substitute the real host/user/key if running from elsewhere.)
+No container restart is needed — nginx serves the directory directly. (`vps` is an SSH config
+alias; substitute the real host/user/key if running from elsewhere.)
+
+The SDK's own GitHub Pages workflow (`.github/workflows/docs.yml`) continues to publish the
+same content on every push to `main`, unaffected by any of this. `site_url` in `mkdocs.yml`
+points at `koe.kendralabs.com/docs/` because that is the address the ecosystem advertises.
+
+### Cutting over from port 5888
+
+Steps 1–4 are done:
+
+1. ~~The KOE stack is deployed at `/opt/koe`~~ — done.
+2. ~~Serves this documentation at `/docs/` internally~~ — done.
+3. ~~Give `koe.kendralabs.com` public ingress~~ — done via a Cloudflare Origin Rule to
+   `koe-proxy`'s `0.0.0.0:8080` (not the `127.0.0.1:5100` originally planned — `5100` is the
+   `koe` Next.js app's own internal port, which `koe-proxy` fronts; `8080` is the port
+   Cloudflare's Origin Rule actually targets, chosen because it's one of Cloudflare's
+   supported origin ports). `ufw` restricts `8080` to Cloudflare's published ranges only.
+4. ~~Confirm `https://koe.kendralabs.com/docs/` serves the site~~ — re-verified 2026-08-24
+   from outside the VPS: `/`, `/installation/`, `/quickstart/`, `/reference/`, `/tutorials/`
+   all return `200` over valid HTTPS.
+
+Steps 5–7 are also done, as of 2026-08-24:
+
+5. ~~Stop and remove the old Compose project~~ — done (`docker compose down` at
+   `/opt/korch-sdk-docs`; the `site/` directory was left in place, since `koe-proxy` reads it
+   directly).
+6. ~~Close port `5888` in `ufw`~~ — done (both the IPv4 and IPv6 rules, which were already
+   labeled "retire after koe ingress," removed). Confirmed `http://koe.kendralabs.com:5888/`
+   no longer connects. **Hostinger panel firewall** (hPanel, separate from `ufw`) was not
+   checked from this session — verify there directly if it also has a rule for 5888.
+7. ~~Update any link still pointing at `:5888`~~ — repo-wide grep found no live links, only
+   historical mentions explaining why the port stopped working (this file, the engineering
+   log, `PROJECT_STATE.md`).
 
 ### Known limitations
 
-- **No TLS.** The site is served over plain HTTP; the URL includes `:5888` rather than a clean HTTPS origin. A follow-up (e.g. a Cloudflare Tunnel, giving `https://koe.kendralabs.com` with no port and free TLS) would remove both limitations at once but has not been done.
-- **Single instance, no monitoring/alerting.** One container, one VPS, no uptime checks configured beyond Docker's own `restart: unless-stopped`.
-- **Manual redeploy.** No CI/CD automates the build-and-push step above; it's a manual command run after doc changes.
+- **Manual redeploy.** No CI/CD automates the build-and-copy step above; it is a manual
+  command run after documentation changes.
+- **Single instance, no monitoring.** One VPS, no uptime checks beyond nginx itself.
 
 ## Repository
 
-**https://github.com/Kendralabs/korch-sdk** (private) — branches `dev` (integration) → `staging` (release candidate) → `main` (released, default branch; tags cut from here only).
+**https://github.com/Kendralabs/korch-sdk** (public) — branches `dev` (integration) →
+`staging` (release candidate) → `main` (released, default branch; tags cut from here only).
 
 ## Package / release
 
-Not published to PyPI — the repository is private and stays that way ([ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)). Releases are published as **GitHub Releases** on the repo instead, built and verified automatically on every version tag (`.github/workflows/release.yml`).
+Published to [PyPI](https://pypi.org/project/korchestrator/) via Trusted Publishing ([ADR
+0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md), superseding ADR 0020's
+private-distribution pass). Releases also publish as **GitHub Releases** on the repository, built
+and verified automatically on every version tag (`.github/workflows/release.yml`); see
+`docs/releases.md` for the full pipeline and the one-time PyPI Trusted Publisher setup.
 
-**Latest release:** [`v0.1.0`](https://github.com/Kendralabs/korch-sdk/releases/tag/v0.1.0) — assets: `korchestrator-0.1.0-py3-none-any.whl`, `korchestrator-0.1.0.tar.gz`, `SHA256SUMS`.
+**Latest release:** [`v0.1.0`](https://github.com/Kendralabs/korch-sdk/releases/tag/v0.1.0) —
+assets: `korchestrator-0.1.0-py3-none-any.whl`, `korchestrator-0.1.0.tar.gz`, `SHA256SUMS`.
 
 ### Installing it
 
-Requires a GitHub credential (SSH key or PAT) with read access to this private repo.
-
-**From the tagged release** (no local clone needed):
+**From PyPI** (no credential needed):
 
 ```bash
-pip install "korchestrator[dspy] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[dspy]"
 # or, every optional extra:
-pip install "korchestrator[all] @ git+https://github.com/Kendralabs/korch-sdk.git@v0.1.0"
+pip install "korchestrator[all]"
 ```
 
 **From a local clone** (editable install, e.g. for development):
@@ -73,4 +149,5 @@ pip install -e '.[all]'       # everything
 python -c "import korchestrator; print(korchestrator.__version__)"   # 0.1.0
 ```
 
-Full install/extras reference: [docs/installation.md](docs/installation.md) (also on the live docs site above).
+Full install/extras reference: [docs/installation.md](docs/installation.md) (also on the live
+documentation site above).
