@@ -4,7 +4,7 @@
 log is chronological history; this file is the current snapshot. Update it whenever a phase advances,
 a module changes status, or the public surface moves — `/log` does both together.
 
-**Last updated:** 2026-08-12 · **Version:** `0.1.0` (release in progress — private pipeline shipped, tag pending) · **Branch model:** `dev` → `staging` → `main`
+**Last updated:** 2026-08-24 · **Version:** `0.1.0` (released — GitHub Release published 2026-08-12, verified) · **Branch model:** `dev` → `staging` → `main`
 
 ---
 
@@ -12,20 +12,35 @@ a module changes status, or the public surface moves — `/log` does both togeth
 
 | | |
 |---|---|
-| **Active phase** | **P12 — CI/CD, packaging & publishing — private-distribution pipeline shipped (P12.1–P12.7), narrowed by [ADR 0020](../../docs/adr/0020-private-distribution-defers-pypi-publishing.md).** P11 is complete. Next: cut and tag `v0.1.0` itself. |
-| **Last completed milestone** | **P12.7 — Release automation script.** `.github/workflows/release.yml` now checksums the built artifact and publishes a GitHub Release (wheel, sdist, `SHA256SUMS`, CHANGELOG-derived notes) on every `vX.Y.Z` tag, plus an in-pipeline `verify-private-install` job. New `scripts/cut_release.py` (`prepare`/`tag`) automates the release runbook (spec 10 §9), unit tested at `tests/unit/test_cut_release.py` (15/15 passing). PyPI Trusted Publishing, SBOM generation, and provenance attestation are deferred, not implemented — see ADR 0020. |
-| **Blocking** | Nothing. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry; now also documented as a reader-facing `docs/troubleshooting.md` entry). Next: the `chore/release-v0.1.0` PR and the `v0.1.0` tag push itself. |
+| **Active phase** | **P12 — CI/CD, packaging & publishing — complete.** The repository is now public and the release pipeline (P12.1–P12.7, per [ADR 0021](../../docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md), superseding ADR 0020) publishes to PyPI via Trusted Publishing plus a GitHub Release. `v0.1.0` is tagged and published as a [GitHub Release](https://github.com/Kendralabs/korch-sdk/releases/tag/v0.1.0) (published 2026-08-12T08:43:24Z, not a draft/prerelease, wheel+sdist+SHA256SUMS attached); PyPI publish of the same `v0.1.0` artifacts pending the one-time PyPI Trusted Publisher registration documented in `docs/releases.md` (an action only the PyPI account owner can take). All numbered phases (P0–P12) are complete; P13 (external backend adapter) is out of scope. Remaining work is beta-readiness hardening, not a numbered phase — see `docs/status/beta-release-checklist.md` (not committed; a local tracking doc). |
+| **Last completed milestone** | **P12.7 — Release automation script**, followed by the actual `v0.1.0` cut and tag, followed by the repository going public and `release.yml` being rewritten for PyPI Trusted Publishing (ADR 0021). `.github/workflows/release.yml` now builds, generates an SBOM and provenance attestation, checksums, publishes to PyPI (OIDC, no stored token), publishes a GitHub Release, verifies the real `pip install korchestrator==X.Y.Z` path against the public index, and redeploys docs — on every `vX.Y.Z` tag or manual `workflow_dispatch`. `scripts/cut_release.py` (`prepare`/`tag`) automates the release runbook (spec 10 §9), unit tested at `tests/unit/test_cut_release.py`. |
+| **Blocking** | Nothing. `pytest -m temporal` / the Temporal e2e suite still cannot run in this dev environment (pre-existing `beartype`/site-packages conflict, unrelated to any prior-phase work — see the P7.4 engineering-log entry, reproduced again on 2026-08-24; documented as a reader-facing `docs/troubleshooting.md` entry). The public documentation site is confirmed **live**: `https://koe.kendralabs.com/docs/` verified with real requests from outside the VPS on 2026-08-24 (200, valid TLS, current content redeployed same day); the old `:5888` container was decommissioned and its firewall rule removed the same day — see `DOCS_DEPLOYMENT.md`. |
 | **Pushed / merged** | All work through P11 (plus the dashboard app) is consolidated and pushed. On 2026-08-12 the repository moved to a `dev` → `staging` → `main` model: the former `develop` and every phase branch were merged, verified fully contained, and deleted; `dev`, `staging` and `main` now all sit at the same commit. This P12 release-pipeline work lands on `feat/p12-private-release-pipeline` off `dev`, per the normal flow, ahead of the separate minimal `chore/release-v0.1.0` PR that actually cuts the tag. |
 
 Every local gate is green except the pre-existing `[temporal]` environment issue above: ruff,
-ruff-format, `mypy --strict` (105 source files, unaffected by P11 so far), `pytest` (dspy +
-non-dspy paths, full suite incl. the Temporal-dependent files; **810 passed** as of P11.2's
-verify, 97.09% cov, comfortably above the 90% floor), import-linter (**4 contracts kept**, incl.
-the ADR-0011 httpx confinement), the isolation gate, env-confinement, and version single-sourcing.
-`mkdocs build --strict` passes with no broken links. `import korchestrator.agents`/
+ruff-format, `mypy --strict` (105 source files, clean), doctest examples (99 passed), `pytest`
+(dspy + non-dspy paths, `-m "not temporal"`; **836 passed, 0 failed** as re-verified on 2026-08-24,
+96.92% cov, comfortably above the 90% floor — `core`/`models` individually above their 97%/99%
+floors), import-linter (**4 contracts kept**, incl. the ADR-0011 httpx confinement), the isolation
+gate, env-confinement, and version single-sourcing. `python -m build` + `scripts/smoke_install.sh`
+both pass (base install pulls in only `pydantic`, `import korchestrator` reports `0.1.0` from a
+throwaway venv outside the source tree). `mkdocs build --strict` passes with no broken links
+(two pages — `docs/parity-matrix.md`, `docs/competitive-analysis.md` — build fine but aren't
+reachable from the site nav; not a broken-link failure, worth fixing in the docs pass). All 8
+`examples/*.py` scripts run to completion offline (MockLM). `import korchestrator.agents`/
 `korchestrator.routing`/`korchestrator.telemetry` stay `dspy`/`[routing]`/`[otel]`-free; the base
 install stays `pydantic`-only, and `korchestrator.clients`/`korchestrator.remote` are never
 imported by `korchestrator/__init__.py` (statically checked, `test_remote.py`).
+
+**2026-08-24 verification note:** this pass's local `pytest` run required `-p no:hypothesispytest`
+to avoid a `MemoryError` during collection — a `hypothesis` 6.158.0 bug (its
+`is_local_module_file` check only recognizes `site.getsitepackages()`, not
+`site.getusersitepackages()`; on this machine every third-party package, including `torch` and
+`transformers`, installs to the user site-packages and gets misclassified as "local source",
+so hypothesis tries to AST-parse and cache constants from all of them at collection time). This is
+an environment/tooling issue tied to this machine's package layout, not a korchestrator defect —
+CI's Linux runners install into a venv and are very unlikely to hit it, but worth a quick check
+next time CI runs if the same `MemoryError` ever shows up there.
 
 ## 2. Phase progress
 

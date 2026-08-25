@@ -276,7 +276,7 @@ pytest tests/ -v
 
 **SDK (core + extras)** — see the full pinned table in §12.4 and `pyproject.toml`. One-line rationale per extra: `dspy` — typed/compiled reasoning; `temporalio` — durable workflow runtime; `httpx` — remote HTTP client (`[remote]` extra only); `mcp` — Model Context Protocol tool discovery; `sentence-transformers`/`transformers`/`numpy` — semantic model routing; OpenTelemetry — optional tracing/metrics.
 
-**Dashboard backend** (`dashboard/backend/requirements.txt`): `fastapi` (web framework), `uvicorn` (ASGI server), `litellm` (multi-provider LLM completion abstraction — the core of `gateway.py`), `boto3` (direct AWS Bedrock bearer-token `converse()` calls), `pydantic` (request/response models, pinned to match the SDK's own v2 requirement), `python-multipart` (FastAPI form-data dependency, no multipart route observed), `python-dotenv` (`.env` loading), `httpx` (used by `kcg_tracing.py`'s HTTP export and by tests), `langsmith` (`tracing.py`'s LangSmith client). Note: **`korchestrator` itself is not in this file** — it's installed separately from source (`pip install -e '.[all]'` or the Dockerfile's own `pip install '.[all]'` step), since the SDK isn't published to PyPI (ADR 0020).
+**Dashboard backend** (`dashboard/backend/requirements.txt`): `fastapi` (web framework), `uvicorn` (ASGI server), `litellm` (multi-provider LLM completion abstraction — the core of `gateway.py`), `boto3` (direct AWS Bedrock bearer-token `converse()` calls), `pydantic` (request/response models, pinned to match the SDK's own v2 requirement), `python-multipart` (FastAPI form-data dependency, no multipart route observed), `python-dotenv` (`.env` loading), `httpx` (used by `kcg_tracing.py`'s HTTP export and by tests), `langsmith` (`tracing.py`'s LangSmith client). Note: **`korchestrator` itself is not in this file** — it's installed separately from source (`pip install -e '.[all]'` or the Dockerfile's own `pip install '.[all]'` step); the SDK is also published to PyPI as of [ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md), but this dashboard's own build predates that and still installs from source.
 
 **Dashboard frontend** (`dashboard/frontend/package.json`): `react`/`react-dom` 18.2, `reactflow` 11.10 (**declared but not imported anywhere in current source — dead dependency**, see §19), `lucide-react` 0.344 (**same — declared but unused**), dev-only: `typescript`, `vite`, `@vitejs/plugin-react`, `@types/react*`.
 
@@ -457,7 +457,7 @@ No persistent volume, EBS, or EFS configuration exists anywhere. The ECS task de
 
 ### 5.1 Deployment methodology
 
-**SDK:** publishing versioned build artifacts (wheel + sdist) as **GitHub Releases on this private repository** — explicitly **not** PyPI (deferred per [ADR 0020](docs/adr/0020-private-distribution-defers-pypi-publishing.md)). There is no "running service" deployment for the SDK; "deployment" here means only artifact publication. Source: `.github/workflows/release.yml`, `docs/releases.md`.
+**SDK:** publishing versioned build artifacts (wheel + sdist) as **GitHub Releases** and to **PyPI** via Trusted Publishing ([ADR 0021](docs/adr/0021-repository-goes-public-pypi-trusted-publishing.md), superseding ADR 0020's private-only pass). There is no "running service" deployment for the SDK; "deployment" here means only artifact publication. Source: `.github/workflows/release.yml`, `docs/releases.md`.
 
 **Dashboard:** two documented, alternative deployment paths, both manual (no automated CD pipeline exists for either — see §6):
 1. **Local**: `docker compose -f dashboard/docker-compose.yml up --build` — one command, two containers.
@@ -595,7 +595,7 @@ Source: `.github/workflows/ci.yml` (252 lines).
 
 ### 6.3 `.github/workflows/release.yml` (SDK only)
 
-**Trigger:** `push` on tags matching `v[0-9]+.[0-9]+.[0-9]+`, or `workflow_dispatch`. Header comment explicitly states this is a **private-distribution** pipeline (ADR 0020) — no PyPI step exists anywhere in the file.
+**Trigger:** `push` on tags matching `v[0-9]+.[0-9]+.[0-9]+`, or `workflow_dispatch`. Publishes to PyPI via Trusted Publishing (ADR 0021, superseding ADR 0020's private-only pipeline).
 
 | Job | Purpose |
 |---|---|
@@ -1226,7 +1226,7 @@ Sources for every step: `README.md`, `dashboard/README.md`, `dashboard/docker-co
 - The `korchestrator` SDK: 26-module architecture, ARI ports, Pregel BSP kernel, local + Temporal runtimes, exception hierarchy (16 error types), public API surface (31 exported names) — all verified byte-for-byte against `src/korchestrator/__init__.py`/`version.py`/`exceptions/`/`services/` (§20, item SDK-1).
 - Dashboard backend: 4 FastAPI routers, 11+ distinct HTTP endpoints, 3 SSE streaming mechanisms, multi-provider LLM gateway (OpenAI/Anthropic/Bedrock via litellm+boto3), 2 optional real tracing integrations (LangSmith, KCG), a working (locally, per its own tests) HITL approve/reject flow using a genuine SDK-level `GovernanceHaltError` mechanism added specifically for this purpose.
 - Dashboard frontend: 3 working demo UIs (researcher, support-escalation, fincrime/investigation-console), SSE consumption via native `EventSource`, a full custom dark-theme design system.
-- CI: comprehensive, blocking, multi-job pipeline for the SDK only (lint/type/test/security/build/docs/base-install-purity), a private-distribution release pipeline, GitHub Pages docs deploy.
+- CI: comprehensive, blocking, multi-job pipeline for the SDK only (lint/type/test/security/build/docs/base-install-purity), a PyPI + GitHub Releases release pipeline, GitHub Pages docs deploy.
 - Git hygiene: `.env` correctly gitignored and confirmed not tracked; no compiled artifacts committed under `dashboard/`.
 
 ### 19.2 Partially implemented
