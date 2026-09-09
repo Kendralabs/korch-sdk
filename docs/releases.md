@@ -1,7 +1,7 @@
 # Releases
 
 !!! note "Public distribution via PyPI (ADR 0021)"
-    Korchestrator is public: the repository is public and releases publish to
+    Kendra Orchestrator SDK is public: the repository is public and releases publish to
     [PyPI](https://pypi.org/project/korchestrator/) via **Trusted Publishing** (OIDC — no stored
     API token). `pip install korchestrator[dspy]` works for anyone, no GitHub credential needed.
     See [Installation](installation.md). This supersedes the private-distribution pass in

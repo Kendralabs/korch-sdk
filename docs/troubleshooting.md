@@ -66,7 +66,7 @@ If this happens on a plain `pip install "korchestrator[temporal,otel]"` (or any 
 pulls in both `temporalio` and a package using `beartype`'s import hooks, such as some
 observability extras), the underlying cause is usually a circular import inside
 `beartype.claw` that the workflow engine's sandbox import hook triggers — a known conflict between
-those two packages' import-time behavior, not a Korchestrator defect.
+those two packages' import-time behavior, not a Kendra Orchestrator SDK defect.
 
 **To confirm it's this and not something you changed:** the same failure reproduces on an
 unmodified checkout — check with `git stash` if you have local changes, or try a clean virtualenv
@@ -85,7 +85,7 @@ with only `[temporal]` installed (no `[otel]`, no other package that imports `be
 
 You're importing from an application package that this SDK deliberately never depends on (the
 isolation gate blocks this at commit time in the SDK's own repository). If you're consuming
-Korchestrator from your own application, this shouldn't happen — check that you're not
+Kendra Orchestrator SDK from your own application, this shouldn't happen — check that you're not
 accidentally shadowing one of those names with a local module on your `sys.path`.
 
 ## Next

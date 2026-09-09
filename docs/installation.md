@@ -1,6 +1,6 @@
 # Installation
 
-Korchestrator requires **Python 3.10 or newer**.
+Kendra Orchestrator SDK requires **Python 3.10 or newer**.
 
 ## Base install
 
@@ -27,7 +27,7 @@ Everything beyond `pydantic` is an **optional extra** — install only what your
 | `[temporal]` | `temporalio` | The durable, replayable runtime (survives process crashes, supports pause/resume) |
 | `[routing]` | `sentence-transformers`, `numpy` | Semantic model routing (routing by embedding similarity) |
 | `[mcp]` | `mcp` | Connecting to Model Context Protocol tool servers |
-| `[remote]` | `httpx` | `KorchestratorClient` — driving a remote, hosted Korchestrator engine |
+| `[remote]` | `httpx` | `KorchestratorClient` — driving a remote, hosted Kendra Orchestrator engine |
 | `[otel]` | `opentelemetry-api`, `opentelemetry-sdk` | Optional tracing/metrics export |
 | `[all]` | every extra above | Development, or when you're not sure yet what you'll need |
 

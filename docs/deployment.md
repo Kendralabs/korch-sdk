@@ -3,7 +3,7 @@
 **"Deployment" for this repository means publishing package artifacts, not running a service.**
 There is no server, container, or environment operated from this repository, and it never will
 be — see [Non-goals](https://github.com/kendralabs/korch-sdk#non-goals). This page instead covers
-what matters when *your* application, which embeds Korchestrator, goes to production.
+what matters when *your* application, which embeds Kendra Orchestrator SDK, goes to production.
 
 ## What actually gets published
 
@@ -54,7 +54,7 @@ persistence.
 
 ## The remote client's contract
 
-If your application drives a *hosted* Korchestrator engine instead of embedding the kernel
+If your application drives a *hosted* Kendra Orchestrator engine instead of embedding the kernel
 directly (`[remote]` extra, `KorchestratorClient`), its wire contract — endpoint paths,
 request/response shapes, the status vocabulary, and the `Authorization: Bearer` auth scheme — is
 part of the compatibility surface, versioned exactly like a Python signature. See the

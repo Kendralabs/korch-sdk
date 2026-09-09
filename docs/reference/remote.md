@@ -1,6 +1,6 @@
 # Remote client (Tier 4)
 
-Drives a **hosted** Korchestrator engine over HTTP. Optional — nothing in Tiers 1-3 depends on it.
+Drives a **hosted** Kendra Orchestrator engine over HTTP. Optional — nothing in Tiers 1-3 depends on it.
 Requires the `[remote]` extra.
 
 ```bash
