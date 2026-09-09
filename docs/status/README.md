@@ -1,4 +1,4 @@
-# Implementation Status — Korchestrator SDK
+# Implementation Status — Kendra Orchestrator SDK
 
 Plain-language snapshot of what has been built, where things stand, and how to pick the work back
 up. Written for a quick read; the authoritative technical records stay in `.claude/memory/` and

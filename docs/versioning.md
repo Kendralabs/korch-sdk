@@ -1,6 +1,6 @@
 # Versioning
 
-Korchestrator follows [Semantic Versioning 2.0.0](https://semver.org) (`MAJOR.MINOR.PATCH`),
+Kendra Orchestrator SDK follows [Semantic Versioning 2.0.0](https://semver.org) (`MAJOR.MINOR.PATCH`),
 starting at `0.1.0`.
 
 | Bump | When |

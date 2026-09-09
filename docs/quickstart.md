@@ -1,7 +1,7 @@
 # Quick Start
 
 This page takes you from a fresh install to a completed run using nothing but the standard
-library and Korchestrator itself — no API key, no network, no infrastructure.
+library and Kendra Orchestrator SDK itself — no API key, no network, no infrastructure.
 
 ## Install
 

@@ -10,6 +10,73 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-09-09 · Branding pass: "Kendra Orchestrator SDK", decoupled from the KOE ecosystem name
+
+**Type:** docs · **Phase:** none (branding/consistency task, not in the phase plan) · **Author:**
+Claude (agent)
+
+**What.** Renamed the project's *display* name, consistently, to **Kendra Orchestrator SDK** —
+the open-source SDK for Kendra Orchestrator — across README.md, `mkdocs.yml` (`site_name`,
+`site_description`), `docs/index.md`, and the prose (not code) in `docs/installation.md`,
+`docs/quickstart.md`, `docs/architecture.md`, `docs/versioning.md`, `docs/releases.md`,
+`docs/deployment.md`, `docs/migration.md`, `docs/faq.md`, `docs/contributing.md`,
+`docs/troubleshooting.md`, `docs/reference/remote.md`, and `docs/status/*.md`. Added a
+`CHANGELOG.md` `[Unreleased]` entry documenting the rename.
+
+**Why.** Explicit maintainer instruction. README.md's title had been "Kendra Orchestration Engine
+(KOE)" — reusing the name of the separate, proprietary "KOE" ecosystem site
+(`koe.kendralabs.com`, a different Next.js app that merely reverse-proxies this SDK's docs at
+`/docs/`, per `DOCS_DEPLOYMENT.md`) while `mkdocs.yml`'s `site_name` said "Korchestrator SDK" —
+two different brand names for one repository, neither of which read as "the open-source version
+of Kendra Orchestrator." The task's own bullets: replace the branding, clarify open-source
+identity, and keep titles/nav/prose consistent.
+
+**Design decisions.** Scope was clarified with the maintainer before editing (`AskUserQuestion`):
+(1) branding/prose only — `import korchestrator`, the PyPI package name, and
+`KorchestratorClient` are unchanged; renaming those is a separate MAJOR breaking-change effort
+needing its own ADR and version bump, out of scope here since `v0.1.0` is already published; (2)
+scoped to the published SDK docs (README, `mkdocs.yml`, `docs/` minus `specs/`/`adr/`/`background/`
+which `mkdocs.yml` itself already excludes from the built site) plus `CHANGELOG.md` — not the
+internal ops runbooks (`DOCS_DEPLOYMENT.md`, `MASTER_DOCUMENTATION.md`,
+`.claude/memory/*`), which contain no raw IPs/secrets today. Also checked the task's "remove
+exposed internal IPs / local URLs" bullet: the only raw IP found repo-wide lives in
+`docs/status/public-release-deployment-guide.md` and `beta-release-checklist.md`, both untracked
+and now gitignored (never committed); every `localhost`/`127.0.0.1` mention inside the in-scope
+docs is a legitimate local-dev instruction (`mkdocs serve`, `TEMPORAL_ADDRESS`), not an infra
+leak — left unchanged, since replacing it with the hosted docs URL would make those instructions
+wrong. Left `docs/index.md`'s stale "not yet on PyPI... while the repository stays private"
+claim untouched — real, but a pre-existing staleness bug unrelated to branding; flagged to the
+maintainer separately rather than folded into this diff. Left one "Korchestrator" mention in
+README's engineering-record table (`docs/specs/00-overview.md`'s link description) unchanged,
+since it describes the content of an unrenamed, out-of-scope spec file. `mkdocs build --strict`
+passes after the change; source (`src/`) untouched.
+
+**Architecture changes.** None. Documentation and branding only.
+
+**Files/modules affected.** `README.md`, `CHANGELOG.md`, `mkdocs.yml`, `docs/index.md`,
+`docs/installation.md`, `docs/quickstart.md`, `docs/architecture.md`, `docs/versioning.md`,
+`docs/releases.md`, `docs/deployment.md`, `docs/migration.md`, `docs/faq.md`,
+`docs/contributing.md`, `docs/troubleshooting.md`, `docs/reference/remote.md`,
+`docs/status/README.md`, `docs/status/how-to-continue.md`, `docs/status/what-has-been-built.md`.
+No `src/` changes.
+
+**Breaking changes.** None. No code, import path, class name, or PyPI package name changed.
+
+**Feature version/revision.** No version bump — docs-only, folded into `[Unreleased]`.
+
+**Migration notes.** None needed.
+
+**Testing status.** `mkdocs build --strict` green (only a pre-existing, unrelated Material
+theme deprecation notice and the expected "not in nav" info for `docs/status/*` — both present
+before this change). No `src/`/test changes, so the existing test suite is unaffected and was not
+re-run for this change.
+
+**Known limitations / future improvements.** The actual Python package/import name and PyPI
+project remain `korchestrator`; if the maintainer later wants the installable name itself to
+change, that is a separate MAJOR-version effort (new PyPI project or deprecation shim, ADR,
+migration guide). `docs/index.md`'s stale pre-public-release claim (noted above) is still
+outstanding.
+
 ## 2026-08-25 · Repository goes public; release pipeline rewritten for PyPI Trusted Publishing (ADR 0021, supersedes ADR 0020)
 
 **Type:** decision + CI/CD + docs · **Phase:** P12 (CI/CD, packaging & publishing) — implements
