@@ -10,21 +10,34 @@ copyright: Copyright 2026 Kendra Laboratories Limited
 
 theme:
   name: material
+  logo: assets/images/kendra-logo.svg
+  favicon: assets/images/kendra-favicon.svg
   features:
     - navigation.sections
     - navigation.top
     - content.code.copy
+  # Brand type pair from Kendra Design System (kds-tokens): Inter (text) + JetBrains Mono (code).
+  font:
+    text: Inter
+    code: JetBrains Mono
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
+
+extra_css:
+  - stylesheets/kendra-theme.css
 
 nav:
   - Home: index.md
