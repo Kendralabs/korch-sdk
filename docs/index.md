@@ -1,9 +1,10 @@
-# Korchestrator SDK
+# Kendra Orchestrator SDK
 
-**Durable, deterministic, multi-agent execution as an installable Python library.**
+**The open-source SDK for Kendra Orchestrator — durable, deterministic, multi-agent execution as
+an installable Python library.**
 
 !!! warning "Beta release — v0.1.0"
-    Korchestrator is currently at **v0.1.0**, published for early access and beta testing.
+    Kendra Orchestrator SDK is currently at **v0.1.0**, published for early access and beta testing.
     The kernel, execution model, and public API described on this site are implemented and
     tested (see [Status](#status) below) — this is working software, not a design sketch — but
     the public surface is still being validated against real integrations. While the version
@@ -12,7 +13,7 @@
     promise, and treat anything not listed there as subject to change. Feedback on the API from
     this beta period is what determines what ships in `1.0`.
 
-Korchestrator runs multi-agent workflows ("swarms") as a Bulk Synchronous Parallel superstep
+The SDK runs multi-agent workflows ("swarms") as a Bulk Synchronous Parallel superstep
 computation, with an in-process runtime for zero-infrastructure local execution and a durable
 workflow-engine runtime for crash-proof, replayable execution — selected by configuration alone,
 with no change to agent code.
@@ -25,7 +26,7 @@ exactly where multi-agent systems get interesting — many agents reasoning conc
 needs to survive a crash or a multi-hour human approval wait, and a requirement to explain *why*
 the system did what it did, after the fact, to someone who wasn't watching it happen.
 
-Korchestrator treats a run as **computation over state**, not a script, borrowing three ideas that
+The SDK treats a run as **computation over state**, not a script, borrowing three ideas that
 each solve one piece of that problem:
 
 | Problem | Idea borrowed from | What it buys |

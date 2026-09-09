@@ -28,7 +28,7 @@ needs no API key, no network, and no service running. See the
 
 ## Is this production-ready?
 
-Korchestrator is `0.x` and at its first release, `v0.1.0` (see [Project status in the
+Kendra Orchestrator SDK is `0.x` and at its first release, `v0.1.0` (see [Project status in the
 README](https://github.com/kendralabs/korch-sdk#project-status)) — Phases 0–11 (the kernel,
 runtimes, agents, routing, tools, governance, the remote client, the full test/benchmark suite,
 and this documentation) are complete and tested; Phase 12's release pipeline has shipped and
@@ -40,7 +40,7 @@ in the repository for the current, detailed snapshot.
 
 ## How is this different from LangGraph / CrewAI / AutoGen?
 
-The comparison that matters most is the execution model, not the feature list: Korchestrator runs
+The comparison that matters most is the execution model, not the feature list: Kendra Orchestrator SDK runs
 supersteps as a **Bulk Synchronous Parallel** computation — every active agent
 computes against a frozen snapshot in parallel, and results merge through reducers that are
 associative and order-independent, so concurrency can never change the outcome. Paired with the

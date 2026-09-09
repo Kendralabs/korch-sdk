@@ -1,6 +1,7 @@
-# Kendra Orchestration Engine (KOE)
+# Kendra Orchestrator SDK
 
-**Durable, deterministic, multi-agent execution as an installable Python library.**
+**The open-source SDK for Kendra Orchestrator — durable, deterministic, multi-agent execution as
+an installable Python library.**
 
 [![Status](https://img.shields.io/badge/status-alpha-orange)](https://github.com/Kendralabs/korch-sdk/blob/main/docs/specs/11-build-phase-plan.md)
 [![PyPI](https://img.shields.io/badge/pypi-korchestrator-blue)](https://pypi.org/project/korchestrator/)
@@ -19,7 +20,7 @@
 
 ## What this is
 
-KOE runs multi-agent workflows ("swarms"). That combination buys four things ad-hoc agent frameworks do not
+The SDK runs multi-agent workflows ("swarms"). That combination buys four things ad-hoc agent frameworks do not
 have:
 
 - **Durability** — every superstep is checkpointed. A crash resumes from the last barrier instead of

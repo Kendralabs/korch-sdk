@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Documentation and branding now consistently present this project as **Kendra Orchestrator
+  SDK** — the open-source SDK for Kendra Orchestrator — across the README, the documentation
+  site (`mkdocs.yml`, page titles, prose), and the implementation-status pages. No code, import
+  path, class name, or PyPI package name changed: `import korchestrator`, `pip install
+  korchestrator`, and `KorchestratorClient` are unaffected.
+
 ## [0.1.0] - 2026-08-12
 
 The first development line, released as a private [GitHub

@@ -126,7 +126,7 @@ print(result.output); raise SystemExit(result.exit_code)
 Copy everything in the box below into a fresh session to continue exactly where this left off.
 
 ```text
-You are continuing the build of the Korchestrator SDK (package: korchestrator), a durable
+You are continuing the build of the Kendra Orchestrator SDK (package: korchestrator), a durable
 multi-agent execution kernel. Work in the repo at d:\GitHub\Fintricity\korch-sdk.
 
 First, read these to load context (in this order):

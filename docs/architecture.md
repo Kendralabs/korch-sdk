@@ -1,6 +1,6 @@
 # Architecture
 
-How Korchestrator is put together, and why — for anyone embedding it, extending it, or just
+How Kendra Orchestrator SDK is put together, and why — for anyone embedding it, extending it, or just
 wanting to understand what "durable, deterministic, multi-agent execution" actually means
 mechanically.
 
@@ -116,7 +116,7 @@ Every message and state update carries two timestamps, not one:
 Together they answer "what did the agent know at the moment it decided?" independently of any
 later correction — the basis for the SDK's audit trail.
 
-This distinction is not a Korchestrator invention: it's the two-timestamp model bitemporal
+This distinction is not a Kendra Orchestrator invention: it's the two-timestamp model bitemporal
 databases have used for decades to separate *what was true* from *what the system believed and
 when* (the same problem "why did the agent do that?" turns out to be, once an agent's decision is
 treated as a recorded fact rather than a transient log line). Applying it here means a later
