@@ -10,6 +10,64 @@ template is at the bottom of this file.
 
 <!-- ⬇️ NEW ENTRIES GO HERE (newest first) ⬇️ -->
 
+## 2026-09-09 · Docs site restyled with the Kendra Labs brand (matches kendralabs.com's color roles)
+
+**Type:** docs · **Phase:** none (branding/consistency task, not in the phase plan) · **Author:**
+Claude (agent)
+
+**What.** Restyled the published documentation site (Material for MkDocs) with a Kendra Labs
+brand theme: the official logo (`docs/assets/images/kendra-logo.svg`) and favicon
+(`kendra-favicon.svg`), Inter/JetBrains Mono fonts, and a new `docs/stylesheets/kendra-theme.css`
+overriding Material's palette/typography/radius custom properties. `mkdocs.yml` gained
+`theme.logo`, `theme.favicon`, `theme.font`, `palette.primary/accent: custom` (both schemes), and
+`extra_css`.
+
+**Why.** Explicit maintainer instruction to make the docs UI look like kendralabs.com. A first
+pass ported `@kendralabs/kds-tokens`' component-level defaults (navy primary in light mode, orange
+primary in dark mode, solid-color header bar) — technically on-brand, but the maintainer rejected
+it as reading like "blue," i.e. a generic solid-navy doc-theme header, not distinctively Kendra.
+
+**Design decisions.** Screenshotted the real kendralabs.com (Playwright, headless Chromium — no
+account/auth needed, public site) rather than continuing to trust the component library's
+defaults, since a Storybook/Tailwind package's internal defaults and a marketing site's actual
+applied palette can diverge. Found: white/near-white header with navy text and links (not a solid
+navy fill), plum `#990045` as the real vivid CTA/accent color, pill-shaped buttons
+(`border-radius: 9999px`), and — importantly — a genuine dark navy-black (`#000826`) *section*
+elsewhere on the page with white headings and an orange accent badge, which is the actual source
+for a "dark mode" treatment rather than inventing one. Rebuilt the theme around that: header stays
+white/navy in both color schemes (the real site's nav never goes dark either); light mode uses
+navy headings/links + plum accent; dark (`slate`) mode uses the dark-section palette (navy-black
+background, white headings, orange accent) instead of swapping the *header* to orange as the
+first pass did — that swap read fine in isolation but needed a manually darkened on-primary text
+color to stay accessible (~5.6:1 against orange) and still didn't match anything an actual visitor
+to kendralabs.com would recognize. Verified computed styles and screenshots in both schemes via a
+throwaway Playwright script (`.local/screenshot_docs.py`, gitignored, not committed) before
+asking the maintainer to review locally — confirmed header colors, heading colors, and font
+actually render as intended, not just that the CSS parses.
+
+**Architecture changes.** None. Documentation/theming only; no `src/` changes; no public API
+impact.
+
+**Files/modules affected.** `mkdocs.yml`, `docs/stylesheets/kendra-theme.css` (new),
+`docs/assets/images/kendra-logo.svg` (new), `docs/assets/images/kendra-favicon.svg` (new),
+`CHANGELOG.md`.
+
+**Breaking changes.** None.
+
+**Feature version/revision.** No version bump — docs-only, folded into `[Unreleased]`.
+
+**Migration notes.** None needed.
+
+**Testing status.** `mkdocs build --strict` green. Manually verified via a local `mkdocs serve` +
+headless-browser screenshot/computed-style check (both color schemes) before maintainer review;
+no automated visual-regression test exists for this repo's docs theme. No `src/`/test changes.
+
+**Known limitations / future improvements.** Plum (`#990045`) is currently only the light-mode
+accent/hover color, more subtle in practice than navy or orange — the maintainer may want it used
+more prominently (e.g. on a primary CTA) in a follow-up. No decorative hero background (the soft
+blob shapes on kendralabs.com's homepage) was ported — lower priority, skipped to keep this change
+scoped to color/type/logo.
+
 ## 2026-09-09 · Branding pass: "Kendra Orchestrator SDK", decoupled from the KOE ecosystem name
 
 **Type:** docs · **Phase:** none (branding/consistency task, not in the phase plan) · **Author:**
