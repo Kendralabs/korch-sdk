@@ -1,5 +1,5 @@
-site_name: Korchestrator SDK
-site_description: Durable, deterministic, multi-agent execution as an installable Python library.
+site_name: Kendra Orchestrator SDK
+site_description: The open-source SDK for Kendra Orchestrator — durable, deterministic, multi-agent execution as an installable Python library.
 # The canonical home of this documentation. It is served by nginx from the KOE
 # ecosystem site's own origin, at /docs — see DOCS_DEPLOYMENT.md. The GitHub Pages
 # deploy still publishes the same content, but this is the URL that is advertised.

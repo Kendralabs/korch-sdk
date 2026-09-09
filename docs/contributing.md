@@ -5,7 +5,7 @@ what you're trying to do.
 
 ## Using the SDK and found a bug, want a feature, or have feedback
 
-This is the path for almost everyone during the beta — you don't need to write any Korchestrator
+This is the path for almost everyone during the beta — you don't need to write any Kendra Orchestrator SDK
 code for this.
 
 - **Bug report** — open an issue using the

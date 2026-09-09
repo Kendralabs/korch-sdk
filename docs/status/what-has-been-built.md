@@ -170,7 +170,7 @@ Finalized the seven foundations every module depends on (spec 08).
 
 ## P9 — Remote client ✅
 
-The optional Python client for a hosted Korchestrator engine, `korchestrator.remote.
+The optional Python client for a hosted Kendra Orchestrator engine, `korchestrator.remote.
 KorchestratorClient`, behind the `[remote]` extra. Nothing in Tiers 1–3 (the local kernel) depends
 on it, and the base install never imports it.
 
