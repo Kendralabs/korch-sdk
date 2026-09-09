@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   site (`mkdocs.yml`, page titles, prose), and the implementation-status pages. No code, import
   path, class name, or PyPI package name changed: `import korchestrator`, `pip install
   korchestrator`, and `KorchestratorClient` are unaffected.
+- The documentation site now uses a Kendra Labs brand theme (`docs/stylesheets/kendra-theme.css`,
+  the official logo/favicon, Inter/JetBrains Mono fonts) matching kendralabs.com's own color
+  roles: a white header with navy text/links, plum as the light-mode accent, and a navy-black
+  dark mode with an orange accent modeled on the site's own dark "featured" section. No public
+  API changed.
 
 ## [0.1.0] - 2026-08-12
 

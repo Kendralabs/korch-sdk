@@ -1,0 +1,109 @@
+/*
+ * Kendra Labs brand adaptation for Material for MkDocs.
+ *
+ * Modeled directly on kendralabs.com's actual color roles (not just kds-tokens' component
+ * defaults): a white header/nav with navy text and links, plum (#990045) as the vivid
+ * interactive accent, pill-shaped buttons, and dark navy-black sections with white headings
+ * and an orange accent — mirroring the site's own dark "featured" section treatment.
+ * Brand values: navy #001555, plum #990045, orange #fe6b00, from
+ * Kendralabs/kendrastorybook (kds-tokens) and kendralabs.com itself.
+ */
+
+/* Light mode — white header/nav (not a solid navy bar), navy headings/links, plum accent. */
+[data-md-color-scheme="default"][data-md-color-primary="custom"] {
+  --md-primary-fg-color: #ffffff;
+  --md-primary-fg-color--light: #ffffff;
+  --md-primary-fg-color--dark: #f4f4f6;
+  --md-primary-bg-color: #001555;
+  --md-primary-bg-color--light: #2f447d;
+  --md-default-fg-color: #0f172a;
+  --md-typeset-color: #0f172a;
+  --md-typeset-a-color: #001555;
+}
+
+[data-md-color-scheme="default"][data-md-color-accent="custom"] {
+  --md-accent-fg-color: #990045;
+  --md-accent-fg-color--transparent: #9900451a;
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: #ffffffb3;
+}
+
+/* Dark mode — modeled on kendralabs.com's own dark "featured" section: navy-black
+   background, white headings, orange as the accent that pops against it. Header stays
+   white/navy, same as light mode — the real site's nav never goes dark either. */
+[data-md-color-scheme="slate"][data-md-color-primary="custom"] {
+  --md-primary-fg-color: #ffffff;
+  --md-primary-fg-color--light: #ffffff;
+  --md-primary-fg-color--dark: #f4f4f6;
+  --md-primary-bg-color: #001555;
+  --md-primary-bg-color--light: #2f447d;
+  --md-default-bg-color: #000826;
+  --md-default-fg-color: #e5e7eb;
+  --md-default-fg-color--light: #cbd5e1;
+  --md-typeset-color: #e5e7eb;
+  --md-typeset-a-color: #ff8a3d;
+}
+
+[data-md-color-scheme="slate"][data-md-color-accent="custom"] {
+  --md-accent-fg-color: #fe6b00;
+  --md-accent-fg-color--transparent: #fe6b001a;
+  --md-accent-bg-color: #001555;
+  --md-accent-bg-color--light: #2f447d;
+}
+
+/* Headings — bold navy in light mode, white in dark mode, matching the real site's
+   headline treatment in each context. */
+[data-md-color-scheme="default"] .md-typeset h1,
+[data-md-color-scheme="default"] .md-typeset h2,
+[data-md-color-scheme="default"] .md-typeset h3 {
+  color: #001555;
+}
+
+[data-md-color-scheme="slate"] .md-typeset h1,
+[data-md-color-scheme="slate"] .md-typeset h2,
+[data-md-color-scheme="slate"] .md-typeset h3 {
+  color: #ffffff;
+}
+
+/* Pill-shaped buttons, matching kendralabs.com's rounded CTA buttons. */
+.md-typeset .md-button {
+  border-radius: 9999px;
+  border-color: #001555;
+  color: #001555;
+}
+
+.md-typeset .md-button--primary {
+  background-color: #001555;
+  border-color: #001555;
+  color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button {
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary {
+  background-color: #fe6b00;
+  border-color: #fe6b00;
+  color: #001555;
+}
+
+/* Rounded corners matching KDS's 0.5rem radius base (Material defaults to 0.1rem). */
+.md-typeset code,
+.md-typeset pre > code,
+.md-typeset .admonition,
+.md-typeset details,
+.md-search__form {
+  border-radius: 0.5rem;
+}
+
+/* A hairline border under the header — the real site relies on scroll position/section
+   color for separation; Material's header needs this since it's white-on-white otherwise. */
+.md-header {
+  border-bottom: 1px solid rgba(0, 21, 85, 0.08);
+}
+
+[data-md-color-scheme="slate"] .md-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
