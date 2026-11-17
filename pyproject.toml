@@ -36,7 +36,13 @@ dependencies = ["pydantic>=2.7,<3"]
 # file at that tag), so this is a clean cap, not a workaround for something already broken before.
 # Upstream: BerriAI/litellm#38076 (bug, opened 2026-08-24), BerriAI/litellm#38003 (fix, open,
 # unmerged as of this pin). Raise the floor past whatever version ships that fix and drop this pin.
-dspy = ["dspy>=2.6,<4", "litellm<1.98"]
+#
+# dspy<3.5: dspy 3.5.0 moved its LM interface to lm15 `Response` objects (`dspy.clients.call_result.
+# response_text` reads `response.message.parts`). `_GatewayLM.__call__` in agents/_reasoning.py still
+# returns `[reply.content]`, so every Worker/korch/swarm run fails with "'list' object has no
+# attribute 'message'" (26 unit tests). dspy 3.4.1 passes all 825 unit tests. Raise this cap once
+# the bridge returns the 3.5 response shape.
+dspy = ["dspy>=2.6,<3.5", "litellm<1.98"]
 temporal = ["temporalio>=1.7,<2"]
 # numpy<2.5: 2.5.x's bundled .pyi stubs use a PEP 695 `type` statement (Python 3.12+ only), which
 # breaks `mypy --strict` under this project's python_version = "3.10" (requires-python floor).
