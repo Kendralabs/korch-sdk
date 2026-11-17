@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `asyncio_default_fixture_loop_scope = "function"`. Without it, pytest-asyncio's unset-scope
   deprecation warning was promoted to an error by `filterwarnings = ["error"]`, causing an
   `INTERNALERROR` before any test ran. No public API changed.
+- Worker, korch and swarm runs work with `dspy` 3.5. The gateway language-model bridge
+  (`agents/_reasoning.py`) now answers dspy 3.5's engine contract (lm15 `Request` and `Response`)
+  and keeps the earlier `list[str]` shape for older dspy, chosen by feature detection. The
+  `dspy<3.5` cap is lifted; the `dspy` extra is `>=2.6,<4` again. No public API changed.
 
 ### Changed
 
