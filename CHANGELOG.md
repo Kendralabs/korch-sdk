@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The test suite no longer aborts at startup under pytest-asyncio 1.x: `pyproject.toml` now sets
+  `asyncio_default_fixture_loop_scope = "function"`. Without it, pytest-asyncio's unset-scope
+  deprecation warning was promoted to an error by `filterwarnings = ["error"]`, causing an
+  `INTERNALERROR` before any test ran. No public API changed.
+
 ### Changed
 
 - Documentation and branding now consistently present this project as **Kendra Orchestrator
